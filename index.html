@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="オセロゲーム">
 <title>オセロゲーム</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="favicon.ico">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -874,7 +876,7 @@ let stellaCommandSequence = [];  // Stella コマンド検出用
 // ============================================================
 // Audio Management System (BGM/SE)
 // ============================================================
-const AUDIO_BASE_URL = 'https://db-othellogame.netlify.app/audio';
+const AUDIO_BASE_URL = 'db/audio';
 let audioContext = null;
 let audioBuffers = {
   bgm: {},    // BGM キャッシュ: { bgmName: AudioBuffer, ... }
@@ -1027,65 +1029,82 @@ function getWinRate(){
   return Math.round((wins / total) * 100);
 }
 
-const NEWS_BASE_URL = 'https://db-othellogame.netlify.app/news';
+// GitHub Pages 上では index.html と db/ が同じ階層にあるため相対パスで参照する
+const NEWS_BASE_URL = 'db/news';
 let newsNetworkError = false;
-async function fetchNewsList(){
-  try{
-    newsNetworkError = false;
-    const newsItems = [];
-    const today = new Date();
-    
-    // タイムアウト機能付きfetch
-    const fetchWithTimeout = (url, timeout = 3000) => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-      return fetch(url, { signal: controller.signal })
-        .then(r => { clearTimeout(timeoutId); return r; })
-        .catch(e => { clearTimeout(timeoutId); throw e; });
-    };
-    
-    // 直近10日分を並列に探索（1件ずつ待たないので高速）
-    const tasks = [];
-    for(let i = 0; i < 10; i++){
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      const dateStr = `${year}${month}${day}`;
 
-      for(const pinned of [false, true]){
-        const filename = `${pinned ? 'pnews' : 'news'}${dateStr}.md`;
-        tasks.push(
-          fetchWithTimeout(`${NEWS_BASE_URL}/${filename}`, 4000)
-            .then(async res => {
-              if(!res.ok) return null;
-              return { filename, dateStr, newsDate: date, isPinned: pinned, content: await res.text() };
-            })
-            .catch(err => {
-              // TypeError = CORS かネットワーク到達不能（404 はここに来ない）
-              if(err && err.name === 'TypeError') newsNetworkError = true;
-              return null;
-            })
-        );
+function fetchWithTimeout(url, timeout = 5000){
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  return fetch(url, { signal: controller.signal, cache: 'no-store' })
+    .then(r => { clearTimeout(timeoutId); return r; })
+    .catch(e => { clearTimeout(timeoutId); throw e; });
+}
+
+// ファイル名から日付とピン留めを判定する（例: pnews20260206.md → ピン留め / 2026-02-06）
+function parseNewsFilename(filename){
+  const isPinned = filename.startsWith('p');
+  const m = filename.match(/(\d{8})/);
+  const dateStr = m ? m[1] : '00000000';
+  const newsDate = new Date(
+    parseInt(dateStr.slice(0,4), 10),
+    parseInt(dateStr.slice(4,6), 10) - 1,
+    parseInt(dateStr.slice(6,8), 10)
+  );
+  return { isPinned, dateStr, newsDate };
+}
+
+async function fetchNewsList(){
+  newsNetworkError = false;
+  try{
+    // 1) list.json でお知らせの一覧を取得する
+    let fileList = null;
+    try{
+      const res = await fetchWithTimeout(`${NEWS_BASE_URL}/list.json`, 5000);
+      if(res.ok) fileList = await res.json();
+    }catch(err){
+      if(err && err.name === 'TypeError') newsNetworkError = true;
+      console.warn('list.json を取得できませんでした:', err.message);
+    }
+
+    // 2) list.json が無い場合は、直近10日分のファイル名を推測して探す
+    if(!Array.isArray(fileList)){
+      fileList = [];
+      const today = new Date();
+      for(let i = 0; i < 10; i++){
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+        fileList.push(`news${ds}.md`, `pnews${ds}.md`);
       }
     }
 
-    const results = await Promise.all(tasks);
-    for(const r of results){ if(r) newsItems.push(r); }
+    // 3) 本文をまとめて取得する（並列なので件数が増えても速い）
+    const results = await Promise.all(fileList.map(filename =>
+      fetchWithTimeout(`${NEWS_BASE_URL}/${filename}`, 5000)
+        .then(async res => {
+          if(!res.ok) return null;
+          const content = await res.text();
+          return Object.assign({ filename, content }, parseNewsFilename(filename));
+        })
+        .catch(err => {
+          if(err && err.name === 'TypeError') newsNetworkError = true;
+          return null;
+        })
+    ));
 
-    console.log(`お知らせ: ${newsItems.length}件取得` + (newsNetworkError ? '（通信がブロックされました）' : ''));
-    
-    // ソート: ピン留めを上に、その下に日付で最新順
+    const newsItems = results.filter(Boolean);
+
+    // 4) ピン留めを先頭に、その中とその下をそれぞれ日付の新しい順に並べる
     newsItems.sort((a, b) => {
-      if(a.isPinned !== b.isPinned) return b.isPinned ? 1 : -1;
+      if(a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
       return b.newsDate - a.newsDate;
     });
-    
-    console.log('News items sorted:', newsItems.map(n => n.filename));
+
+    console.log(`お知らせ: ${newsItems.length}件取得` + (newsNetworkError ? '（通信がブロックされました）' : ''));
     return newsItems;
   }catch(err){
-    console.error('Failed to fetch news:', err);
+    console.error('お知らせの取得に失敗:', err);
     return [];
   }
 }
@@ -1830,7 +1849,7 @@ function viewCasual(){
     <div class="hero" style="background:linear-gradient(150deg,var(--sky),#1c7fb0 75%);">
       <div class="hero-eyebrow">CASUAL MODE</div>
       <h2>ゆるモード</h2>
-      <p>ひとりでAIと対局するモードです。難易度は10段階あり、相手より5マス以上多く石を取って勝つと次の難易度が解禁されます。</p>
+      <p>ひとりでAIと対局するモードです。難易度は全${CASUAL_DIFFS.length}段階（解禁済み ${CASUAL_DIFFS.filter(d=>!d.locked || state.casual.unlocked[d.id]).length}）あり、相手より5マス以上多く石を取って勝つと次の難易度が解禁されます。</p>
     </div>
     <div class="card">
       <div class="toggle-row">
@@ -2706,25 +2725,11 @@ function viewSettings(){
    ============================================================ */
 function encodeSave(obj){
   const json = JSON.stringify(obj);
-  
-  // UTF-8をバイト列に変換
-  const utf8Bytes = [];
-  for(let i = 0; i < json.length; i++){
-    const code = json.charCodeAt(i);
-    if(code < 0x80){
-      utf8Bytes.push(String.fromCharCode(code));
-    } else if(code < 0x800){
-      utf8Bytes.push(String.fromCharCode(0xC0 | (code >> 6)));
-      utf8Bytes.push(String.fromCharCode(0x80 | (code & 0x3F)));
-    } else {
-      utf8Bytes.push(String.fromCharCode(0xE0 | (code >> 12)));
-      utf8Bytes.push(String.fromCharCode(0x80 | ((code >> 6) & 0x3F)));
-      utf8Bytes.push(String.fromCharCode(0x80 | (code & 0x3F)));
-    }
-  }
-  
-  const utf8String = utf8Bytes.join('');
-  const b64 = btoa(utf8String);
+  // TextEncoder は絵文字などのサロゲートペアも正しく UTF-8 に変換する
+  const bytes = new TextEncoder().encode(json);
+  let bin = '';
+  for(let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  const b64 = btoa(bin);
   const reversed = b64.split('').reverse().join('');
   const shifted = reversed.split('').map(ch=>String.fromCharCode(ch.charCodeAt(0)+7)).join('');
   return 'GENSEKI-OTHELLO-SAVE::' + btoa(shifted);
@@ -2732,23 +2737,16 @@ function encodeSave(obj){
 function decodeSave(text){
   const marker='GENSEKI-OTHELLO-SAVE::';
   const idx = text.indexOf(marker);
-  if(idx===-1) throw new Error('形式が正しくありません');
+  if(idx===-1) throw new Error('セーブデータの形式が正しくありません');
   const payload = text.slice(idx+marker.length).trim();
-  
   try {
-    // base64デコード
     const shifted = atob(payload);
-    
-    // 文字コード - 7
     const reversed = shifted.split('').map(ch=>String.fromCharCode(ch.charCodeAt(0)-7)).join('');
-    
-    // 逆順に
     const b64 = reversed.split('').reverse().join('');
-    
-    // base64デコード（UTF-8）
-    const utf8Bytes = atob(b64);
-    const json = decodeURIComponent(Array.from(utf8Bytes, byte => '%' + ('00' + byte.charCodeAt(0).toString(16)).slice(-2)).join(''));
-    
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const json = new TextDecoder('utf-8').decode(bytes);
     return JSON.parse(json);
   } catch(err) {
     console.error('Decode error:', err);
