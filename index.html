@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="オセロゲーム">
-<title>オセロゲーム</title>
+<meta name="apple-mobile-web-app-title" content="O-LABO">
+<title>O-LABO</title>
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="favicon.ico">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -92,6 +92,15 @@ rt{font-size:.58em; font-weight:500; color:var(--ink-soft); opacity:.72; letter-
   font-family:var(--font-title); font-size:19px; letter-spacing:.02em; margin:0; font-weight:900;
   color:var(--jade-deep);
 }
+/* O-LABO ロゴ（石のマークと文字が一体のため、旧マークの代わりに1枚で表示する） */
+.brand-logo{
+  height:38px; width:auto; max-width:min(58vw, 240px);
+  object-fit:contain; display:block;
+}
+/* 画像が読めなかったときだけ文字を出す */
+.brand-fallback{display:none;}
+.brand-logo.is-failed{display:none;}
+.brand-logo.is-failed + .brand-fallback{display:block;}
 .brand small{display:block; font-size:10px; letter-spacing:.14em; color:var(--ink-soft); margin-top:2px; font-weight:700;}
 .hanko{
   display:flex; align-items:center; gap:8px; background:var(--panel); border:2px solid var(--gold-soft);
@@ -400,11 +409,13 @@ html[data-theme="dark"] {
   .topbar{
     grid-area:topbar;
     padding:10px 18px;
-    justify-content:flex-end;
+    justify-content:space-between;
   }
+  /* 横向きでもロゴは表示する（左側のメニュー帯の右どなり） */
   .topbar .brand{
-    display:none;
+    display:flex;
   }
+  .brand-logo{height:32px;}
   .bottom-tabs{
     grid-area:tabs;
     position:relative;
@@ -463,11 +474,10 @@ html[data-theme="dark"] {
 <div id="app">
   <div class="topbar">
     <div class="brand">
-      <div class="brand-mark"></div>
-      <div>
-        <h1>オセロゲーム</h1>
-        <small>対戦・特訓・ひとりプレイ</small>
-      </div>
+      <img src="db/img/logo.png" alt="O-LABO" class="brand-logo"
+           width="3966" height="1586" decoding="async"
+           onerror="this.classList.add('is-failed')">
+      <h1 class="brand-fallback">O-LABO</h1>
     </div>
     <div class="hanko" id="rankHanko"></div>
   </div>
