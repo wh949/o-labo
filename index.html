@@ -345,8 +345,13 @@ body.gfx-light .board:not(.illust){background:var(--jade);}
   display:flex; align-items:center; justify-content:space-between; padding:13px 15px; border-radius:12px; background:var(--panel);
   border:1px solid var(--line); box-shadow:var(--shadow-1);
 }
+.diff-badge{
+  width:14px; height:14px; border-radius:50%;
+  flex:0 0 auto; margin-right:10px;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.14), 0 1px 2px rgba(0,0,0,.18);
+}
 .diff-item.locked{opacity:.5; background:var(--paper-deep); box-shadow:none;}
-.diff-name{font-family:var(--font-title); font-weight:700; font-size:14.5px;}
+.diff-name{font-family:var(--font-title); font-weight:700; font-size:14.5px; flex:1; min-width:0;}
 .diff-item.locked .diff-name{filter:blur(.2px); letter-spacing:.1em;}
 .diff-star{color:var(--gold); font-size:11px; margin-left:6px;}
 .lock-icon{font-size:15px; color:var(--ink-soft);}
@@ -663,7 +668,7 @@ const DEFAULT_STATE = {
     }
   },
   training:{ rankIndex:0, xNumber:0, history:[], winCount:0, startMode:'choice' },
-  casual:{ unlocked:{ultra_easy:true,easy:true,normal:true,hard:true,ultra_hard:true,oni:false,ultra_oni:false,kami:false,ultra_kami:false,infinity:false,super_infinity:false,alpha:false,beta:false,gamma:false,super_alpha:false,super_beta:false,super_gamma:false,transcendent:false,zero:false,maru:false,equal:false,not_equal:false,approx:false,chou_transcendent:false,chou_zero:false,chou_maru:false,chou_equal:false,chou_not_equal:false,chou_approx:false,chou:false,null:false,z:false,reverse_a:false,you:false,no_cap:false,sup:false,verse:false,re_no_cap:false,re_sup:false,re_verse:false,exe:false,othello:false,othello_exe:false,exclamation:false,question:false,nijinoten:false,yagyoue:false,kunojiten_ue:false,kunojiten_shita:false,kunojiten:false,kunojiten_daku:false,kunojiten_handaku:false,ka:false,jun:false,nuta:false,tai:false,tou:false,taito:false,maou:false,eiyuu:false,chou_exe:false,chou_othello:false,chou_othello_exe:false,chou_exclamation:false,chou_question:false,chou_nijinoten:false,chou_yagyoue:false,chou_kunojiten_ue:false,chou_kunojiten_shita:false,chou_kunojiten:false,chou_kunojiten_daku:false,chou_kunojiten_handaku:false,chou_ka:false,chou_jun:false,chou_nuta:false,chou_tai:false,chou_tou:false,chou_taito:false,chou_maou:false,chou_eiyuu:false}, history:[], showHints:true, startMode:'choice' },
+  casual:{ unlocked:{ultra_easy:true,easy:true,normal:true,hard:true,ultra_hard:true,oni:false,ultra_oni:false,kami:false,ultra_kami:false,infinity:false,super_infinity:false,alpha:false,beta:false,gamma:false,super_alpha:false,super_beta:false,super_gamma:false,transcendent:false,zero:false,maru:false,equal:false,not_equal:false,approx:false,chou_transcendent:false,chou_zero:false,chou_maru:false,chou_equal:false,chou_not_equal:false,chou_approx:false,chou:false,null:false,z:false,reverse_a:false,you:false,no_cap:false,sup:false,verse:false,re_no_cap:false,re_sup:false,re_verse:false,exe:false,othello:false,othello_exe:false,exclamation:false,question:false,nijinoten:false,yagyoue:false,kunojiten_ue:false,kunojiten_shita:false,kunojiten:false,kunojiten_daku:false,kunojiten_handaku:false,ka:false,jun:false,nuta:false,tai:false,tou:false,taito:false,maou:false,eiyuu:false,chou_exe:false,chou_othello:false,chou_othello_exe:false,chou_exclamation:false,chou_question:false,chou_nijinoten:false,chou_yagyoue:false,chou_kunojiten_ue:false,chou_kunojiten_shita:false,chou_kunojiten:false,chou_kunojiten_daku:false,chou_kunojiten_handaku:false,chou_ka:false,chou_jun:false,chou_nuta:false,chou_tai:false,chou_tou:false,chou_taito:false,chou_maou:false,chou_eiyuu:false}, results:{}, history:[], showHints:true, startMode:'choice' },
   battleHistory: [],
   variety:{ history:[], customRules:{random:false, lucky_unlucky:false, warp:false, timer:false} },
   story:{}
@@ -1903,6 +1908,18 @@ function difficultyDisplayName(d){
   }
   return d.name;
 }
+// 難易度ごとの成績バッジ（未挑戦=灰 / 敗北=青 / 勝利=緑 / 完封=ピンク）
+const RESULT_BADGES = {
+  none:    {color:'#b8b2a6', label:'まだ挑戦していません'},
+  tried:   {color:'#3b82f6', label:'挑戦しましたが、まだ勝てていません'},
+  won:     {color:'#22a45d', label:'勝利しました'},
+  perfect: {color:'#ec4899', label:'完封勝利しました'}
+};
+function resultBadge(diffId){
+  const mark = (state.casual.results && state.casual.results[diffId]) || 'none';
+  const b = RESULT_BADGES[mark] || RESULT_BADGES.none;
+  return `<span class="diff-badge" style="background:${b.color};" title="${b.label}" aria-label="${b.label}"></span>`;
+}
 function viewCasual(){
   if(game && game.mode==='casual' && sub.casual==='play') return renderBoardScreen();
   if(sub.casual==='result') return renderResultScreen();
@@ -1915,6 +1932,7 @@ function viewCasual(){
       return `<div class="diff-item locked"><span class="diff-name">？？？</span><span class="lock-icon">🔒</span></div>`;
     }
     return `<button class="diff-item" data-action="casual-pick" data-id="${d.id}" style="width:100%; text-align:left; border:1px solid var(--line);">
+      ${resultBadge(d.id)}
       <span class="diff-name">${difficultyDisplayName(d)}${d.star?'<span class="diff-star">★</span>':''}</span>
       <span class="lock-icon">▶</span>
     </button>`;
@@ -2478,6 +2496,17 @@ function endGame(g){
   } else if(g.mode==='casual'){
     entry.myScore=black; entry.aiScore=white; entry.difficulty=g.opts.diffName;
     entry.result = black>white?'win':(white>black?'lose':'draw');
+
+    // 難易度ごとの成績を記録する（未挑戦 → 敗北 → 勝利 → 完封 の順に上書き）
+    state.casual.results = state.casual.results || {};
+    const isPerfect = entry.result==='win' && white===0;   // 相手の石が無くなった＝完封
+    const newMark = isPerfect ? 'perfect' : (entry.result==='win' ? 'won' : 'tried');
+    const order = {tried:1, won:2, perfect:3};
+    const prev = state.casual.results[g.opts.diffId];
+    if(!prev || order[newMark] > (order[prev]||0)){
+      state.casual.results[g.opts.diffId] = newMark;
+    }
+
     if(entry.result==='win'){
       state.totalWins = (state.totalWins || 0) + 1;
       
