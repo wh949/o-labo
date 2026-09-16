@@ -92,20 +92,17 @@ rt{font-size:.58em; font-weight:500; color:var(--ink-soft); opacity:.72; letter-
   font-family:var(--font-title); font-size:19px; letter-spacing:.02em; margin:0; font-weight:900;
   color:var(--jade-deep);
 }
-/* O-LABO ロゴ（石のマークと文字が一体のため、旧マークの代わりに1枚で表示する） */
 .brand-logo{
   height:66px; width:auto; max-width:min(62vw, 340px);
   object-fit:contain; display:block;
 }
-/* 狭い画面ではランク表示と干渉しないよう少し抑える */
+.brand-fallback{display:none;}
+.brand-logo.is-failed{display:none;}
+.brand-logo.is-failed + .brand-fallback{display:block;}
 @media (max-width:360px){
   .topbar{padding:12px 16px;}
   .brand-logo{height:54px;}
 }
-/* 画像が読めなかったときだけ文字を出す */
-.brand-fallback{display:none;}
-.brand-logo.is-failed{display:none;}
-.brand-logo.is-failed + .brand-fallback{display:block;}
 .brand small{display:block; font-size:10px; letter-spacing:.14em; color:var(--ink-soft); margin-top:2px; font-weight:700;}
 .hanko{
   display:flex; align-items:center; gap:8px; background:var(--panel); border:2px solid var(--gold-soft);
@@ -413,10 +410,9 @@ html[data-theme="dark"] {
   }
   .topbar{
     grid-area:topbar;
-    padding:6px 18px;
-    justify-content:space-between;
+    padding:10px 18px;
+    justify-content:flex-end;
   }
-  /* 横向きでもロゴは表示する（左側のメニュー帯の右どなり） */
   .topbar .brand{
     display:flex;
   }
@@ -514,7 +510,7 @@ const BASIC_TABS = [
 const ADVENTURE_TABS = [
   {id:'variety', label:'バラエティ', icon:'🎲'},
   {id:'story', label:'ストーリー', icon:'📖'},
-  {id:'memory', label:'記憶', icon:'🎵'},
+  {id:'memory', label:'カフェ', icon:'☕️'},
   {id:'home-sub', label:'ホーム', icon:'🏠'},
 ];
 
@@ -556,30 +552,52 @@ const CASUAL_DIFFS = [
   {id:'z', name:'Z', nameRuby:'ゼット', nameRubyLevel:5, locked:true, star:true, depth:5, rnd:0, boost:3.0},
   {id:'reverse_a', name:'∀', nameRuby:'リバースエー', locked:true, star:true, depth:5, rnd:0, boost:3.0},
   {id:'you', name:'You', nameRuby:'ユー', nameRubyLevel:3, locked:true, star:true, depth:5, rnd:0, boost:3.05},
-  {id:'no_cap', name:'No cap', nameRuby:'ノーキャップ', nameRubyLevel:3, locked:true, star:true, depth:6, rnd:0, boost:3.1},
-  {id:'sup', name:'Sup?', nameRuby:'サップ？', nameRubyLevel:0, locked:true, star:true, depth:6, rnd:0, boost:3.15},
-  {id:'verse', name:'VERSE', nameRuby:'バース', nameRubyLevel:2, locked:true, star:true, depth:6, rnd:0, boost:3.2},
-  {id:'re_no_cap', name:'RE:No cap', nameRuby:'リ:ノーキャップ', nameRubyLevel:2, locked:true, star:true, depth:6, rnd:0, boost:3.25},
-  {id:'re_sup', name:'RE:Sup?', nameRuby:'リ:サップ？', nameRubyLevel:1, locked:true, star:true, depth:6, rnd:0, boost:3.3},
-  {id:'re_verse', name:'RE:VERSE', nameRuby:'リ:バース', nameRubyLevel:0, locked:true, star:true, depth:6, rnd:0, boost:3.35},
-  {id:'exe', name:'.exe', nameRuby:'エグゼ', nameRubyLevel:0, locked:true, star:true, depth:7, rnd:0, boost:3.4},
-  {id:'othello', name:'OTHELLO', nameRuby:'オセロ', nameRubyLevel:2, locked:true, star:true, depth:7, rnd:0, boost:3.45},
-  {id:'othello_exe', name:'OTHELLO.exe', nameRuby:'オセロドットエグゼ', nameRubyLevel:2, locked:true, star:true, depth:7, rnd:0, boost:3.5},
-  {id:'exclamation', name:'!', nameRuby:'エクスクラメーション', nameRubyLevel:0, locked:true, star:true, depth:7, rnd:0, boost:3.55},
-  {id:'question', name:'?', nameRuby:'クエスチョン', nameRubyLevel:0, locked:true, star:true, depth:7, rnd:0, boost:3.6},
-  {id:'nijinoten', name:'〻', nameRuby:'にじのてん', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:3.65},
-  {id:'yagyoue', name:'𛀁', nameRuby:'や行え', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:3.7},
-  {id:'kunojiten_ue', name:'〳', nameRuby:'くのじてん うえ', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:3.75},
-  {id:'kunojiten_shita', name:'〵', nameRuby:'くのじてん した', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:3.8},
-  {id:'kunojiten', name:'〱', nameRuby:'くのじてん', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:3.85},
-  {id:'kunojiten_daku', name:'〲', nameRuby:'くのじてん だくてん', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:3.9},
-  {id:'kunojiten_handaku', name:'〱゚', nameRuby:'くのじてん はんだくてん', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:3.95},
-  {id:'ka', name:'彁', nameRuby:'か', nameRubyLevel:0, locked:true, star:true, depth:9, rnd:0, boost:4.0},
-  {id:'jun', name:'閠', nameRuby:'じゅん', nameRubyLevel:0, locked:true, star:true, depth:9, rnd:0, boost:4.05},
-  {id:'nuta', name:'汢', nameRuby:'ぬた', nameRubyLevel:0, locked:true, star:true, depth:9, rnd:0, boost:4.1},
-  {id:'tai', name:'䨺', nameRuby:'たい', nameRubyLevel:0, locked:true, star:true, depth:9, rnd:0, boost:4.15},
-  {id:'tou', name:'龘', nameRuby:'とう', nameRubyLevel:0, locked:true, star:true, depth:10, rnd:0, boost:4.2},
-  {id:'taito', name:'𱁬', nameRuby:'たいと', nameRubyLevel:0, locked:true, star:true, depth:10, rnd:0, boost:4.25},
+  {id:'no_cap', name:'No cap', nameRuby:'ノーキャップ', nameRubyLevel:3, locked:true, star:true, depth:6, rnd:0, boost:3.105},
+  {id:'sup', name:'Sup?', nameRuby:'サップ？', nameRubyLevel:0, locked:true, star:true, depth:6, rnd:0, boost:3.162},
+  {id:'verse', name:'VERSE', nameRuby:'バース', nameRubyLevel:2, locked:true, star:true, depth:6, rnd:0, boost:3.222},
+  {id:'re_no_cap', name:'RE:No cap', nameRuby:'リ:ノーキャップ', nameRubyLevel:2, locked:true, star:true, depth:6, rnd:0, boost:3.284},
+  {id:'re_sup', name:'RE:Sup?', nameRuby:'リ:サップ？', nameRubyLevel:1, locked:true, star:true, depth:6, rnd:0, boost:3.349},
+  {id:'re_verse', name:'RE:VERSE', nameRuby:'リ:バース', nameRubyLevel:0, locked:true, star:true, depth:6, rnd:0, boost:3.417},
+  {id:'exe', name:'.exe', nameRuby:'エグゼ', nameRubyLevel:0, locked:true, star:true, depth:7, rnd:0, boost:3.487},
+  {id:'othello', name:'OTHELLO', nameRuby:'オセロ', nameRubyLevel:2, locked:true, star:true, depth:7, rnd:0, boost:3.56},
+  {id:'othello_exe', name:'OTHELLO.exe', nameRuby:'オセロドットエグゼ', nameRubyLevel:2, locked:true, star:true, depth:7, rnd:0, boost:3.636},
+  {id:'exclamation', name:'!', nameRuby:'エクスクラメーション', nameRubyLevel:0, locked:true, star:true, depth:7, rnd:0, boost:3.716},
+  {id:'question', name:'?', nameRuby:'クエスチョン', nameRubyLevel:0, locked:true, star:true, depth:7, rnd:0, boost:3.799},
+  {id:'nijinoten', name:'〻', nameRuby:'にじのてん', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:3.885},
+  {id:'yagyoue', name:'𛀁', nameRuby:'や行え', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:3.975},
+  {id:'kunojiten_ue', name:'〳', nameRuby:'くのじてん うえ', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:4.069},
+  {id:'kunojiten_shita', name:'〵', nameRuby:'くのじてん した', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:4.167},
+  {id:'kunojiten', name:'〱', nameRuby:'くのじてん', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:4.269},
+  {id:'kunojiten_daku', name:'〲', nameRuby:'くのじてん だくてん', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:4.375},
+  {id:'kunojiten_handaku', name:'〱゚', nameRuby:'くのじてん はんだくてん', nameRubyLevel:0, locked:true, star:true, depth:8, rnd:0, boost:4.486},
+  {id:'ka', name:'彁', nameRuby:'か', nameRubyLevel:0, locked:true, star:true, depth:9, rnd:0, boost:4.601},
+  {id:'jun', name:'閠', nameRuby:'じゅん', nameRubyLevel:0, locked:true, star:true, depth:9, rnd:0, boost:4.721},
+  {id:'nuta', name:'汢', nameRuby:'ぬた', nameRubyLevel:0, locked:true, star:true, depth:9, rnd:0, boost:4.846},
+  {id:'tai', name:'䨺', nameRuby:'たい', nameRubyLevel:0, locked:true, star:true, depth:9, rnd:0, boost:4.976},
+  {id:'tou', name:'龘', nameRuby:'とう', nameRubyLevel:0, locked:true, star:true, depth:10, rnd:0, boost:5.112},
+  {id:'taito', name:'𱁬', nameRuby:'たいと', nameRubyLevel:0, locked:true, star:true, depth:10, rnd:0, boost:5.254},
+  {id:'maou', name:'魔王', nameRuby:'まおう', nameRubyLevel:4, locked:true, star:true, depth:10, rnd:0, boost:5.402},
+  {id:'eiyuu', name:'英雄', nameRuby:'えいゆう', nameRubyLevel:4, locked:true, star:true, depth:10, rnd:0, boost:5.556},
+  {id:'chou_exe', name:'超.exe', nameRuby:'ちょうエグゼ', nameRubyLevel:2, locked:true, star:true, depth:11, rnd:0, boost:5.716},
+  {id:'chou_othello', name:'超OTHELLO', nameRuby:'ちょうオセロ', nameRubyLevel:2, locked:true, star:true, depth:11, rnd:0, boost:5.883},
+  {id:'chou_othello_exe', name:'超OTHELLO.exe', nameRuby:'ちょうオセロドットエグゼ', nameRubyLevel:2, locked:true, star:true, depth:11, rnd:0, boost:6.057},
+  {id:'chou_exclamation', name:'超!', nameRuby:'ちょうエクスクラメーション', nameRubyLevel:0, locked:true, star:true, depth:11, rnd:0, boost:6.238},
+  {id:'chou_question', name:'超?', nameRuby:'ちょうクエスチョン', nameRubyLevel:0, locked:true, star:true, depth:11, rnd:0, boost:6.427},
+  {id:'chou_nijinoten', name:'超〻', nameRuby:'ちょうにじのてん', nameRubyLevel:0, locked:true, star:true, depth:11, rnd:0, boost:6.624},
+  {id:'chou_yagyoue', name:'超𛀁', nameRuby:'ちょうや行え', nameRubyLevel:0, locked:true, star:true, depth:11, rnd:0, boost:6.829},
+  {id:'chou_kunojiten_ue', name:'超〳', nameRuby:'ちょうくのじてん うえ', nameRubyLevel:0, locked:true, star:true, depth:11, rnd:0, boost:7.043},
+  {id:'chou_kunojiten_shita', name:'超〵', nameRuby:'ちょうくのじてん した', nameRubyLevel:0, locked:true, star:true, depth:11, rnd:0, boost:7.266},
+  {id:'chou_kunojiten', name:'超〱', nameRuby:'ちょうくのじてん', nameRubyLevel:0, locked:true, star:true, depth:11, rnd:0, boost:7.498},
+  {id:'chou_kunojiten_daku', name:'超〲', nameRuby:'ちょうくのじてん だくてん', nameRubyLevel:0, locked:true, star:true, depth:11, rnd:0, boost:7.74},
+  {id:'chou_kunojiten_handaku', name:'超〱゚', nameRuby:'ちょうくのじてん はんだくてん', nameRubyLevel:0, locked:true, star:true, depth:11, rnd:0, boost:7.992},
+  {id:'chou_ka', name:'超彁', nameRuby:'ちょうか', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:8.255},
+  {id:'chou_jun', name:'超閠', nameRuby:'ちょうじゅん', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:8.529},
+  {id:'chou_nuta', name:'超汢', nameRuby:'ちょうぬた', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:8.814},
+  {id:'chou_tai', name:'超䨺', nameRuby:'ちょうたい', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:9.111},
+  {id:'chou_tou', name:'超龘', nameRuby:'ちょうとう', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:9.421},
+  {id:'chou_taito', name:'超𱁬', nameRuby:'ちょうたいと', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:9.744},
+  {id:'chou_maou', name:'超魔王', nameRuby:'ちょうまおう', nameRubyLevel:4, locked:true, star:true, depth:12, rnd:0, boost:10.08},
+  {id:'chou_eiyuu', name:'超英雄', nameRuby:'ちょうえいゆう', nameRubyLevel:4, locked:true, star:true, depth:12, rnd:0, boost:10.43},
 ];
 
 const VARIETY_RULES = [
@@ -645,7 +663,7 @@ const DEFAULT_STATE = {
     }
   },
   training:{ rankIndex:0, xNumber:0, history:[], winCount:0, startMode:'choice' },
-  casual:{ unlocked:{ultra_easy:true,easy:true,normal:true,hard:true,ultra_hard:true,oni:false,ultra_oni:false,kami:false,ultra_kami:false,infinity:false,super_infinity:false,alpha:false,beta:false,gamma:false,super_alpha:false,super_beta:false,super_gamma:false,transcendent:false,zero:false,maru:false,equal:false,not_equal:false,approx:false,chou_transcendent:false,chou_zero:false,chou_maru:false,chou_equal:false,chou_not_equal:false,chou_approx:false,chou:false,null:false,z:false,reverse_a:false,you:false,no_cap:false,sup:false,verse:false,re_no_cap:false,re_sup:false,re_verse:false,exe:false,othello:false,othello_exe:false,exclamation:false,question:false,nijinoten:false,yagyoue:false,kunojiten_ue:false,kunojiten_shita:false,kunojiten:false,kunojiten_daku:false,kunojiten_handaku:false,ka:false,jun:false,nuta:false,tai:false,tou:false,taito:false}, history:[], showHints:true, startMode:'choice' },
+  casual:{ unlocked:{ultra_easy:true,easy:true,normal:true,hard:true,ultra_hard:true,oni:false,ultra_oni:false,kami:false,ultra_kami:false,infinity:false,super_infinity:false,alpha:false,beta:false,gamma:false,super_alpha:false,super_beta:false,super_gamma:false,transcendent:false,zero:false,maru:false,equal:false,not_equal:false,approx:false,chou_transcendent:false,chou_zero:false,chou_maru:false,chou_equal:false,chou_not_equal:false,chou_approx:false,chou:false,null:false,z:false,reverse_a:false,you:false,no_cap:false,sup:false,verse:false,re_no_cap:false,re_sup:false,re_verse:false,exe:false,othello:false,othello_exe:false,exclamation:false,question:false,nijinoten:false,yagyoue:false,kunojiten_ue:false,kunojiten_shita:false,kunojiten:false,kunojiten_daku:false,kunojiten_handaku:false,ka:false,jun:false,nuta:false,tai:false,tou:false,taito:false,maou:false,eiyuu:false,chou_exe:false,chou_othello:false,chou_othello_exe:false,chou_exclamation:false,chou_question:false,chou_nijinoten:false,chou_yagyoue:false,chou_kunojiten_ue:false,chou_kunojiten_shita:false,chou_kunojiten:false,chou_kunojiten_daku:false,chou_kunojiten_handaku:false,chou_ka:false,chou_jun:false,chou_nuta:false,chou_tai:false,chou_tou:false,chou_taito:false,chou_maou:false,chou_eiyuu:false}, history:[], showHints:true, startMode:'choice' },
   battleHistory: [],
   variety:{ history:[], customRules:{random:false, lucky_unlucky:false, warp:false, timer:false} },
   story:{}
@@ -683,7 +701,6 @@ function allHistories(){
   ].filter(Array.isArray);
 }
 
-// 古い対局は削り、さらに古いものはリプレイ用の盤面だけ捨てる
 function trimHistories(historyLimit, replayLimit){
   for(const h of allHistories()){
     if(h.length > historyLimit) h.length = historyLimit;
@@ -692,13 +709,11 @@ function trimHistories(historyLimit, replayLimit){
     }
   }
 }
-
 function saveState(){
   trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
   try{
     localStorage.setItem('genseki_othello_save_v1', JSON.stringify(state));
   }catch(err){
-    // 容量オーバー時は履歴をさらに減らして再試行する
     console.warn('保存に失敗したため履歴を整理します:', err && err.name);
     try{
       trimHistories(20, 5);
@@ -710,7 +725,6 @@ function saveState(){
         localStorage.setItem('genseki_othello_save_v1', JSON.stringify(state));
         toast('記録が多いため、古い履歴を整理しました');
       }catch(err3){
-        // ここでも失敗した場合、例外を投げるとゲームが止まるので握りつぶす
         console.error('セーブできませんでした:', err3);
         toast('セーブできませんでした');
       }
@@ -854,74 +868,82 @@ function evaluate(board, aiPlayer){
 function orderMoves(moves){
   return moves.slice().sort((a,b)=> WEIGHTS[b.row][b.col] - WEIGHTS[a.row][a.col]);
 }
-function minimax(board, depth, alpha, beta, maximizing, aiPlayer, curPlayer, nodeBudget){
-  if(nodeBudget) nodeBudget.n++;
-  const moves = validMoves(board,curPlayer);
-  const oppMoves = moves.length===0 ? validMoves(board,curPlayer===1?2:1) : null;
-  if(moves.length===0 && oppMoves.length===0){
-    return {score:evaluate(board,aiPlayer)};
+// 難易度ごとの思考力。boost が上がるほど加速度的に強くなる
+function aiStrengthProfile(depth, boost){
+  const b = boost || 0;
+  if(!b){
+    return { maxDepth: depth, timeMs: 150, exactEmpties: Math.min(10, depth + 4) };
   }
-  if(depth<=0 || (nodeBudget && nodeBudget.n > nodeBudget.max)){
-    return {score:evaluate(board,aiPlayer)};
+  return {
+    maxDepth: Math.min(60, Math.round(4 + b * 1.7 + b * b * 0.35)),
+    timeMs: Math.min(1800, Math.round(26 * b * b)),
+    exactEmpties: Math.min(30, Math.round(6 + b * 1.5 + b * b * 0.28))
+  };
+}
+function minimax(board, depth, alpha, beta, maximizing, aiPlayer, curPlayer, ctx, pvMove){
+  if(ctx){
+    ctx.n++;
+    if((ctx.n & 511) === 0 && Date.now() > ctx.deadline) ctx.timedOut = true;
+    if(ctx.timedOut) return {score: evaluate(board, aiPlayer)};
   }
-  if(moves.length===0){
-    // パス（手番だけ入れ替えて深さは減らさない）
-    const r = minimax(board, depth-1, alpha, beta, !maximizing, aiPlayer, curPlayer===1?2:1, nodeBudget);
-    return {score:r.score};
+  const moves = validMoves(board, curPlayer);
+  if(moves.length === 0){
+    const oppMoves = validMoves(board, curPlayer===1?2:1);
+    if(oppMoves.length === 0) return {score: evaluate(board, aiPlayer)};
+    const r = minimax(board, depth-1, alpha, beta, !maximizing, aiPlayer, curPlayer===1?2:1, ctx);
+    return {score: r.score};
   }
-  const ordered = orderMoves(moves);
-  let best = maximizing? -Infinity: Infinity;
+  if(depth <= 0) return {score: evaluate(board, aiPlayer)};
+
+  let ordered = orderMoves(moves);
+  if(pvMove){
+    const i = ordered.findIndex(m => m.row===pvMove.row && m.col===pvMove.col);
+    if(i > 0) ordered.unshift(ordered.splice(i,1)[0]);
+  }
+
+  let best = maximizing ? -Infinity : Infinity;
   let bestMove = ordered[0];
   for(const m of ordered){
-    const nb = applyMove(board,m.row,m.col,curPlayer,m.flips);
-    const r = minimax(nb, depth-1, alpha, beta, !maximizing, aiPlayer, curPlayer===1?2:1, nodeBudget);
+    const nb = applyMove(board, m.row, m.col, curPlayer, m.flips);
+    const r = minimax(nb, depth-1, alpha, beta, !maximizing, aiPlayer, curPlayer===1?2:1, ctx);
     if(maximizing){
-      if(r.score>best){ best=r.score; bestMove=m; }
-      alpha=Math.max(alpha,best);
+      if(r.score > best){ best = r.score; bestMove = m; }
+      alpha = Math.max(alpha, best);
     } else {
-      if(r.score<best){ best=r.score; bestMove=m; }
-      beta=Math.min(beta,best);
+      if(r.score < best){ best = r.score; bestMove = m; }
+      beta = Math.min(beta, best);
     }
-    if(beta<=alpha) break;
+    if(beta <= alpha) break;
+    if(ctx && ctx.timedOut) break;
   }
-  return {score:best, move:bestMove};
+  return {score: best, move: bestMove};
 }
 function aiChooseMove(board, aiPlayer, depth, rnd, boost){
-  const moves = validMoves(board,aiPlayer);
+  const moves = validMoves(board, aiPlayer);
   if(!moves.length) return null;
-  if(moves.length===1) return moves[0];
+  if(moves.length === 1) return moves[0];
 
-  // 難易度ごとのランダム性のみ（弱体化用の追加ランダムは廃止）
   if(rnd && Math.random() < rnd){
     return moves[Math.floor(Math.random()*moves.length)];
   }
 
   const empties = 64 - countDiscs(board,1) - countDiscs(board,2);
+  const prof = aiStrengthProfile(depth, boost);
 
-  // boost で探索の深さを引き上げる（強い難易度ほど深く読む）
-  let searchDepth = depth;
-  if(boost) searchDepth = Math.round(depth + (boost-1)*2.2);
-  searchDepth = Math.max(1, Math.min(12, searchDepth));
+  let maxDepth = prof.maxDepth;
+  if(empties <= prof.exactEmpties) maxDepth = Math.max(maxDepth, empties);
+  maxDepth = Math.max(1, Math.min(maxDepth, empties));
 
-  // 終盤は完全読み切りに近づける
-  if(empties <= 12) searchDepth = Math.max(searchDepth, Math.min(empties, 12));
-  // 残りが少ないなら無駄に深く読まない
-  searchDepth = Math.min(searchDepth, Math.max(1, empties));
+  const ctx = { deadline: Date.now() + prof.timeMs, timedOut: false, n: 0 };
+  let best = orderMoves(moves)[0];
 
-  // 探索ノード数の上限（重くなりすぎないように）
-  const budget = {n:0, max: 45000};
-
-  const r = minimax(board, searchDepth, -Infinity, Infinity, true, aiPlayer, aiPlayer, budget);
-  if(r.move) return r.move;
-
-  // フォールバック：1手評価で最善を選ぶ
-  let bestM = moves[0], bestS = -Infinity;
-  for(const m of moves){
-    const nb = applyMove(board,m.row,m.col,aiPlayer,m.flips);
-    const s = evaluate(nb, aiPlayer);
-    if(s>bestS){ bestS=s; bestM=m; }
+  // 反復深化：浅い読みから順に深めていき、時間が尽きた時点で打ち切る
+  for(let d = 1; d <= maxDepth; d++){
+    const r = minimax(board, d, -Infinity, Infinity, true, aiPlayer, aiPlayer, ctx, best);
+    if(ctx.timedOut) break;
+    if(r.move) best = r.move;
   }
-  return bestM;
+  return best;
 }
 
 /* ============================================================
@@ -1088,7 +1110,6 @@ function getWinRate(){
   return Math.round((wins / total) * 100);
 }
 
-// GitHub Pages 上では index.html と db/ が同じ階層にあるため相対パスで参照する
 const NEWS_BASE_URL = 'db/news';
 let newsNetworkError = false;
 
@@ -1100,7 +1121,7 @@ function fetchWithTimeout(url, timeout = 5000){
     .catch(e => { clearTimeout(timeoutId); throw e; });
 }
 
-// ファイル名から日付とピン留めを判定する（例: pnews20260206.md → ピン留め / 2026-02-06）
+// ファイル名から日付とピン留めを判定する（例: pnews20260206.md → ピン留め）
 function parseNewsFilename(filename){
   const isPinned = filename.startsWith('p');
   const m = filename.match(/(\d{8})/);
@@ -1112,11 +1133,9 @@ function parseNewsFilename(filename){
   );
   return { isPinned, dateStr, newsDate };
 }
-
 async function fetchNewsList(){
   newsNetworkError = false;
   try{
-    // 1) list.json でお知らせの一覧を取得する
     let fileList = null;
     try{
       const res = await fetchWithTimeout(`${NEWS_BASE_URL}/list.json`, 5000);
@@ -1126,7 +1145,6 @@ async function fetchNewsList(){
       console.warn('list.json を取得できませんでした:', err.message);
     }
 
-    // 2) list.json が無い場合は、直近10日分のファイル名を推測して探す
     if(!Array.isArray(fileList)){
       fileList = [];
       const today = new Date();
@@ -1138,7 +1156,6 @@ async function fetchNewsList(){
       }
     }
 
-    // 3) 本文をまとめて取得する（並列なので件数が増えても速い）
     const results = await Promise.all(fileList.map(filename =>
       fetchWithTimeout(`${NEWS_BASE_URL}/${filename}`, 5000)
         .then(async res => {
@@ -1153,13 +1170,10 @@ async function fetchNewsList(){
     ));
 
     const newsItems = results.filter(Boolean);
-
-    // 4) ピン留めを先頭に、その中とその下をそれぞれ日付の新しい順に並べる
     newsItems.sort((a, b) => {
       if(a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
       return b.newsDate - a.newsDate;
     });
-
     console.log(`お知らせ: ${newsItems.length}件取得` + (newsNetworkError ? '（通信がブロックされました）' : ''));
     return newsItems;
   }catch(err){
@@ -1495,20 +1509,20 @@ function viewStory(){
       <p>物語を進めながら、様々なキャラクターとオセロで対局します。</p>
     </div>
     <div style="background:#FF9800 !important; border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-1); padding:16px; margin-bottom:12px;">
-      <p style="color:#fff; text-align:center; margin:0;">このモードはv.2.0.0c以降で実装予定です</p>
+      <p style="color:#fff; text-align:center; margin:0; line-height:1.8;">v.3.0.0から、英雄と魔王、<br>まったく正反対な二人の、<br>ストーリーが始まる──</p>
     </div>
   `;
 }
 
 function viewMemory(){
   return `
-    <div class="hero" style="background:linear-gradient(150deg, #9CCC65, #7CB342 75%);">
-      <div class="hero-eyebrow">MEMORY</div>
-      <h2>記憶</h2>
-      <p>ゲーム内で使用されている楽曲やストーリー内の画像をギャラリーで楽しめます。</p>
+    <div class="hero" style="background:linear-gradient(150deg, #A9764F, #6F4A2E 78%);">
+      <div class="hero-eyebrow">CAFE</div>
+      <h2>カフェ</h2>
+      <p>対局のあとにひと息つく場所です。店内に流れる曲を聴いたり、飾られたイラストを眺めながら、ゆっくりお過ごしください。</p>
     </div>
-    <div style="background:#9CCC65 !important; border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-1); padding:16px; margin-bottom:12px;">
-      <p style="color:#fff; text-align:center; margin:0;">このモードはv.2.0.0c以降で実装予定です</p>
+    <div style="background:#9E6B48 !important; border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-1); padding:16px; margin-bottom:12px;">
+      <p style="color:#fff; text-align:center; margin:0;">まだ準備中です。開店までもう少しお待ちください。</p>
     </div>
   `;
 }
@@ -2789,7 +2803,6 @@ function viewSettings(){
    ============================================================ */
 function encodeSave(obj){
   const json = JSON.stringify(obj);
-  // TextEncoder は絵文字などのサロゲートペアも正しく UTF-8 に変換する
   const bytes = new TextEncoder().encode(json);
   let bin = '';
   for(let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
