@@ -670,8 +670,52 @@ function deepMerge(base, extra){
   }
   return base;
 }
+// 履歴は無制限に増やさない（localStorage は約5MBが上限のため）
+const HISTORY_LIMIT = 60;   // 各モードで残す対局数
+const REPLAY_LIMIT  = 20;   // 盤面（リプレイ用）を保持する対局数
+
+function allHistories(){
+  return [
+    state.battleHistory,
+    state.training && state.training.history,
+    state.casual && state.casual.history,
+    state.variety && state.variety.history
+  ].filter(Array.isArray);
+}
+
+// 古い対局は削り、さらに古いものはリプレイ用の盤面だけ捨てる
+function trimHistories(historyLimit, replayLimit){
+  for(const h of allHistories()){
+    if(h.length > historyLimit) h.length = historyLimit;
+    for(let i = replayLimit; i < h.length; i++){
+      if(h[i] && h[i].boardStates) delete h[i].boardStates;
+    }
+  }
+}
+
 function saveState(){
-  localStorage.setItem('genseki_othello_save_v1', JSON.stringify(state));
+  trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
+  try{
+    localStorage.setItem('genseki_othello_save_v1', JSON.stringify(state));
+  }catch(err){
+    // 容量オーバー時は履歴をさらに減らして再試行する
+    console.warn('保存に失敗したため履歴を整理します:', err && err.name);
+    try{
+      trimHistories(20, 5);
+      localStorage.setItem('genseki_othello_save_v1', JSON.stringify(state));
+      toast('記録が多いため、古い履歴を整理しました');
+    }catch(err2){
+      try{
+        trimHistories(5, 0);
+        localStorage.setItem('genseki_othello_save_v1', JSON.stringify(state));
+        toast('記録が多いため、古い履歴を整理しました');
+      }catch(err3){
+        // ここでも失敗した場合、例外を投げるとゲームが止まるので握りつぶす
+        console.error('セーブできませんでした:', err3);
+        toast('セーブできませんでした');
+      }
+    }
+  }
   renderHanko();
 }
 
@@ -2579,14 +2623,19 @@ function openReplay(scope, idx){
   const list = scope==='battle'?state.battleHistory : scope==='training'?state.training.history : state.casual.history;
   const entry = list[idx];
   if(!entry) return;
+  if(!Array.isArray(entry.boardStates) || entry.boardStates.length===0){
+    toast('古い対局のため、リプレイは残っていません');
+    return;
+  }
   replayState = {entry, step:0, playing:false};
   sub.library='replay';
   render();
 }
 function renderReplayScreen(){
   const {entry, step} = replayState;
-  const total = entry.boardStates.length;
-  const board = step===0 ? newBoard() : entry.boardStates[step-1];
+  const states = Array.isArray(entry.boardStates) ? entry.boardStates : [];
+  const total = states.length;
+  const board = (step===0 || !states[step-1]) ? newBoard() : states[step-1];
   const cells=[];
   for(let r=0;r<8;r++) for(let c=0;c<8;c++){
     const v=board[r][c];
