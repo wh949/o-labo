@@ -1897,7 +1897,8 @@ function showStellaUnlock(){
 
 function difficultyDisplayName(d){
   if(d.nameRuby){
-    const level = d.nameRubyLevel || 1;
+    // nameRubyLevel:0 を 0 のまま扱う（|| だと 0 が 1 になってしまう）
+    const level = (d.nameRubyLevel === undefined || d.nameRubyLevel === null) ? 1 : d.nameRubyLevel;
     return ruby(d.name, d.nameRuby, level);
   }
   return d.name;
