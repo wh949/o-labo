@@ -501,6 +501,16 @@ html[data-theme="dark"] {
   to{opacity:1; transform:scale(1);}
 }
 @keyframes matchOut{ to{opacity:0;} }
+
+/* オンラインの読み込み表示 */
+.online-spinner{
+  width:34px; height:34px; margin:0 auto;
+  border:3px solid var(--line);
+  border-top-color:var(--jade-deep);
+  border-radius:50%;
+  animation:onlineSpin .9s linear infinite;
+}
+@keyframes onlineSpin{ to{ transform:rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -1969,7 +1979,9 @@ function resultBadge(diffId){
    ============================================================ */
 let fbApp = null, fbDb = null, fbUid = null, fbReady = false, fbInitError = '';
 let onlineRoomRef = null, onlineRoomUnsub = null, onlineQueueRef = null;
-const ONLINE_IDLE_LIMIT = 180000;   // 3分うごきがなければ対局放棄とみなす
+const ONLINE_IDLE_LIMIT = 180000;   // 3分動きがなければ対局放棄とみなす
+const ONLINE_QUEUE_TTL   = 45000;   // 受付が有効な時間
+let onlineQueueBeat = null;
 let onlineIdleTimer = null;
 let onlineState = {
   lastChangeAt: 0,     // 盤面が最後に動いた時刻
@@ -2041,9 +2053,22 @@ function normalizeRoomCode(v){
 
 // 合言葉で入室（居なければ作成して待機、居れば参加）
 async function onlineJoinByCode(code, myName){
-  if(!(await ensureFirebase())){ toast(fbInitError); return; }
   const id = normalizeRoomCode(code);
   if(!id){ toast('合言葉を入力してください'); return; }
+
+  // 押した瞬間に画面を切り替える
+  onlineState.myName = myName;
+  onlineState.mode = 'code';
+  onlineState.phase = 'connecting';
+  sub.online = 'room';
+  render();
+
+  if(!(await ensureFirebase())){
+    toast(fbInitError);
+    onlineState.phase = 'lobby';
+    navigate(()=>{ sub.online = 'lobby'; });
+    return;
+  }
   onlineState.myName = myName;
   state.online.lastName = myName;
   saveState();
@@ -2079,14 +2104,18 @@ async function onlineJoinByCode(code, myName){
     });
 
     if(reason === 'full' || !res.committed || !res.snapshot.exists()){
-      toast('その合言葉では、すでに2人が対局中です。ちがう合言葉にしてください');
+      toast('その合言葉では、すでに2人が対局中です。別の合言葉にしてください');
+      onlineState.phase = 'lobby';
+      navigate(()=>{ sub.online = 'lobby'; });
       return;
     }
     const room = res.snapshot.val();
     if(room.host && room.host.uid === fbUid) onlineState.myColor = 1;
     else if(room.guest && room.guest.uid === fbUid) onlineState.myColor = 2;
     else {
-      toast('その合言葉では、すでに2人が対局中です。ちがう合言葉にしてください');
+      toast('その合言葉では、すでに2人が対局中です。別の合言葉にしてください');
+      onlineState.phase = 'lobby';
+      navigate(()=>{ sub.online = 'lobby'; });
       return;
     }
 
@@ -2096,40 +2125,66 @@ async function onlineJoinByCode(code, myName){
   }catch(err){
     console.error(err);
     toast('入室できませんでした');
+    onlineState.phase = 'lobby';
+    navigate(()=>{ sub.online = 'lobby'; });
   }
 }
 
 // ランダムマッチ：待っている部屋があれば入り、なければ作って待つ
 async function onlineRandomMatch(myName){
-  if(!(await ensureFirebase())){ toast(fbInitError); return; }
+  // 押した瞬間に画面を切り替える（通信を待つと反応が無いように見えるため）
   onlineState.myName = myName;
+  onlineState.mode = 'random';
+  onlineState.phase = 'connecting';
+  sub.online = 'room';
+  render();
+
+  if(!(await ensureFirebase())){
+    toast(fbInitError);
+    onlineState.phase = 'lobby';
+    navigate(()=>{ sub.online = 'lobby'; });
+    return;
+  }
   state.online.lastName = myName;
   saveState();
 
   try{
-    // 受付窓口をひとつだけ用意し、そこを奪い合う。
-    // 2人が同時に押しても、必ず片方が待ち役・もう片方が参加役になる。
     const queueRef = fbDb.ref('matchQueue');
     const myRoomId = 'r' + Math.random().toString(36).slice(2,10);
-    let claimed = null;   // 相手の情報を控える（消す前に取っておく）
 
+    // 先に自分の部屋を作っておく。
+    // （受付に載ってから部屋を作ると、その隙に来た人が部屋を見つけられない）
+    await fbDb.ref('rooms/'+myRoomId).set({
+      status:'waiting', createdAt: Date.now(),
+      host:{uid:fbUid, name:myName},
+      board: boardToStr(newBoard()), turn:1, passStreak:0, moveCount:0
+    });
+
+    let claimed = null;
     const res = await queueRef.transaction(q => {
-      const fresh = q && q.createdAt && (Date.now() - q.createdAt < 120000);
+      const fresh = q && q.createdAt && (Date.now() - q.createdAt < ONLINE_QUEUE_TTL);
       if(!q || !fresh || q.uid === fbUid){
         claimed = null;
         return { uid: fbUid, name: myName, roomId: myRoomId, createdAt: Date.now() };
       }
-      claimed = q;     // ここで控えてから窓口を空ける
+      claimed = q;     // 控えてから受付を空ける
       return null;
     });
 
     if(!res.committed){
-      toast('マッチングに失敗しました。もう一度おためしください');
+      await fbDb.ref('rooms/'+myRoomId).remove().catch(()=>{});
+      toast('マッチングに失敗しました。もう一度お試しください');
+      onlineState.phase = 'lobby';
+      navigate(()=>{ sub.online = 'lobby'; });
       return;
     }
 
     if(claimed && claimed.roomId){
-      // 待っていた人の部屋に入る
+      // 相手が見つかった
+      onlineState.oppName = claimed.name || '相手';
+      onlineState.phase = 'joining';
+      render();
+
       const join = await fbDb.ref('rooms/'+claimed.roomId).transaction(room => {
         if(room && room.status === 'waiting' && room.host && room.host.uid !== fbUid){
           room.guest = {uid:fbUid, name:myName};
@@ -2139,28 +2194,34 @@ async function onlineRandomMatch(myName){
         }
         return;
       });
-      if(!join.committed || !join.snapshot.exists()){
-        toast('相手が退出したようです。もう一度おためしください');
+
+      if(join.committed && join.snapshot.exists()){
+        await fbDb.ref('rooms/'+myRoomId).remove().catch(()=>{});
+        onlineState.myColor = 2;
+        onlineState.roomId = claimed.roomId;
+        onlineAttachRoom(onlineState.roomId);
         return;
       }
-      onlineState.myColor = 2;
-      onlineState.roomId = claimed.roomId;
-    } else {
-      // 自分が待ち役になった
-      await fbDb.ref('rooms/'+myRoomId).set({
-        status:'waiting', createdAt: Date.now(),
-        host:{uid:fbUid, name:myName},
-        board: boardToStr(newBoard()), turn:1, passStreak:0, moveCount:0
-      });
-      queueRef.onDisconnect().remove();
-      onlineState.myColor = 1;
-      onlineState.roomId = myRoomId;
+      // 相手の部屋が消えていた場合は、自分が待ち役になる
+      onlineState.oppName = '';
+      await queueRef.transaction(q => {
+        if(!q) return { uid: fbUid, name: myName, roomId: myRoomId, createdAt: Date.now() };
+        return;
+      }).catch(()=>{});
     }
-    onlineState.mode = 'random';
-    onlineAttachRoom(onlineState.roomId);
+
+    // 自分が待ち役
+    onlineState.phase = 'waiting';
+    queueRef.onDisconnect().remove();
+    onlineState.myColor = 1;
+    onlineState.roomId = myRoomId;
+    onlineStartQueueHeartbeat();
+    onlineAttachRoom(myRoomId);
   }catch(err){
     console.error(err);
     toast('マッチングに失敗しました');
+    onlineState.phase = 'lobby';
+    navigate(()=>{ sub.online = 'lobby'; });
   }
 }
 
@@ -2219,6 +2280,7 @@ function onlineAttachRoom(id){
       });
       sub.online = 'play';
       onlineState.lastChangeAt = Date.now();
+      onlineStopQueueHeartbeat();
       onlineStartIdleWatch();
       if(onlineState.mode === 'random') showMatchFound(newOpp);
     }
@@ -2245,6 +2307,24 @@ function onlineAttachRoom(id){
 }
 
 // 相手が動かないまま3分たったら、放棄とみなして決着させる
+// 待っているあいだ、受付が期限切れにならないよう更新し続ける
+function onlineStartQueueHeartbeat(){
+  onlineStopQueueHeartbeat();
+  onlineQueueBeat = setInterval(()=>{
+    if(!fbDb || onlineState.phase !== 'waiting' || onlineState.mode !== 'random'){
+      onlineStopQueueHeartbeat();
+      return;
+    }
+    fbDb.ref('matchQueue').transaction(q => {
+      if(q && q.uid === fbUid){ q.createdAt = Date.now(); return q; }
+      return;   // 自分の受付でなければ触らない
+    }).catch(()=>{});
+  }, 15000);
+}
+function onlineStopQueueHeartbeat(){
+  if(onlineQueueBeat){ clearInterval(onlineQueueBeat); onlineQueueBeat = null; }
+}
+
 function onlineStartIdleWatch(){
   onlineStopIdleWatch();
   onlineIdleTimer = setInterval(onlineIdleTick, 5000);
@@ -2280,6 +2360,7 @@ async function onlineIdleTick(){
 
 function onlineDetach(){
   onlineStopIdleWatch();
+  onlineStopQueueHeartbeat();
   if(onlineRoomRef && onlineRoomUnsub){
     onlineRoomRef.off('value', onlineRoomUnsub);
   }
@@ -2354,8 +2435,8 @@ function onlineFinish(room){
     // 放置した側の負けにする
     result = (room.abandonedBy === onlineState.myColor) ? 'lose' : 'win';
     onlineState.message = (room.abandonedBy === onlineState.myColor)
-      ? '3分うごきがなかったため、対局を放棄したあつかいになりました'
-      : '相手が3分うごかなかったため、あなたの勝ちです';
+      ? '3分動きがなかったため、対局を放棄した扱いになりました'
+      : '相手が3分動かなかったため、あなたの勝ちです';
     onlineState.abandoned = true;
   } else {
     result = mine > theirs ? 'win' : (mine < theirs ? 'lose' : 'draw');
@@ -2399,7 +2480,7 @@ function viewOnline(){
     <div class="hero" style="background:linear-gradient(150deg, #6C8CD5, #34508F 78%);">
       <div class="hero-eyebrow">ONLINE</div>
       <h2>オンライン</h2>
-      <p>離れた相手と対局できます。合言葉を決めて友だちと遊ぶか、ランダムマッチで誰かと対局しましょう。</p>
+      <p>離れた相手と対局できます。合言葉を決めて友人と遊ぶか、ランダムマッチで誰かと対局できます。</p>
     </div>
     ${notReady ? `<div class="card" style="border:1px solid var(--urushi);">
       <p style="margin:0; font-size:12px; color:var(--urushi);">Firebase の設定が未入力のため、まだ接続できません。</p>
@@ -2407,7 +2488,7 @@ function viewOnline(){
     <div class="card">
       <div class="trow-text" style="margin-bottom:6px;"><b>表示名</b><span>相手の画面に表示されます</span></div>
       <input id="onlineName" type="text" maxlength="12" value="${escapeHtml(name)}"
-             placeholder="なまえ"
+             placeholder="表示名"
              style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px;">
     </div>
 
@@ -2422,7 +2503,7 @@ function viewOnline(){
     <div class="section-title">ランダムマッチ</div>
     <div class="card">
       <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">待っている人がいればすぐ対局が始まります。いなければ相手が来るまで待ちます。</p>
-      <button class="btn btn-soft" data-action="online-random" style="width:100%;">相手をさがす</button>
+      <button class="btn btn-soft" data-action="online-random" style="width:100%;">相手を探す</button>
     </div>
   `;
 }
@@ -2442,19 +2523,46 @@ function renderOnlineRoom(){
       </div>
     `;
   }
+  if(onlineState.phase === 'joining'){
+    return `
+      <div class="hero" style="background:linear-gradient(150deg, #6C8CD5, #34508F 78%);">
+        <div class="hero-eyebrow">ONLINE</div>
+        <h2>相手が見つかりました</h2>
+        <p>${escapeHtml(onlineState.oppName||'相手')} と接続しています…</p>
+      </div>
+      <div class="card" style="text-align:center;">
+        <div class="online-spinner"></div>
+        <p style="margin:12px 0 0; font-size:12px; color:var(--ink-soft);">まもなく対局が始まります</p>
+      </div>
+    `;
+  }
+  if(onlineState.phase === 'connecting'){
+    return `
+      <div class="hero" style="background:linear-gradient(150deg, #6C8CD5, #34508F 78%);">
+        <div class="hero-eyebrow">ONLINE</div>
+        <h2>マッチング読み込み中…</h2>
+        <p>${onlineState.mode === 'code' ? 'サーバーに接続しています。' : '対戦相手を探しています。'}</p>
+      </div>
+      <div class="card" style="text-align:center;">
+        <div class="online-spinner"></div>
+        <p style="margin:12px 0 0; font-size:12px; color:var(--ink-soft);">しばらくお待ちください</p>
+      </div>
+    `;
+  }
   const isCode = onlineState.mode === 'code';
   return `
     <div class="hero" style="background:linear-gradient(150deg, #6C8CD5, #34508F 78%);">
       <div class="hero-eyebrow">ONLINE</div>
       <h2>相手を待っています</h2>
-      <p>${isCode ? '同じ合言葉を相手に伝えてください。' : '対戦相手をさがしています。'}</p>
+      <p>${isCode ? '同じ合言葉を相手に伝えてください。' : '対戦相手を探しています。'}</p>
     </div>
     ${isCode ? `<div class="card" style="text-align:center;">
       <div style="font-size:11.5px; color:var(--ink-soft); margin-bottom:6px;">合言葉</div>
       <div style="font-family:var(--font-title); font-size:22px; font-weight:900; letter-spacing:.06em; color:var(--jade-deep);">${escapeHtml(onlineState.roomId||'')}</div>
     </div>` : ''}
     <div class="card" style="text-align:center;">
-      <p style="margin:0 0 12px; font-size:13px; color:var(--ink-soft);">接続中…</p>
+      <div class="online-spinner"></div>
+      <p style="margin:12px 0 12px; font-size:13px; color:var(--ink-soft);">相手が入室するのを待っています</p>
       <button class="btn btn-ghost" data-action="online-leave" style="width:100%;">やめる</button>
     </div>
   `;
@@ -2710,7 +2818,7 @@ function renderBoardScreen(){
     statusNote = `<div class="pass-note">ひっくり返す石をタップしてください（残り${g.pendingFlips.flips.length-g.pendingFlips.done.length}個）</div>`;
   } else if(g.mode==='online' && g.current !== onlineState.myColor){
     const left = Math.ceil(onlineIdleRemaining()/1000);
-    const warn = (left <= 60) ? `<br><span style="font-size:11px;">あと${left}秒うごきがないと、相手の放棄になります</span>` : '';
+    const warn = (left <= 60) ? `<br><span style="font-size:11px;">あと${left}秒動きがないと、相手の放棄になります</span>` : '';
     statusNote = `<div class="pass-note">${escapeHtml(onlineState.oppName||'相手')}の番です…${warn}</div>`;
   } else if(actualMoves.length===0 && !g.over){
     statusNote = `<div class="pass-note">置ける場所がないため、パスします</div>`;
