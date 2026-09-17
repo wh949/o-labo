@@ -3403,7 +3403,7 @@ document.addEventListener('click', (e)=>{
     case 'tab':
       navigate(()=>{
         const tabId = el.dataset.tab;
-        if(tabId === 'battle' || tabId === 'training' || tabId === 'casual'){
+        if(tabId === 'battle' || tabId === 'training' || tabId === 'casual' || tabId === 'online'){
           currentBasicMode = tabId;
           activeTab = 'basic';
           checkStellaCommand(tabId);
