@@ -9,6 +9,9 @@
 <title>O-LABO</title>
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="favicon.ico">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -509,6 +512,7 @@ const BASIC_TABS = [
   {id:'battle', label:'対戦', icon:'⚫⚪'},
   {id:'training', label:'特訓', icon:'💪'},
   {id:'casual', label:'ゆる', icon:'🌤️'},
+  {id:'online', label:'オンライン', icon:'🌐'},
   {id:'home-sub', label:'ホーム', icon:'🏠'},
 ];
 
@@ -670,6 +674,7 @@ const DEFAULT_STATE = {
   training:{ rankIndex:0, xNumber:0, history:[], winCount:0, startMode:'choice' },
   casual:{ unlocked:{ultra_easy:true,easy:true,normal:true,hard:true,ultra_hard:true,oni:false,ultra_oni:false,kami:false,ultra_kami:false,infinity:false,super_infinity:false,alpha:false,beta:false,gamma:false,super_alpha:false,super_beta:false,super_gamma:false,transcendent:false,zero:false,maru:false,equal:false,not_equal:false,approx:false,chou_transcendent:false,chou_zero:false,chou_maru:false,chou_equal:false,chou_not_equal:false,chou_approx:false,chou:false,null:false,z:false,reverse_a:false,you:false,no_cap:false,sup:false,verse:false,re_no_cap:false,re_sup:false,re_verse:false,exe:false,othello:false,othello_exe:false,exclamation:false,question:false,nijinoten:false,yagyoue:false,kunojiten_ue:false,kunojiten_shita:false,kunojiten:false,kunojiten_daku:false,kunojiten_handaku:false,ka:false,jun:false,nuta:false,tai:false,tou:false,taito:false,maou:false,eiyuu:false,chou_exe:false,chou_othello:false,chou_othello_exe:false,chou_exclamation:false,chou_question:false,chou_nijinoten:false,chou_yagyoue:false,chou_kunojiten_ue:false,chou_kunojiten_shita:false,chou_kunojiten:false,chou_kunojiten_daku:false,chou_kunojiten_handaku:false,chou_ka:false,chou_jun:false,chou_nuta:false,chou_tai:false,chou_tou:false,chou_taito:false,chou_maou:false,chou_eiyuu:false}, results:{}, history:[], showHints:true, startMode:'choice' },
   battleHistory: [],
+  online:{ lastName:'', history:[] },
   variety:{ history:[], customRules:{random:false, lucky_unlucky:false, warp:false, timer:false} },
   story:{}
 };
@@ -955,13 +960,27 @@ function aiChooseMove(board, aiPlayer, depth, rnd, boost){
    3. router / view state
    ============================================================ */
 let activeTab='home';
-let currentBasicMode='battle';  // battle | training | casual
+let currentBasicMode='battle';  // battle | training | casual | online
 let currentAdventureMode='variety';  // variety | story | memory
 let stellaCommandSequence = [];  // Stella コマンド検出用
 
 // ============================================================
 // Audio Management System (BGM/SE)
 // ============================================================
+/* ============================================================
+   Firebase の設定をここに貼り付けてください
+   Firebaseコンソール → プロジェクトの設定 → マイアプリ → SDK の設定と構成
+   ============================================================ */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyD3481HlMki4kgq7m3puHrLfY6Rsh7tZ8c",
+  authDomain: "o-labo-wh949.firebaseapp.com",
+  databaseURL: "https://o-labo-wh949-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "o-labo-wh949",
+  storageBucket: "o-labo-wh949.firebasestorage.app",
+  messagingSenderId: "5105208435",
+  appId: "1:5105208435:web:5e089d3752b1e603c76e06"
+};
+
 const AUDIO_BASE_URL = 'db/audio';
 let audioContext = null;
 let audioBuffers = {
@@ -986,7 +1005,7 @@ const AUDIO_FILES = {
     'tap', 'place', 'flip', 'pass', 'win', 'lose', 'unlock', 'modal_open'
   ]
 };
-const sub={ battle:'home', training:'home', casual:'home', library:'list', settings:'home' };
+const sub={ battle:'home', training:'home', casual:'home', online:'lobby', library:'list', settings:'home' };
 let libTab='battle';
 let game=null; // active game session object
 
@@ -1057,6 +1076,7 @@ function viewFor(tab){
     if(currentBasicMode==='battle') return viewBattle();
     if(currentBasicMode==='training') return viewTraining();
     if(currentBasicMode==='casual') return viewCasual();
+    if(currentBasicMode==='online') return viewOnline();
   }
   if(tab==='adventure'){
     if(currentAdventureMode==='variety') return viewVariety();
@@ -1920,6 +1940,382 @@ function resultBadge(diffId){
   const b = RESULT_BADGES[mark] || RESULT_BADGES.none;
   return `<span class="diff-badge" style="background:${b.color};" title="${b.label}" aria-label="${b.label}"></span>`;
 }
+/* ============================================================
+   オンライン対局（Firebase Realtime Database）
+   ============================================================ */
+let fbApp = null, fbDb = null, fbUid = null, fbReady = false, fbInitError = '';
+let onlineRoomRef = null, onlineRoomUnsub = null, onlineQueueRef = null;
+let onlineState = {
+  phase: 'lobby',      // lobby | waiting | playing | finished
+  roomId: null,
+  myColor: null,       // 1=黒(先手) 2=白(後手)
+  oppName: '',
+  myName: '',
+  message: '',
+  mode: null,          // 'code' | 'random'
+  oppLeft: false
+};
+
+function firebaseConfigured(){
+  return !!(FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.apiKey);
+}
+
+async function ensureFirebase(){
+  if(fbReady) return true;
+  if(!firebaseConfigured()){ fbInitError = 'Firebase の設定が入力されていません'; return false; }
+  if(typeof firebase === 'undefined'){ fbInitError = 'Firebase の読み込みに失敗しました（通信環境を確認してください）'; return false; }
+  try{
+    if(!fbApp) fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+    fbDb = firebase.database();
+    const cred = await firebase.auth().signInAnonymously();
+    fbUid = cred.user.uid;
+    fbReady = true;
+    return true;
+  }catch(err){
+    console.error('Firebase 初期化に失敗:', err);
+    const code = err && err.code;
+    if(code === 'auth/operation-not-allowed'){
+      fbInitError = '匿名ログインが有効になっていません（Authentication → Sign-in method → 匿名 を有効にしてください）';
+    } else if(code === 'auth/unauthorized-domain'){
+      fbInitError = 'このドメインが許可されていません（Authentication → Settings → 承認済みドメイン に追加してください）';
+    } else if(code === 'auth/network-request-failed'){
+      fbInitError = '通信できませんでした。ネットワークを確認してください';
+    } else if(code === 'auth/api-key-not-valid' || code === 'auth/invalid-api-key'){
+      fbInitError = 'Firebase の設定（apiKey）が正しくありません';
+    } else {
+      fbInitError = '接続に失敗しました: ' + (code || (err && err.message) || '不明なエラー');
+    }
+    console.warn('Firebase エラーコード:', code);
+    return false;
+  }
+}
+
+// 盤面を64文字の文字列にする（通信量を抑えるため）
+function boardToStr(b){
+  let s='';
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++) s += b[r][c];
+  return s;
+}
+function strToBoard(s){
+  const b = Array.from({length:8},()=>Array(8).fill(0));
+  if(typeof s !== 'string' || s.length !== 64) return newBoard();
+  for(let i=0;i<64;i++) b[Math.floor(i/8)][i%8] = parseInt(s[i],10) || 0;
+  return b;
+}
+
+function onlineDefaultName(){
+  return (state.online && state.online.lastName) || state.username || 'プレイヤー';
+}
+
+function normalizeRoomCode(v){
+  return String(v||'').trim().toLowerCase().replace(/\s+/g,'');
+}
+
+// 合言葉で入室（居なければ作成して待機、居れば参加）
+async function onlineJoinByCode(code, myName){
+  if(!(await ensureFirebase())){ toast(fbInitError); return; }
+  const id = normalizeRoomCode(code);
+  if(!id){ toast('合言葉を入力してください'); return; }
+  onlineState.myName = myName;
+  state.online.lastName = myName;
+  saveState();
+
+  const ref = fbDb.ref('rooms/'+id);
+  try{
+    const res = await ref.transaction(room => {
+      if(room === null){
+        // 先に来たほうが部屋を作って待つ
+        return {
+          status:'waiting', createdAt: firebase.database.ServerValue.TIMESTAMP,
+          host:{uid:fbUid, name:myName},
+          board: boardToStr(newBoard()), turn:1, passStreak:0, moveCount:0
+        };
+      }
+      if(room.status === 'waiting' && room.host && room.host.uid !== fbUid){
+        room.guest = {uid:fbUid, name:myName};
+        room.status = 'playing';
+        room.startedAt = firebase.database.ServerValue.TIMESTAMP;
+        return room;
+      }
+      if(room.host && room.host.uid === fbUid) return room;      // 自分の部屋に戻った
+      if(room.guest && room.guest.uid === fbUid) return room;    // 再入室
+      return;   // 満室：変更しない
+    });
+
+    if(!res.committed || !res.snapshot.exists()){
+      toast('その合言葉はすでに使われています');
+      return;
+    }
+    const room = res.snapshot.val();
+    if(room.host && room.host.uid === fbUid) onlineState.myColor = 1;
+    else if(room.guest && room.guest.uid === fbUid) onlineState.myColor = 2;
+    else { toast('その合言葉はすでに使われています'); return; }
+
+    onlineState.roomId = id;
+    onlineState.mode = 'code';
+    onlineAttachRoom(id);
+  }catch(err){
+    console.error(err);
+    toast('入室できませんでした');
+  }
+}
+
+// ランダムマッチ：待っている部屋があれば入り、なければ作って待つ
+async function onlineRandomMatch(myName){
+  if(!(await ensureFirebase())){ toast(fbInitError); return; }
+  onlineState.myName = myName;
+  state.online.lastName = myName;
+  saveState();
+
+  try{
+    const snap = await fbDb.ref('lobby').orderByChild('status').equalTo('waiting').limitToFirst(10).once('value');
+    let joined = null;
+    const rooms = snap.val() || {};
+    for(const id of Object.keys(rooms)){
+      if(rooms[id].host && rooms[id].host.uid === fbUid) continue;   // 自分の部屋は避ける
+      const ref = fbDb.ref('rooms/'+id);
+      const res = await ref.transaction(room => {
+        if(room && room.status === 'waiting' && room.host && room.host.uid !== fbUid){
+          room.guest = {uid:fbUid, name:myName};
+          room.status = 'playing';
+          room.startedAt = firebase.database.ServerValue.TIMESTAMP;
+          return room;
+        }
+        return;
+      });
+      if(res.committed && res.snapshot.exists() && res.snapshot.val().status === 'playing'){
+        joined = id; break;
+      }
+    }
+
+    if(joined){
+      await fbDb.ref('lobby/'+joined).remove();
+      onlineState.myColor = 2;
+      onlineState.roomId = joined;
+    } else {
+      // 待つ側になる
+      const id = 'r' + Math.random().toString(36).slice(2,10);
+      await fbDb.ref('rooms/'+id).set({
+        status:'waiting', createdAt: firebase.database.ServerValue.TIMESTAMP,
+        host:{uid:fbUid, name:myName},
+        board: boardToStr(newBoard()), turn:1, passStreak:0, moveCount:0
+      });
+      await fbDb.ref('lobby/'+id).set({status:'waiting', createdAt: firebase.database.ServerValue.TIMESTAMP});
+      fbDb.ref('lobby/'+id).onDisconnect().remove();
+      onlineState.myColor = 1;
+      onlineState.roomId = id;
+    }
+    onlineState.mode = 'random';
+    onlineAttachRoom(onlineState.roomId);
+  }catch(err){
+    console.error(err);
+    toast('マッチングに失敗しました');
+  }
+}
+
+// 部屋の変化を受け取り、盤面に反映する
+function onlineAttachRoom(id){
+  onlineDetach();
+  onlineRoomRef = fbDb.ref('rooms/'+id);
+  onlineState.phase = 'waiting';
+  navigate(()=>{ sub.online = 'room'; });
+
+  onlineRoomUnsub = onlineRoomRef.on('value', snap => {
+    const room = snap.val();
+    if(!room){
+      if(onlineState.phase === 'playing'){
+        onlineState.message = '相手が退出しました';
+        onlineState.oppLeft = true;
+        onlineState.phase = 'finished';
+        render();
+      }
+      return;
+    }
+    if(room.status === 'waiting'){
+      onlineState.phase = 'waiting';
+      render();
+      return;
+    }
+    // 対局中
+    onlineState.oppName = (onlineState.myColor === 1)
+      ? (room.guest && room.guest.name) || '相手'
+      : (room.host && room.host.name) || '相手';
+
+    if(onlineState.phase !== 'playing'){
+      onlineState.phase = 'playing';
+      game = makeGameSession('online', {
+        playerStarts: onlineState.myColor === 1,
+        myColor: onlineState.myColor,
+        showHints: true
+      });
+      sub.online = 'play';
+    }
+    game.board = strToBoard(room.board);
+    game.current = room.turn || 1;
+    game.passStreak = room.passStreak || 0;
+    game.moveCount = room.moveCount || 0;
+
+    if(room.status === 'finished'){
+      if(!game.over){
+        game.over = true;
+        onlineState.phase = 'finished';
+        onlineFinish(room);
+      }
+    }
+    render();
+  });
+
+  // 接続が切れたら部屋を片付ける
+  onlineRoomRef.child('status').onDisconnect().set('abandoned');
+}
+
+function onlineDetach(){
+  if(onlineRoomRef && onlineRoomUnsub){
+    onlineRoomRef.off('value', onlineRoomUnsub);
+  }
+  onlineRoomRef = null; onlineRoomUnsub = null;
+}
+
+async function onlineLeave(){
+  try{
+    if(onlineRoomRef){
+      onlineRoomRef.child('status').onDisconnect().cancel();
+      if(onlineState.roomId){
+        await fbDb.ref('lobby/'+onlineState.roomId).remove().catch(()=>{});
+        await fbDb.ref('rooms/'+onlineState.roomId).remove().catch(()=>{});
+      }
+    }
+  }catch(err){ console.warn(err); }
+  onlineDetach();
+  onlineState.phase='lobby'; onlineState.roomId=null; onlineState.myColor=null;
+  onlineState.oppLeft=false; onlineState.message='';
+  game = null;
+  navigate(()=>{ sub.online='lobby'; });
+}
+
+// 自分の手を送信する
+async function onlineSendMove(r, c){
+  if(!onlineRoomRef || !game) return;
+  const flips = getFlips(game.board, r, c, onlineState.myColor);
+  if(!flips.length) return;
+
+  const nb = applyMove(game.board, r, c, onlineState.myColor, flips);
+  const me = onlineState.myColor, opp = me===1?2:1;
+  let nextTurn, passStreak = 0, finished = false;
+  if(validMoves(nb, opp).length > 0){
+    nextTurn = opp;
+  } else if(validMoves(nb, me).length > 0){
+    nextTurn = me; passStreak = (game.passStreak||0) + 1;
+  } else {
+    nextTurn = opp; finished = true;
+  }
+
+  try{
+    await onlineRoomRef.update({
+      board: boardToStr(nb),
+      turn: nextTurn,
+      passStreak,
+      moveCount: (game.moveCount||0) + 1,
+      lastMove: {row:r, col:c, by:me},
+      status: finished ? 'finished' : 'playing',
+      updatedAt: firebase.database.ServerValue.TIMESTAMP
+    });
+  }catch(err){
+    console.error(err);
+    toast('通信に失敗しました');
+  }
+}
+
+function onlineFinish(room){
+  const {black, white} = countStones(game.board);
+  const mine = onlineState.myColor === 1 ? black : white;
+  const theirs = onlineState.myColor === 1 ? white : black;
+  const result = mine > theirs ? 'win' : (mine < theirs ? 'lose' : 'draw');
+  state.totalGames = (state.totalGames||0) + 1;
+  if(result === 'win'){
+    state.totalWins = (state.totalWins||0) + 1;
+    state.playerRank = Math.min(999, state.playerRank + 1);
+  }
+  state.online.history = state.online.history || [];
+  state.online.history.unshift({
+    timestamp: Date.now(), myScore: mine, aiScore: theirs,
+    result, oppName: onlineState.oppName, difficulty: 'オンライン'
+  });
+  saveState();
+  game.lastResult = {result, myScore:mine, aiScore:theirs};
+}
+
+function viewOnline(){
+  if(game && game.mode==='online' && sub.online==='play') return renderBoardScreen();
+  if(sub.online==='room') return renderOnlineRoom();
+
+  const name = onlineState.myName || onlineDefaultName();
+  const notReady = !firebaseConfigured();
+  return `
+    <div class="hero" style="background:linear-gradient(150deg, #6C8CD5, #34508F 78%);">
+      <div class="hero-eyebrow">ONLINE</div>
+      <h2>オンライン</h2>
+      <p>離れた相手と対局できます。合言葉を決めて友だちと遊ぶか、ランダムマッチで誰かと対局しましょう。</p>
+    </div>
+    ${notReady ? `<div class="card" style="border:1px solid var(--urushi);">
+      <p style="margin:0; font-size:12px; color:var(--urushi);">Firebase の設定が未入力のため、まだ接続できません。</p>
+    </div>` : ''}
+    <div class="card">
+      <div class="trow-text" style="margin-bottom:6px;"><b>表示名</b><span>相手の画面に表示されます</span></div>
+      <input id="onlineName" type="text" maxlength="12" value="${escapeHtml(name)}"
+             placeholder="なまえ"
+             style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px;">
+    </div>
+
+    <div class="section-title">合言葉で対戦</div>
+    <div class="card">
+      <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">同じ合言葉を入れた人どうしが対戦します。先に入った人が先手（黒）です。</p>
+      <input id="onlineCode" type="text" maxlength="20" placeholder="例：おせろ123"
+             style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; margin-bottom:10px;">
+      <button class="btn btn-primary" data-action="online-join-code" style="width:100%;">この合言葉で対戦する</button>
+    </div>
+
+    <div class="section-title">ランダムマッチ</div>
+    <div class="card">
+      <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">待っている人がいればすぐ対局が始まります。いなければ相手が来るまで待ちます。</p>
+      <button class="btn btn-soft" data-action="online-random" style="width:100%;">相手をさがす</button>
+    </div>
+  `;
+}
+
+function renderOnlineRoom(){
+  if(onlineState.phase === 'finished'){
+    const r = game && game.lastResult;
+    return `
+      <div class="hero" style="background:linear-gradient(150deg, #6C8CD5, #34508F 78%);">
+        <div class="hero-eyebrow">ONLINE</div>
+        <h2>${onlineState.oppLeft ? '対局が終わりました' : '対局終了'}</h2>
+        <p>${onlineState.message || (r ? (r.result==='win'?'勝ちました！':(r.result==='lose'?'負けました':'引き分けです')) : '')}</p>
+      </div>
+      <div class="card" style="text-align:center;">
+        ${r ? `<p style="margin:0 0 12px; font-size:15px;">あなた ${r.myScore} - ${r.aiScore} ${escapeHtml(onlineState.oppName||'相手')}</p>` : ''}
+        <button class="btn btn-primary" data-action="online-leave" style="width:100%;">オンラインに戻る</button>
+      </div>
+    `;
+  }
+  const isCode = onlineState.mode === 'code';
+  return `
+    <div class="hero" style="background:linear-gradient(150deg, #6C8CD5, #34508F 78%);">
+      <div class="hero-eyebrow">ONLINE</div>
+      <h2>相手を待っています</h2>
+      <p>${isCode ? '同じ合言葉を相手に伝えてください。' : '対戦相手をさがしています。'}</p>
+    </div>
+    ${isCode ? `<div class="card" style="text-align:center;">
+      <div style="font-size:11.5px; color:var(--ink-soft); margin-bottom:6px;">合言葉</div>
+      <div style="font-family:var(--font-title); font-size:22px; font-weight:900; letter-spacing:.06em; color:var(--jade-deep);">${escapeHtml(onlineState.roomId||'')}</div>
+    </div>` : ''}
+    <div class="card" style="text-align:center;">
+      <p style="margin:0 0 12px; font-size:13px; color:var(--ink-soft);">接続中…</p>
+      <button class="btn btn-ghost" data-action="online-leave" style="width:100%;">やめる</button>
+    </div>
+  `;
+}
+
 function viewCasual(){
   if(game && game.mode==='casual' && sub.casual==='play') return renderBoardScreen();
   if(sub.casual==='result') return renderResultScreen();
@@ -2104,16 +2500,22 @@ function renderBoardScreen(){
   const g = game;
   const {black,white} = countStones(g.board);
   const meta = turnColorMeta(g);
-  const leftName = g.mode==='battle'? state.settings.battle.p1 : 'あなた';
-  const rightName = g.mode==='battle'? state.settings.battle.p2 : (g.mode==='training'?'AI（特訓）':'AI');
+  const leftName = g.mode==='battle' ? state.settings.battle.p1
+                 : (g.mode==='online' ? (onlineState.myName||'あなた') : 'あなた');
+  const rightName = g.mode==='battle' ? state.settings.battle.p2
+                  : (g.mode==='online' ? (onlineState.oppName||'相手')
+                  : (g.mode==='training'?'AI（特訓）':'AI'));
   const cells = [];
   const animateOn = state.settings.animFlip;
   const placed = g.animPlaced;
   const flipsAnim = g.animFlips || [];
-  const actualMoves = (!g.over && !g.pendingFlips && !g.thinking && (g.mode!=='battle' ? g.current===1 : true)) ? validMoves(g.board,g.current) : [];
+  const myTurnNow = g.mode==='battle' ? true
+                  : (g.mode==='online' ? g.current===onlineState.myColor : g.current===1);
+  const actualMoves = (!g.over && !g.pendingFlips && !g.thinking && myTurnNow) ? validMoves(g.board,g.current) : [];
   let showHints;
   if(g.mode==='battle') showHints = g.current===1 ? g.opts.p1ShowHints : g.opts.p2ShowHints;
   else if(g.mode==='training') showHints = false;
+  else if(g.mode==='online') showHints = true;
   else showHints = !!g.opts.showHints;
   const hintMoves = showHints ? actualMoves : [];
   const moveMap = {}; hintMoves.forEach(m=>moveMap[m.row+'_'+m.col]=true);
@@ -2232,6 +2634,13 @@ function onCellClick(r,c){
   }
 }
 function tryHumanMove(g,r,c){
+  // オンラインは自分の手番のときだけ、サーバーに送る
+  if(g.mode==='online'){
+    if(g.over || g.current !== onlineState.myColor) return;
+    if(!getFlips(g.board,r,c,g.current).length) return;
+    onlineSendMove(r,c);
+    return;
+  }
   let flips = getFlips(g.board,r,c,g.current);
   if(!flips.length) return;
   
@@ -3139,6 +3548,20 @@ document.addEventListener('click', (e)=>{
     case 'toggle-casual-hint': state.casual.showHints = !state.casual.showHints; saveState(); render(); break;
     case 'toggle-bgm': audioState.bgmEnabled = !audioState.bgmEnabled; render(); break;
     case 'toggle-se': audioState.seEnabled = !audioState.seEnabled; render(); break;
+    case 'online-join-code': {
+      const nameEl = document.getElementById('onlineName');
+      const codeEl = document.getElementById('onlineCode');
+      const nm = (nameEl && nameEl.value.trim()) || onlineDefaultName();
+      onlineJoinByCode(codeEl ? codeEl.value : '', nm);
+      break;
+    }
+    case 'online-random': {
+      const nameEl2 = document.getElementById('onlineName');
+      const nm2 = (nameEl2 && nameEl2.value.trim()) || onlineDefaultName();
+      onlineRandomMatch(nm2);
+      break;
+    }
+    case 'online-leave': onlineLeave(); break;
     case 'export-save': exportSave(el.dataset.scope); break;
     case 'import-save': importSave(el.dataset.scope); break;
     case 'reset-settings':
