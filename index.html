@@ -1982,6 +1982,7 @@ let onlineRoomRef = null, onlineRoomUnsub = null, onlineQueueRef = null;
 const ONLINE_IDLE_LIMIT = 180000;   // 3分動きがなければ対局放棄とみなす
 const ONLINE_QUEUE_TTL   = 45000;   // 受付が有効な時間
 let onlineQueueBeat = null;
+let onlineRescanTimer = null;
 let onlineIdleTimer = null;
 let onlineState = {
   lastChangeAt: 0,     // 盤面が最後に動いた時刻
@@ -1993,7 +1994,8 @@ let onlineState = {
   message: '',
   mode: null,          // 'code' | 'random'
   oppLeft: false,
-  abandoned: false
+  abandoned: false,
+  waitStartedAt: 0
 };
 
 function firebaseConfigured(){
@@ -2131,8 +2133,48 @@ async function onlineJoinByCode(code, myName){
 }
 
 // ランダムマッチ：待っている部屋があれば入り、なければ作って待つ
+// 待っている人の一覧から、自分以外を探して入室を試みる
+async function onlineTryJoinWaiting(myName){
+  const snap = await fbDb.ref('waiting').limitToFirst(20).once('value');
+  const list = snap.val() || {};
+  const now = Date.now();
+  for(const roomId of Object.keys(list)){
+    const e = list[roomId];
+    if(!e || e.uid === fbUid) continue;
+    if(roomId === onlineState.roomId) continue;
+    // 古い受付は掃除して次へ
+    if(!e.createdAt || now - e.createdAt > ONLINE_QUEUE_TTL){
+      fbDb.ref('waiting/'+roomId).remove().catch(()=>{});
+      continue;
+    }
+    onlineState.oppName = e.name || '相手';
+    onlineState.phase = 'joining';
+    render();
+
+    const join = await fbDb.ref('rooms/'+roomId).transaction(room => {
+      if(room && room.status === 'waiting' && room.host && room.host.uid !== fbUid){
+        room.guest = {uid:fbUid, name:myName};
+        room.status = 'playing';
+        room.startedAt = Date.now();
+        return room;
+      }
+      return;
+    });
+    if(join.committed && join.snapshot.exists() && join.snapshot.val().status === 'playing'){
+      await fbDb.ref('waiting/'+roomId).remove().catch(()=>{});
+      return roomId;
+    }
+    // 取れなかった（他の人に先を越された等）ので掃除して次を試す
+    await fbDb.ref('waiting/'+roomId).remove().catch(()=>{});
+    onlineState.oppName = '';
+    onlineState.phase = 'waiting';
+    render();
+  }
+  return null;
+}
+
 async function onlineRandomMatch(myName){
-  // 押した瞬間に画面を切り替える（通信を待つと反応が無いように見えるため）
+  // 押した瞬間に画面を切り替える
   onlineState.myName = myName;
   onlineState.mode = 'random';
   onlineState.phase = 'connecting';
@@ -2149,73 +2191,33 @@ async function onlineRandomMatch(myName){
   saveState();
 
   try{
-    const queueRef = fbDb.ref('matchQueue');
-    const myRoomId = 'r' + Math.random().toString(36).slice(2,10);
+    // まず、すでに待っている人がいないか探す
+    const found = await onlineTryJoinWaiting(myName);
+    if(found){
+      onlineState.myColor = 2;
+      onlineState.roomId = found;
+      onlineAttachRoom(found);
+      return;
+    }
 
-    // 先に自分の部屋を作っておく。
-    // （受付に載ってから部屋を作ると、その隙に来た人が部屋を見つけられない）
+    // いなければ自分が待ち役になる
+    const myRoomId = 'r' + Math.random().toString(36).slice(2,10);
     await fbDb.ref('rooms/'+myRoomId).set({
       status:'waiting', createdAt: Date.now(),
       host:{uid:fbUid, name:myName},
       board: boardToStr(newBoard()), turn:1, passStreak:0, moveCount:0
     });
-
-    let claimed = null;
-    const res = await queueRef.transaction(q => {
-      const fresh = q && q.createdAt && (Date.now() - q.createdAt < ONLINE_QUEUE_TTL);
-      if(!q || !fresh || q.uid === fbUid){
-        claimed = null;
-        return { uid: fbUid, name: myName, roomId: myRoomId, createdAt: Date.now() };
-      }
-      claimed = q;     // 控えてから受付を空ける
-      return null;
+    await fbDb.ref('waiting/'+myRoomId).set({
+      uid: fbUid, name: myName, createdAt: Date.now()
     });
+    fbDb.ref('waiting/'+myRoomId).onDisconnect().remove();
 
-    if(!res.committed){
-      await fbDb.ref('rooms/'+myRoomId).remove().catch(()=>{});
-      toast('マッチングに失敗しました。もう一度お試しください');
-      onlineState.phase = 'lobby';
-      navigate(()=>{ sub.online = 'lobby'; });
-      return;
-    }
-
-    if(claimed && claimed.roomId){
-      // 相手が見つかった
-      onlineState.oppName = claimed.name || '相手';
-      onlineState.phase = 'joining';
-      render();
-
-      const join = await fbDb.ref('rooms/'+claimed.roomId).transaction(room => {
-        if(room && room.status === 'waiting' && room.host && room.host.uid !== fbUid){
-          room.guest = {uid:fbUid, name:myName};
-          room.status = 'playing';
-          room.startedAt = Date.now();
-          return room;
-        }
-        return;
-      });
-
-      if(join.committed && join.snapshot.exists()){
-        await fbDb.ref('rooms/'+myRoomId).remove().catch(()=>{});
-        onlineState.myColor = 2;
-        onlineState.roomId = claimed.roomId;
-        onlineAttachRoom(onlineState.roomId);
-        return;
-      }
-      // 相手の部屋が消えていた場合は、自分が待ち役になる
-      onlineState.oppName = '';
-      await queueRef.transaction(q => {
-        if(!q) return { uid: fbUid, name: myName, roomId: myRoomId, createdAt: Date.now() };
-        return;
-      }).catch(()=>{});
-    }
-
-    // 自分が待ち役
-    onlineState.phase = 'waiting';
-    queueRef.onDisconnect().remove();
     onlineState.myColor = 1;
     onlineState.roomId = myRoomId;
+    onlineState.phase = 'waiting';
+    onlineState.waitStartedAt = Date.now();
     onlineStartQueueHeartbeat();
+    onlineStartRescan(myName);
     onlineAttachRoom(myRoomId);
   }catch(err){
     console.error(err);
@@ -2281,6 +2283,7 @@ function onlineAttachRoom(id){
       sub.online = 'play';
       onlineState.lastChangeAt = Date.now();
       onlineStopQueueHeartbeat();
+      onlineStopRescan();
       onlineStartIdleWatch();
       if(onlineState.mode === 'random') showMatchFound(newOpp);
     }
@@ -2311,18 +2314,45 @@ function onlineAttachRoom(id){
 function onlineStartQueueHeartbeat(){
   onlineStopQueueHeartbeat();
   onlineQueueBeat = setInterval(()=>{
-    if(!fbDb || onlineState.phase !== 'waiting' || onlineState.mode !== 'random'){
+    if(!fbDb || onlineState.phase !== 'waiting' || onlineState.mode !== 'random' || !onlineState.roomId){
       onlineStopQueueHeartbeat();
       return;
     }
-    fbDb.ref('matchQueue').transaction(q => {
-      if(q && q.uid === fbUid){ q.createdAt = Date.now(); return q; }
-      return;   // 自分の受付でなければ触らない
-    }).catch(()=>{});
-  }, 15000);
+    fbDb.ref('waiting/'+onlineState.roomId+'/createdAt').set(Date.now()).catch(()=>{});
+    render();   // 経過時間の表示を更新する
+  }, 5000);
 }
 function onlineStopQueueHeartbeat(){
   if(onlineQueueBeat){ clearInterval(onlineQueueBeat); onlineQueueBeat = null; }
+}
+
+// 待っているあいだも相手を探し続ける。
+// （両方が同時に待ち役になってしまっても、数秒で解消できる）
+function onlineStartRescan(myName){
+  onlineStopRescan();
+  onlineRescanTimer = setInterval(async ()=>{
+    if(!fbDb || onlineState.phase !== 'waiting' || onlineState.mode !== 'random'){
+      onlineStopRescan(); return;
+    }
+    try{
+      const found = await onlineTryJoinWaiting(myName);
+      if(found){
+        onlineStopRescan();
+        onlineStopQueueHeartbeat();
+        // 自分の受付と部屋を片付けてから相手の部屋へ移る
+        if(onlineState.roomId){
+          fbDb.ref('waiting/'+onlineState.roomId).remove().catch(()=>{});
+          fbDb.ref('rooms/'+onlineState.roomId).remove().catch(()=>{});
+        }
+        onlineState.myColor = 2;
+        onlineState.roomId = found;
+        onlineAttachRoom(found);
+      }
+    }catch(err){ console.warn('再探索に失敗:', err); }
+  }, 3000);
+}
+function onlineStopRescan(){
+  if(onlineRescanTimer){ clearInterval(onlineRescanTimer); onlineRescanTimer = null; }
 }
 
 function onlineStartIdleWatch(){
@@ -2361,6 +2391,7 @@ async function onlineIdleTick(){
 function onlineDetach(){
   onlineStopIdleWatch();
   onlineStopQueueHeartbeat();
+  onlineStopRescan();
   if(onlineRoomRef && onlineRoomUnsub){
     onlineRoomRef.off('value', onlineRoomUnsub);
   }
@@ -2375,10 +2406,7 @@ async function onlineLeave(){
     // 待っている途中でやめた場合は、受付と部屋を片付ける
     if(fbDb && onlineState.roomId && onlineState.phase !== 'playing'){
       if(onlineState.mode === 'random'){
-        await fbDb.ref('matchQueue').transaction(q => {
-          if(q && q.uid === fbUid) return null;   // 自分の受付だけ消す
-          return;
-        }).catch(()=>{});
+        await fbDb.ref('waiting/'+onlineState.roomId).remove().catch(()=>{});
       }
       await fbDb.ref('rooms/'+onlineState.roomId).transaction(room => {
         if(room && room.status === 'waiting' && room.host && room.host.uid === fbUid) return null;
@@ -2388,7 +2416,7 @@ async function onlineLeave(){
   }catch(err){ console.warn(err); }
   onlineDetach();
   onlineState.phase='lobby'; onlineState.roomId=null; onlineState.myColor=null;
-  onlineState.oppLeft=false; onlineState.message=''; onlineState.mode=null; onlineState.abandoned=false;
+  onlineState.oppLeft=false; onlineState.message=''; onlineState.mode=null; onlineState.abandoned=false; onlineState.waitStartedAt=0;
   game = null;
   navigate(()=>{ sub.online='lobby'; });
 }
@@ -2562,7 +2590,10 @@ function renderOnlineRoom(){
     </div>` : ''}
     <div class="card" style="text-align:center;">
       <div class="online-spinner"></div>
-      <p style="margin:12px 0 12px; font-size:13px; color:var(--ink-soft);">相手が入室するのを待っています</p>
+      <p style="margin:12px 0 12px; font-size:13px; color:var(--ink-soft);">
+        ${isCode ? '相手が入室するのを待っています'
+                 : `対戦相手を探しています（${Math.floor((Date.now()-(onlineState.waitStartedAt||Date.now()))/1000)}秒）`}
+      </p>
       <button class="btn btn-ghost" data-action="online-leave" style="width:100%;">やめる</button>
     </div>
   `;
