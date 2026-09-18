@@ -515,6 +515,98 @@ html[data-theme="dark"] {
 /* オンラインで自分の側を示す */
 .score-chip.is-me{ outline:2px solid var(--jade-deep); outline-offset:1px; }
 .score-chip.is-me .sc-name::after{ content:'（あなた）'; font-size:10px; opacity:.75; }
+
+/* 音量スライダー */
+.vol-row{ display:flex; align-items:center; gap:10px; padding:6px 2px 10px; }
+.vol-label{ font-size:12px; color:var(--ink-soft); flex:0 0 auto; }
+.vol-slider{ flex:1; min-width:0; accent-color:var(--jade-deep); height:24px; }
+.vol-num{ flex:0 0 34px; text-align:right; font-size:12px; font-variant-numeric:tabular-nums; color:var(--ink); }
+
+/* Stella 挑戦中の告知 */
+.stella-banner{
+  margin:10px auto 0; max-width:420px; padding:8px 12px; border-radius:10px;
+  background:linear-gradient(135deg,#2a1f5c,#0d1f3c);
+  color:#FFD700; font-weight:800; font-size:12.5px; text-align:center;
+  box-shadow:0 2px 10px rgba(0,0,0,.28); letter-spacing:.02em;
+}
+/* スキンを有効にするボタン */
+.btn-stella{
+  width:100%; margin-top:10px;
+  background:linear-gradient(135deg,#FFD84D,#F5B301);
+  color:#3a2a00; font-weight:900; border:1px solid #e0a800;
+  box-shadow:0 2px 10px rgba(245,179,1,.35);
+}
+
+/* Stella のイラスト版：マス目まで宇宙の色にする */
+.board.stella.illust{
+  background:
+    radial-gradient(3px 3px at 18% 24%, #fff, transparent),
+    radial-gradient(2px 2px at 68% 62%, #ffe9a8, transparent),
+    radial-gradient(4px 4px at 42% 44%, #fff, transparent),
+    radial-gradient(2px 2px at 86% 18%, #cfe6ff, transparent),
+    radial-gradient(3px 3px at 12% 78%, #fff, transparent),
+    linear-gradient(155deg, #4b3aa0, #2b2f7d 52%, #171a4a);
+  background-size: 170% 170%, 230% 230%, 190% 190%, 280% 280%, 250% 250%, 100% 100%;
+  padding:3.4%; border-radius:24px;
+  box-shadow:0 6px 0 #17143a, 0 14px 26px -12px rgba(10,10,40,.55);
+}
+/* マス目：緑ではなく、宇宙にあわせた濃い紫紺 */
+.board.stella.illust .cell{
+  background:rgba(58,52,126,.78);
+  border-radius:8px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);
+}
+.board.stella.illust .cell::before{ box-shadow:inset 0 0 0 2px rgba(255,255,255,.22); }
+.board.stella.illust .cell.hint::after{
+  background:rgba(255,226,130,.7);
+  box-shadow:0 0 0 2px rgba(255,226,130,.35);
+}
+/* リアル版のマス目も宇宙になじませる */
+.board.stella:not(.illust) .cell{ background:rgba(255,255,255,.05); }
+.board.stella:not(.illust) .cell.hint::after{ background:rgba(255,226,130,.55); }
+
+/* 星の石：丸い土台は消して、星そのものを見せる */
+.board.stella .stone{
+  background:none !important;
+  box-shadow:none !important;
+}
+.board.stella .stone::after{ display:none !important; }
+.board.stella .stone svg{ filter:drop-shadow(0 2px 3px rgba(0,0,0,.5)); }
+/* イラスト版は輪郭を付けて、はっきりした絵に見せる */
+.board.stella.illust .stone svg path{ stroke:#1b1640; stroke-width:5; stroke-linejoin:round; }
+
+/* Stella 解禁の演出 */
+.stella-unlock{
+  position:fixed; inset:0; z-index:9999;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(8,10,30,.72); backdrop-filter:blur(8px);
+  animation:suIn .45s cubic-bezier(.16,1,.3,1);
+  cursor:pointer;
+}
+.stella-unlock.is-out{ animation:suOut .25s ease forwards; }
+.su-inner{ text-align:center; padding:24px 28px; line-height:1.25; }
+.su-mode{
+  font-family:var(--font-title); font-weight:800; color:#fff;
+  font-size:clamp(14px, 4.4vw, 20px); letter-spacing:.06em;
+  margin-bottom:6px; white-space:nowrap;
+}
+.su-name{
+  font-family:var(--font-title); font-weight:900; color:#FFD34D;
+  font-size:clamp(34px, 12vw, 64px); letter-spacing:.02em;
+  text-shadow:0 0 22px rgba(255,211,77,.55), 0 3px 0 rgba(120,80,0,.35);
+  white-space:nowrap; margin:2px 0 8px;
+}
+.su-name ruby rt{ font-size:.34em; color:#ffe9a8; font-weight:700; }
+.su-open{
+  font-family:var(--font-title); font-weight:900; color:#fff;
+  font-size:clamp(20px, 7vw, 34px); letter-spacing:.04em;
+  white-space:nowrap;
+}
+@keyframes suIn{
+  from{ opacity:0; transform:scale(.9); }
+  to{ opacity:1; transform:scale(1); }
+}
+@keyframes suOut{ to{ opacity:0; } }
 </style>
 </head>
 <body>
@@ -702,8 +794,10 @@ const DEFAULT_STATE = {
     showTimer:true,
     theme:'device',
     allowPass:true,
-    stellaUnlocked:false,
-    stellaEnabled:false,
+    bgmEnabled:true, bgmVolume:50,   // 0〜100
+    seEnabled:true,  seVolume:70,
+    stellaUnlocked:false,   // 解禁済みか（スキン選択に出るか）
+    casualSkin:'default',   // 'default' | 'stella'
     battle:{
       p1:'プレイヤー1', p2:'プレイヤー2', flipMode:'auto',
       hintPrefsByName:{}
@@ -1000,7 +1094,11 @@ function aiChooseMove(board, aiPlayer, depth, rnd, boost){
 let activeTab='home';
 let currentBasicMode='battle';  // battle | training | casual | online
 let currentAdventureMode='variety';  // variety | story | memory
-let stellaCommandSequence = [];  // Stella コマンド検出用
+let stellaCommandSequence = [];   // コマンド検出用（切り替えた時刻も持つ）
+let stellaChallengePending = false;  // コマンド成立、挑戦待ち
+let stellaChallengeActive  = false;  // 挑戦の対局中
+let stellaChallengeWon     = false;  // 挑戦に勝ったか
+const STELLA_COMMAND_GAP = 500;      // 次の切り替えまでの制限（ミリ秒）
 
 // ============================================================
 // Audio Management System (BGM/SE)
@@ -1025,13 +1123,14 @@ let audioBuffers = {
   bgm: {},    // BGM キャッシュ: { bgmName: AudioBuffer, ... }
   se: {}      // SE キャッシュ: { seName: AudioBuffer, ... }
 };
+let audioMissing = {};
+let audioWarned = false;
 let audioState = {
-  currentBGM: null,
-  bgmVolume: 0.5,
-  seVolume: 0.7,
-  bgmEnabled: true,
-  seEnabled: true,
-  bgmNode: null  // 現在再生中のBGM用AudioBufferSourceNode
+  currentBGM: null,    // いま鳴っている曲
+  desiredBGM: null,    // 本来鳴らしたい曲（音を入れ直したときに使う）
+  bgmNode: null,
+  bgmGain: null,
+  unlocked: false      // スマホで音が出せる状態になったか
 };
 
 // オーディオファイル一覧（ゲーム内で使用するもの）
@@ -1068,6 +1167,8 @@ function render(){
   root.innerHTML = viewFor(activeTab);
   attachDynamic();
   
+  updateBGM();
+
   // ホーム画面が表示されたとき、自動的にニュースを読み込む
   if(activeTab === 'home'){
     // DOM が完全に描画された後にニュースを読み込む
@@ -1769,44 +1870,31 @@ function casualUnlockedList(){
   return list;
 }
 function checkStellaCommand(tabId){
-  // ゆるモードにいるときだけコマンド検出
-  if(activeTab !== 'basic' || currentBasicMode !== 'casual') {
-    stellaCommandSequence = [];
-    return;
-  }
-  
-  // コマンド追加: battle → casual → battle → casual → battle
-  if(tabId === 'battle') {
-    stellaCommandSequence.push('battle');
-  } else if(tabId === 'casual') {
-    stellaCommandSequence.push('casual');
-  } else {
-    stellaCommandSequence = [];
-    return;
-  }
-  
-  // 最新5つだけ保持
-  if(stellaCommandSequence.length > 5) {
-    stellaCommandSequence.shift();
-  }
-  
-  // パターンチェック: ['battle','casual','battle','casual','battle']
-  if(stellaCommandSequence.length === 5) {
-    const isPattern = (stellaCommandSequence[0] === 'battle' &&
-                       stellaCommandSequence[1] === 'casual' &&
-                       stellaCommandSequence[2] === 'battle' &&
-                       stellaCommandSequence[3] === 'casual' &&
-                       stellaCommandSequence[4] === 'battle');
-    
-    if(isPattern) {
-      // 超越者が解禁されているか確認
-      if(state.casual.unlocked && state.casual.unlocked.transcendent) {
-        state.settings.stellaUnlocked = true;
-        state.settings.stellaEnabled = true;
-        saveState();
-        showStellaUnlock();
-        stellaCommandSequence = [];
-      }
+  // 対局中は受け付けない
+  if(game){ stellaCommandSequence = []; return; }
+  // すでに挑戦待ち・挑戦中なら重ねて受け付けない
+  if(stellaChallengePending || stellaChallengeActive) return;
+
+  // 対戦とゆる以外を押したら最初から
+  if(tabId !== 'battle' && tabId !== 'casual'){ stellaCommandSequence = []; return; }
+
+  const now = Date.now();
+  const last = stellaCommandSequence[stellaCommandSequence.length - 1];
+  // 前回の切り替えから0.5秒を超えていたら、そこから数え直す
+  if(last && now - last.at > STELLA_COMMAND_GAP) stellaCommandSequence = [];
+
+  stellaCommandSequence.push({ tab: tabId, at: now });
+  if(stellaCommandSequence.length > 5) stellaCommandSequence.shift();
+
+  if(stellaCommandSequence.length === 5){
+    const want = ['battle','casual','battle','casual','battle'];
+    const okOrder = stellaCommandSequence.every((e, k) => e.tab === want[k]);
+    const okSpeed = stellaCommandSequence.every((e, k) =>
+      k === 0 || (e.at - stellaCommandSequence[k-1].at) <= STELLA_COMMAND_GAP);
+    if(okOrder && okSpeed){
+      stellaCommandSequence = [];
+      stellaChallengePending = true;
+      showStellaUnlock();
     }
   }
 }
@@ -1825,6 +1913,7 @@ async function initAudioContext(){
 async function loadAudioFile(type, name){
   // type: 'bgm' or 'se'
   if(audioBuffers[type][name]) return audioBuffers[type][name];
+  if(audioMissing[type + '/' + name]) return null;   // 前回読めなかったものは試さない
   
   try{
     const ctx = await initAudioContext();
@@ -1839,123 +1928,182 @@ async function loadAudioFile(type, name){
     audioBuffers[type][name] = audioBuffer;
     return audioBuffer;
   }catch(err){
-    console.warn(`Could not load audio ${type}/${name}:`, err);
+    // 同じファイルで何度も警告を出さない（まだ音声を置いていない時に大量に出るため）
+    audioMissing[type + '/' + name] = true;
+    if(!audioWarned){
+      audioWarned = true;
+      console.warn('音声ファイルが読み込めません（まだ配置していない場合は無視して構いません）:', type + '/' + name);
+    }
     return null;
   }
 }
 
 async function preloadAudioFiles(){
-  // ゲーム起動時にオーディオファイルを先読み
+  // 効果音だけ先に読む（小さいので待たされない）。
+  // BGMは容量が大きいため、鳴らす直前に読み込む。
   try{
     await initAudioContext();
-    const promises = [];
-    AUDIO_FILES.bgm.forEach(name => promises.push(loadAudioFile('bgm', name)));
-    AUDIO_FILES.se.forEach(name => promises.push(loadAudioFile('se', name)));
-    await Promise.all(promises);
+    await Promise.all(AUDIO_FILES.se.map(name => loadAudioFile('se', name)));
   }catch(err){
-    console.warn('Preload audio error:', err);
+    console.warn('効果音の先読みに失敗:', err);
   }
 }
 
-function playBGM(bgmName, fadeIn=false){
-  if(!audioState.bgmEnabled || !audioContext) return;
-  
-  // 前のBGMを停止
-  if(audioState.bgmNode){
-    audioState.bgmNode.stop();
+// スマホは利用者が画面に触れるまで音を鳴らせない。
+// 最初の操作で音を出せる状態にし、鳴らすはずだったBGMを流す。
+function setupAudioUnlock(){
+  const unlock = async ()=>{
+    try{
+      const ctx = await initAudioContext();
+      if(!ctx) return;
+      if(ctx.state === 'suspended') await ctx.resume();
+      if(ctx.state === 'running'){
+        audioState.unlocked = true;
+        ['pointerdown','touchend','click','keydown'].forEach(ev =>
+          document.removeEventListener(ev, unlock, true));
+        // 開いた時点で鳴らすはずだった曲を流す
+        if(audioState.desiredBGM) playBGM(audioState.desiredBGM, true);
+      }
+    }catch(err){ console.warn('音声の有効化に失敗:', err); }
+  };
+  ['pointerdown','touchend','click','keydown'].forEach(ev =>
+    document.addEventListener(ev, unlock, true));
+}
+
+// 画面に応じたBGMを決める
+function bgmForCurrentScreen(){
+  if(game && game.mode === 'casual'){
+    const boost = (game.opts && game.opts.boost) || 0;
+    return boost >= 2 ? 'casual_hard' : 'casual_easy';
   }
-  
-  if(!audioBuffers.bgm[bgmName]){
-    console.warn(`BGM not loaded: ${bgmName}`);
-    return;
+  if(game && game.mode === 'training') return 'training';
+  if(game && game.mode === 'variety') return 'variety';
+  if(useStellaSkin()) return 'stella';
+  return 'menu';
+}
+function updateBGM(){
+  const want = bgmForCurrentScreen();
+  if(audioState.desiredBGM === want && audioState.currentBGM === want) return;
+  playBGM(want, true);
+}
+
+// 設定から実際の音量（0〜1）を取り出す
+function bgmVolumeNow(){
+  const st = state.settings || {};
+  if(st.bgmEnabled === false) return 0;
+  return Math.max(0, Math.min(100, st.bgmVolume ?? 50)) / 100;
+}
+function seVolumeNow(){
+  const st = state.settings || {};
+  if(st.seEnabled === false) return 0;
+  return Math.max(0, Math.min(100, st.seVolume ?? 70)) / 100;
+}
+
+// 再生中のBGMの音量を、設定を変えた瞬間に反映する
+function applyBgmVolume(){
+  if(audioState.bgmGain && audioContext){
+    audioState.bgmGain.gain.setTargetAtTime(bgmVolumeNow(), audioContext.currentTime, 0.05);
   }
-  
+}
+
+// BGMを流す。ファイルは必要になった時点で読み込む
+async function playBGM(bgmName, fadeIn=true){
+  if(!bgmName) return;
+  audioState.desiredBGM = bgmName;          // 鳴らしたい曲を覚えておく
+  if(state.settings.bgmEnabled === false) return;
+
+  const ctx = await initAudioContext();
+  if(!ctx) return;
+  if(ctx.state === 'suspended') return;     // まだ操作されていない（後で鳴らす）
+  if(audioState.currentBGM === bgmName && audioState.bgmNode) return;   // 同じ曲なら続ける
+
+  const buffer = await loadAudioFile('bgm', bgmName);
+  if(!buffer) return;
+  if(audioState.desiredBGM !== bgmName) return;   // 読み込み中に別の曲へ切り替わった
+
+  stopBGM(true);
   try{
-    const source = audioContext.createBufferSource();
-    source.buffer = audioBuffers.bgm[bgmName];
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
     source.loop = true;
-    
-    const gainNode = audioContext.createGain();
-    gainNode.gain.value = fadeIn ? 0 : audioState.bgmVolume;
-    source.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    if(fadeIn){
-      gainNode.gain.linearRampToValueAtTime(audioState.bgmVolume, audioContext.currentTime + 1);
-    }
-    
+
+    const gain = ctx.createGain();
+    const target = bgmVolumeNow();
+    gain.gain.value = fadeIn ? 0 : target;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    if(fadeIn) gain.gain.linearRampToValueAtTime(target, ctx.currentTime + 0.8);
+
     source.start(0);
     audioState.bgmNode = source;
+    audioState.bgmGain = gain;
     audioState.currentBGM = bgmName;
   }catch(err){
-    console.error('PlayBGM error:', err);
+    console.warn('BGMの再生に失敗:', err);
   }
 }
 
 function stopBGM(fadeOut=false){
-  if(!audioState.bgmNode) return;
-  
+  const node = audioState.bgmNode, gain = audioState.bgmGain;
+  audioState.bgmNode = null; audioState.bgmGain = null; audioState.currentBGM = null;
+  if(!node || !audioContext) return;
   try{
-    if(fadeOut){
-      const gainNode = audioContext.createGain();
-      gainNode.gain.setValueAtTime(audioState.bgmVolume, audioContext.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.5);
-      audioState.bgmNode.stop(audioContext.currentTime + 0.5);
+    if(fadeOut && gain){
+      gain.gain.setTargetAtTime(0, audioContext.currentTime, 0.12);
+      node.stop(audioContext.currentTime + 0.5);
     } else {
-      audioState.bgmNode.stop();
+      node.stop();
     }
-    audioState.bgmNode = null;
-    audioState.currentBGM = null;
-  }catch(err){
-    console.error('StopBGM error:', err);
-  }
+  }catch(err){ /* すでに停止している場合は無視 */ }
 }
 
-function playSE(seName){
-  if(!audioState.seEnabled || !audioContext) return;
-  
-  if(!audioBuffers.se[seName]){
-    console.warn(`SE not loaded: ${seName}`);
-    return;
-  }
-  
+async function playSE(seName){
+  if(state.settings.seEnabled === false) return;
+  const ctx = await initAudioContext();
+  if(!ctx || ctx.state === 'suspended') return;
+
+  const buffer = await loadAudioFile('se', seName);
+  if(!buffer) return;
   try{
-    const source = audioContext.createBufferSource();
-    source.buffer = audioBuffers.se[seName];
-    
-    const gainNode = audioContext.createGain();
-    gainNode.gain.value = audioState.seVolume;
-    source.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const gain = ctx.createGain();
+    gain.gain.value = seVolumeNow();
+    source.connect(gain);
+    gain.connect(ctx.destination);
     source.start(0);
   }catch(err){
-    console.error('PlaySE error:', err);
+    console.warn('効果音の再生に失敗:', err);
   }
 }
 
 function showStellaUnlock(){
+  // 二重に出さない
+  if(document.querySelector('.stella-unlock')) return;
+
   const overlay = document.createElement('div');
-  overlay.style.cssText = `
-    position:fixed; top:0; left:0; right:0; bottom:0;
-    background:rgba(0,0,0,0.7); backdrop-filter:blur(8px);
-    z-index:9999; display:flex; align-items:center; justify-content:center;
-  `;
-  
-  const content = document.createElement('div');
-  content.style.cssText = `
-    font-size:48px; font-weight:700; color:#fff; text-align:center;
-    animation:scaleIn 0.6s ease-out;
-  `;
-  content.innerHTML = `ゆるモード「${ruby('Stella','ステラ',1)}」解禁！！`;
-  
-  overlay.appendChild(content);
+  overlay.className = 'stella-unlock';
+  overlay.innerHTML = `
+    <div class="su-inner">
+      <div class="su-mode">ゆるモード</div>
+      <div class="su-name">「${ruby('Stella','ステラ',1)}」</div>
+      <div class="su-open">解禁！！</div>
+    </div>`;
   document.body.appendChild(overlay);
-  
-  setTimeout(() => {
-    overlay.remove();
-    render();
-  }, 3000);
+
+  let closed = false;
+  const close = ()=>{
+    if(closed) return;
+    closed = true;
+    clearTimeout(timer);
+    overlay.removeEventListener('pointerdown', close);
+    overlay.classList.add('is-out');
+    setTimeout(()=>{ if(overlay.parentNode) overlay.remove(); render(); }, 260);
+  };
+  // タップで消す
+  overlay.addEventListener('pointerdown', close);
+  // 3秒で自動的に消す
+  const timer = setTimeout(close, 3000);
 }
 
 function difficultyDisplayName(d){
@@ -2784,7 +2932,31 @@ function onlineDebugPanel(){
   `;
 }
 
+// Stella 挑戦の対局を始める（難易度αと同じ強さ）
+function startStellaChallenge(){
+  const alpha = CASUAL_DIFFS.find(d => d.id === 'alpha');
+  stellaChallengePending = false;
+  stellaChallengeActive = true;
+  stellaChallengeWon = false;
+  game = makeGameSession('casual', {
+    diffId: 'stella_challenge',
+    diffName: 'Stella',
+    aiDepth: alpha ? alpha.depth : 5,
+    aiRnd: alpha ? alpha.rnd : 0,
+    boost: alpha ? alpha.boost : 1.8,
+    showHints: state.casual.showHints,
+    playerStarts: true
+  });
+  sub.casual = 'play';
+}
+
 function viewCasual(){
+  // コマンドが成立していたら、ゆるモードに来た時点で挑戦を始める
+  if(stellaChallengePending && !game){
+    startStellaChallenge();
+    setTimeout(()=>{ startLiveTimer(); }, 0);
+    return renderBoardScreen();
+  }
   if(game && game.mode==='casual' && sub.casual==='play') return renderBoardScreen();
   if(sub.casual==='result') return renderResultScreen();
   const list = casualUnlockedList();
@@ -2808,6 +2980,14 @@ function viewCasual(){
       <p>ひとりでAIと対局するモードです。難易度は全${CASUAL_DIFFS.length}段階（解禁済み ${CASUAL_DIFFS.filter(d=>!d.locked || state.casual.unlocked[d.id]).length}）あり、相手より5マス以上多く石を取って勝つと次の難易度が解禁されます。</p>
     </div>
     <div class="card">
+      ${state.settings.stellaUnlocked ? `
+      <div class="toggle-row">
+        <div class="trow-text"><b>スキン</b><span>盤と石の見た目を変えられます</span></div>
+      </div>
+      <div class="seg" style="margin-top:6px; margin-bottom:12px;">
+        <button class="seg-btn ${state.settings.casualSkin!=='stella'?'active':''}" data-action="set-casual-skin" data-skin="default">デフォルト</button>
+        <button class="seg-btn ${state.settings.casualSkin==='stella'?'active':''}" data-action="set-casual-skin" data-skin="stella">${ruby('Stella','ステラ',1)}</button>
+      </div>` : ''}
       <div class="toggle-row">
         <div class="trow-text"><b>次に置ける場所を表示</b><span>石を置ける場所にヒントを出します</span></div>
         <label class="switch"><input type="checkbox" ${state.casual.showHints?'checked':''} data-action="toggle-casual-hint"><span class="toggle-track"></span></label>
@@ -2966,9 +3146,17 @@ function turnColorMeta(g){
   }
   return g.current===1 ? {name:'あなた', color:'black'} : {name:'AI', color:'white'};
 }
+// Stella スキンを使う場面か
+//  ・解禁のための挑戦中は必ず使う
+//  ・解禁後は、ゆるモードでスキンに Stella を選んでいるとき
+function useStellaSkin(){
+  if(stellaChallengeActive && game && game.mode==='casual') return true;
+  return !!(game && game.mode==='casual'
+            && state.settings.stellaUnlocked
+            && state.settings.casualSkin === 'stella');
+}
 function boardStyleClass(){ 
-  const stella = (game && game.mode==='casual' && state.settings.stellaEnabled) ? ' stella' : '';
-  return (state.settings.boardStyle==='illust' ? 'illust' : '') + stella;
+  return (state.settings.boardStyle==='illust' ? 'illust' : '') + (useStellaSkin() ? ' stella' : '');
 }
 
 function renderBoardScreen(){
@@ -3021,11 +3209,14 @@ function renderBoardScreen(){
         if(idx!==-1){ stoneCls+=' flipping'; stoneStyle=` style="animation-delay:${idx*75}ms"`; }
       }
       // Stella スキン用の星型石
-      const isStellaMode = game && game.mode==='casual' && state.settings.stellaEnabled;
-      if(isStellaMode){
-        const starColor = v===1 ? '#FFD700' : '#FFF';
-        inner = `<div class="${stoneCls}"${stoneStyle}><svg viewBox="0 0 100 100" style="width:100%; height:100%; fill:${starColor};">
-          <polygon points="50,10 61,40 92,40 68,60 79,90 50,70 21,90 32,60 8,40 39,40"/>
+      if(useStellaSkin()){
+        const starColor = v===1 ? '#FFD34D' : '#FFFFFF';
+        const glow = v===1 ? '#FFF0B8' : '#DFF1FF';
+        inner = `<div class="${stoneCls}"${stoneStyle}><svg viewBox="0 0 100 100" style="width:100%; height:100%;">
+          <defs><radialGradient id="sg${r}${c}" cx="38%" cy="30%" r="72%">
+            <stop offset="0%" stop-color="${glow}"/><stop offset="100%" stop-color="${starColor}"/>
+          </radialGradient></defs>
+          <path d="M47.5,16.5 Q50.0,10.0 52.5,16.5 L58.8,32.8 Q60.6,37.4 65.6,37.7 L83.0,38.6 Q89.9,39.0 84.5,43.4 L71.0,54.4 Q67.1,57.6 68.4,62.4 L72.9,79.2 Q74.7,86.0 68.8,82.2 L54.2,72.7 Q50.0,70.0 45.8,72.7 L31.2,82.2 Q25.3,86.0 27.1,79.2 L31.6,62.4 Q32.9,57.6 29.0,54.4 L15.5,43.4 Q10.1,39.0 17.0,38.6 L34.4,37.7 Q39.4,37.4 41.2,32.8 Z" fill="url(#sg${r}${c})"/>
         </svg></div>`;
       } else {
         inner = `<div class="${stoneCls}"${stoneStyle}></div>`;
@@ -3081,6 +3272,7 @@ function renderBoardScreen(){
       </div>
       <div class="board ${boardStyleClass()}" id="boardEl">${cells.join('')}</div>
       ${varietyEventMarkup}
+      ${stellaChallengeActive ? '<div class="stella-banner">この対局に勝利すると Stella が解禁！</div>' : ''}
       ${statusNote}
     </div>
     ${showPassBtn?`<div style="margin-top:10px;"><button class="btn btn-soft" data-action="player-pass">このターンをパスする</button></div>`:''}
@@ -3406,6 +3598,18 @@ function endGame(g){
     entry.myScore=black; entry.aiScore=white; entry.difficulty=g.opts.diffName;
     entry.result = black>white?'win':(white>black?'lose':'draw');
 
+    // Stella の挑戦は、通常の難易度とは別あつかいにする
+    if(stellaChallengeActive){
+      stellaChallengeWon = (entry.result === 'win');
+      state.totalGames = (state.totalGames || 0) + 1;
+      if(stellaChallengeWon) state.totalWins = (state.totalWins || 0) + 1;
+      state.casual.history.unshift(entry);
+      g.lastResult = entry;
+      sub.casual = 'result';
+      saveState();
+      return;
+    }
+
     // 難易度ごとの成績を記録する（未挑戦 → 敗北 → 勝利 → 完封 の順に上書き）
     state.casual.results = state.casual.results || {};
     const isPerfect = entry.result==='win' && white===0;   // 相手の石が無くなった＝完封
@@ -3495,9 +3699,10 @@ function renderResultScreen(){
     </div>
     <div class="btn-row">
       <button class="btn btn-ghost" data-action="back-home">モード選択に戻る</button>
-      ${(g.mode==='casual' && g.unlockedDiffId) ? `<button class="btn btn-success" data-action="casual-pick" data-id="${g.unlockedDiffId}">難易度「${g.unlockedDiffName}」に進む</button>` : ''}
-      <button class="btn btn-primary" data-action="play-again">もう一度</button>
+      ${(g.mode==='casual' && g.unlockedDiffId && !stellaChallengeActive) ? `<button class="btn btn-success" data-action="casual-pick" data-id="${g.unlockedDiffId}">難易度「${g.unlockedDiffName}」に進む</button>` : ''}
+      ${(stellaChallengeActive && !stellaChallengeWon) ? '' : '<button class="btn btn-primary" data-action="play-again">もう一度</button>'}
     </div>
+    ${(stellaChallengeActive && stellaChallengeWon) ? '<button class="btn btn-stella" data-action="enable-stella">「Stella」スキンを有効にする</button>' : ''}
   `;
 }
 function fmtDuration(sec){
@@ -3696,13 +3901,27 @@ function viewSettings(){
     <div class="section-title">音声</div>
     <div class="card">
       <div class="toggle-row">
-        <div class="trow-text"><b>BGM</b><span>ゲーム中の背景音楽を再生します</span></div>
-        <label class="switch"><input type="checkbox" checked data-action="toggle-bgm"><span class="toggle-track"></span></label>
+        <div class="trow-text"><b>BGM</b><span>背景音楽を再生します</span></div>
+        <label class="switch"><input type="checkbox" ${state.settings.bgmEnabled!==false?'checked':''} data-action="toggle-bgm"><span class="toggle-track"></span></label>
       </div>
+      ${state.settings.bgmEnabled!==false ? `
+      <div class="vol-row">
+        <span class="vol-label">音量</span>
+        <input type="range" class="vol-slider" id="bgmVol" min="0" max="100" step="1"
+               value="${state.settings.bgmVolume ?? 50}" data-action="set-bgm-volume">
+        <span class="vol-num" id="bgmVolNum">${state.settings.bgmVolume ?? 50}</span>
+      </div>` : ''}
       <div class="toggle-row">
-        <div class="trow-text"><b>効果音</b><span>ゲーム操作時の効果音を再生します</span></div>
-        <label class="switch"><input type="checkbox" checked data-action="toggle-se"><span class="toggle-track"></span></label>
+        <div class="trow-text"><b>効果音</b><span>操作時の効果音を再生します</span></div>
+        <label class="switch"><input type="checkbox" ${state.settings.seEnabled!==false?'checked':''} data-action="toggle-se"><span class="toggle-track"></span></label>
       </div>
+      ${state.settings.seEnabled!==false ? `
+      <div class="vol-row">
+        <span class="vol-label">音量</span>
+        <input type="range" class="vol-slider" id="seVol" min="0" max="100" step="1"
+               value="${state.settings.seVolume ?? 70}" data-action="set-se-volume">
+        <span class="vol-num" id="seVolNum">${state.settings.seVolume ?? 70}</span>
+      </div>` : ''}
     </div>
 
     <div class="section-title">対戦モードの設定</div>
@@ -3892,7 +4111,41 @@ function navigate(mutateFn, afterFn){
 /* ============================================================
    13. event delegation
    ============================================================ */
-function attachDynamic(){ /* no-op, using delegation on document */ }
+function attachDynamic(){ /* クリックは document 側で受けている */ }
+
+// スライダーは動かしている最中に反映したいので input イベントで受ける
+document.addEventListener('input', (e)=>{
+  const el = e.target;
+  if(!el || !el.dataset) return;
+  const act = el.dataset.action;
+  if(act === 'set-bgm-volume'){
+    const v = Math.max(0, Math.min(100, parseInt(el.value, 10) || 0));
+    state.settings.bgmVolume = v;
+    const num = document.getElementById('bgmVolNum');
+    if(num) num.textContent = v;
+    applyBgmVolume();          // 鳴らしたまま音量だけ変える
+    audioSaveSoon();
+  } else if(act === 'set-se-volume'){
+    const v = Math.max(0, Math.min(100, parseInt(el.value, 10) || 0));
+    state.settings.seVolume = v;
+    const num = document.getElementById('seVolNum');
+    if(num) num.textContent = v;
+    audioSaveSoon();
+  }
+}, true);
+
+// スライダーを動かすたびに保存すると重いので、止まってから保存する
+let audioSaveTimer = null;
+function audioSaveSoon(){
+  if(audioSaveTimer) clearTimeout(audioSaveTimer);
+  audioSaveTimer = setTimeout(()=>{ saveState(); audioSaveTimer = null; }, 400);
+}
+
+// 効果音の音量は、手を離したときに一度だけ試聴させる
+document.addEventListener('change', (e)=>{
+  const el = e.target;
+  if(el && el.dataset && el.dataset.action === 'set-se-volume') playSE('tap');
+}, true);
 
 document.addEventListener('click', (e)=>{
   try{
@@ -4004,7 +4257,24 @@ document.addEventListener('click', (e)=>{
       if(game && game.mode==='online'){ navigate(()=>{ sub.online='room'; }); break; }
       navigate(()=>{ sub[activeTab]='result'; });
       break;
+    case 'enable-stella':
+      state.settings.stellaUnlocked = true;
+      state.settings.casualSkin = 'stella';
+      saveState();
+      stellaChallengeActive = false;
+      stellaChallengeWon = false;
+      toast('「Stella」スキンを有効にしました');
+      navigate(()=>{ game=null; sub.casual='home'; });
+      break;
+    case 'set-casual-skin':
+      state.settings.casualSkin = (el.dataset.skin === 'stella') ? 'stella' : 'default';
+      saveState();
+      render();
+      break;
     case 'back-home':
+      // 挑戦から抜けるときは挑戦の状態も解除する
+      stellaChallengeActive = false;
+      stellaChallengeWon = false;
       navigate(()=>{ 
         game=null; 
         if(activeTab==='basic' && currentBasicMode==='casual'){
@@ -4049,8 +4319,19 @@ document.addEventListener('click', (e)=>{
     case 'training-start-mode': state.training.startMode=el.dataset.v; saveState(); render(); break;
     case 'casual-start-mode': state.casual.startMode=el.dataset.v; saveState(); render(); break;
     case 'toggle-casual-hint': state.casual.showHints = !state.casual.showHints; saveState(); render(); break;
-    case 'toggle-bgm': audioState.bgmEnabled = !audioState.bgmEnabled; render(); break;
-    case 'toggle-se': audioState.seEnabled = !audioState.seEnabled; render(); break;
+    case 'toggle-bgm':
+      state.settings.bgmEnabled = !(state.settings.bgmEnabled !== false);
+      saveState();
+      if(state.settings.bgmEnabled) playBGM(bgmForCurrentScreen(), true);
+      else stopBGM(true);
+      render();
+      break;
+    case 'toggle-se':
+      state.settings.seEnabled = !(state.settings.seEnabled !== false);
+      saveState();
+      if(state.settings.seEnabled) playSE('tap');
+      render();
+      break;
     case 'online-join-code': {
       const nameEl = document.getElementById('onlineName');
       const codeEl = document.getElementById('onlineCode');
@@ -4158,6 +4439,9 @@ document.addEventListener('touchend', (e)=>{
 applyTheme(state.settings.theme);
 render();
 preloadAudioFiles();
+setupAudioUnlock();
+// 開いた時点でBGMを鳴らす（スマホでは最初の操作の直後に鳴り出す）
+updateBGM();
 </script>
 </body>
 </html>
