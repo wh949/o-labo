@@ -2219,9 +2219,10 @@ async function onlineRandomMatch(myName){
     onlineState.roomId = myRoomId;
     onlineState.phase = 'waiting';
     onlineState.waitStartedAt = Date.now();
+    // onlineAttachRoom は内部で監視を一度すべて止めるため、必ずその後に開始する
+    onlineAttachRoom(myRoomId);
     onlineStartQueueHeartbeat();
     onlineStartRescan(myName);
-    onlineAttachRoom(myRoomId);
   }catch(err){
     console.error(err);
     toast('マッチングに失敗しました');
@@ -2232,7 +2233,7 @@ async function onlineRandomMatch(myName){
 
 // 部屋の変化を受け取り、盤面に反映する
 function onlineAttachRoom(id){
-  onlineDetach();
+  onlineDetachRoomOnly();
   onlineRoomRef = fbDb.ref('rooms/'+id);
   onlineState.phase = 'waiting';
   // navigate() は少し遅れて実行されるため、ここで直接切り替える。
@@ -2321,7 +2322,10 @@ function onlineStartQueueHeartbeat(){
       onlineStopQueueHeartbeat();
       return;
     }
-    fbDb.ref('waiting/'+onlineState.roomId+'/createdAt').set(Date.now()).catch(()=>{});
+    // 通信が一瞬切れると受付が消えることがあるので、丸ごと書き直して復活させる
+    fbDb.ref('waiting/'+onlineState.roomId).set({
+      uid: fbUid, name: onlineState.myName || '', createdAt: Date.now()
+    }).catch(()=>{});
     render();   // 経過時間の表示を更新する
   }, 10000);
 }
@@ -2436,14 +2440,19 @@ async function onlineIdleTick(){
   }catch(err){ console.warn('放棄の記録に失敗:', err); }
 }
 
-function onlineDetach(){
-  onlineStopIdleWatch();
-  onlineStopQueueHeartbeat();
-  onlineStopRescan();
+// 部屋の監視だけを外す（相手探しの監視には触れない）
+function onlineDetachRoomOnly(){
   if(onlineRoomRef && onlineRoomUnsub){
     onlineRoomRef.off('value', onlineRoomUnsub);
   }
   onlineRoomRef = null; onlineRoomUnsub = null;
+}
+// すべての監視を止める（対局終了・退出時に使う）
+function onlineDetach(){
+  onlineStopIdleWatch();
+  onlineStopQueueHeartbeat();
+  onlineStopRescan();
+  onlineDetachRoomOnly();
 }
 
 async function onlineLeave(){
