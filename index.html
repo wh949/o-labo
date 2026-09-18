@@ -797,6 +797,7 @@ const DEFAULT_STATE = {
     bgmEnabled:true, bgmVolume:50,   // 0〜100
     seEnabled:true,  seVolume:70,
     stellaUnlocked:false,   // 解禁済みか（スキン選択に出るか）
+    stellaCheckedV2:false,  // 旧方式の解禁を一度だけ解除するための印
     casualSkin:'default',   // 'default' | 'stella'
     battle:{
       p1:'プレイヤー1', p2:'プレイヤー2', flipMode:'auto',
@@ -818,7 +819,16 @@ function loadState(){
     const raw = localStorage.getItem('genseki_othello_save_v1');
     if(!raw) return structuredClone(DEFAULT_STATE);
     const parsed = JSON.parse(raw);
-    return deepMerge(structuredClone(DEFAULT_STATE), parsed);
+    const st = deepMerge(structuredClone(DEFAULT_STATE), parsed);
+
+    // 以前は隠しコマンドだけで解禁されていたため、一度だけ解除し直す。
+    // （挑戦に勝って解禁する方式に変わったため）
+    if(!st.settings.stellaCheckedV2){
+      st.settings.stellaUnlocked = false;
+      st.settings.casualSkin = 'default';
+      st.settings.stellaCheckedV2 = true;
+    }
+    return st;
   }catch(e){ return structuredClone(DEFAULT_STATE); }
 }
 function deepMerge(base, extra){
@@ -2938,6 +2948,12 @@ function onlineDebugPanel(){
 }
 
 // Stella 挑戦の対局を始める（難易度αと同じ強さ）
+// 挑戦から抜けるときの後始末（スキンも元に戻す）
+function endStellaChallenge(){
+  stellaChallengeActive = false;
+  stellaChallengeWon = false;
+}
+
 function startStellaChallenge(){
   const alpha = CASUAL_DIFFS.find(d => d.id === 'alpha');
   stellaChallengePending = false;
@@ -4162,6 +4178,8 @@ document.addEventListener('click', (e)=>{
       navigate(()=>{
         const tabId = el.dataset.tab;
         if(tabId === 'battle' || tabId === 'training' || tabId === 'casual' || tabId === 'online'){
+          // 挑戦中にタブで抜けた場合は、挑戦を終わらせてスキンも戻す
+          if(stellaChallengeActive){ endStellaChallenge(); game = null; sub.casual = 'home'; }
           currentBasicMode = tabId;
           activeTab = 'basic';
           checkStellaCommand(tabId);
@@ -4211,7 +4229,7 @@ document.addEventListener('click', (e)=>{
       state.settings.battle.flipMode = el.dataset.v; saveState(); render(); break;
     case 'battle-start': startBattle(); break;
     case 'training-start': startTraining(); break;
-    case 'casual-pick': startCasual(el.dataset.id); break;
+    case 'casual-pick': endStellaChallenge(); startCasual(el.dataset.id); break;
     case 'variety-pick': startVariety(el.dataset.presetId); break;
     case 'variety-custom': navigate(()=>{ sub.variety='custom'; }); break;
     case 'variety-back': navigate(()=>{ sub.variety='home'; }); break;
@@ -4266,8 +4284,7 @@ document.addEventListener('click', (e)=>{
       state.settings.stellaUnlocked = true;
       state.settings.casualSkin = 'stella';
       saveState();
-      stellaChallengeActive = false;
-      stellaChallengeWon = false;
+      endStellaChallenge();
       toast('「Stella」スキンを有効にしました');
       navigate(()=>{ game=null; sub.casual='home'; });
       break;
@@ -4278,8 +4295,7 @@ document.addEventListener('click', (e)=>{
       break;
     case 'back-home':
       // 挑戦から抜けるときは挑戦の状態も解除する
-      stellaChallengeActive = false;
-      stellaChallengeWon = false;
+      endStellaChallenge();
       navigate(()=>{ 
         game=null; 
         if(activeTab==='basic' && currentBasicMode==='casual'){
@@ -4291,6 +4307,8 @@ document.addEventListener('click', (e)=>{
       break;
     case 'play-again': {
       const mode=game.mode, opts=game.opts;
+      // 挑戦をやり直す場合、勝利の記録は持ち越さない
+      if(stellaChallengeActive) stellaChallengeWon = false;
       navigate(()=>{ 
         game = makeGameSession(mode, opts);
         // モードに応じて sub を初期化
