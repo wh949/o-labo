@@ -2142,6 +2142,34 @@ async function onlineJoinByCode(code, myName){
 
 // ランダムマッチ：待っている部屋があれば入り、なければ作って待つ
 // 待っている人の一覧から、自分以外を探して入室を試みる
+// 待っている部屋に入る。
+// トランザクションは手元の空データで最初に実行され、そこで中止すると
+// サーバーの値を見にいかないまま失敗するため、update で入室を試みる。
+// 二重入室はセキュリティルール側（status が waiting で guest が居ない時だけ許可）で防ぐ。
+async function onlineClaimRoom(roomId, myName){
+  try{
+    const snap = await fbDb.ref('rooms/'+roomId).once('value');
+    const room = snap.val();
+    if(!room){ onlineLog('入室不可: 部屋が無い ' + roomId); return false; }
+    if(room.status !== 'waiting'){ onlineLog('入室不可: 状態が ' + room.status); return false; }
+    if(room.guest){ onlineLog('入室不可: すでに相手がいる'); return false; }
+    if(room.host && room.host.uid === fbUid){ onlineLog('入室不可: 自分の部屋'); return false; }
+
+    await fbDb.ref('rooms/'+roomId).update({
+      guest: {uid:fbUid, name:myName},
+      status: 'playing',
+      startedAt: Date.now()
+    });
+    onlineLog('入室成功 ' + roomId);
+    return true;
+  }catch(err){
+    const code = (err && err.code) ? err.code : String(err);
+    onlineDebug.lastError = '入室に失敗: ' + code;
+    onlineLog(onlineDebug.lastError);
+    return false;
+  }
+}
+
 async function onlineTryJoinWaiting(myName){
   let snap;
   try{
@@ -2177,21 +2205,11 @@ async function onlineTryJoinWaiting(myName){
     onlineState.phase = 'joining';
     render();
 
-    const join = await fbDb.ref('rooms/'+roomId).transaction(room => {
-      if(room && room.status === 'waiting' && room.host && room.host.uid !== fbUid){
-        room.guest = {uid:fbUid, name:myName};
-        room.status = 'playing';
-        room.startedAt = Date.now();
-        return room;
-      }
-      return;
-    });
-    if(join.committed && join.snapshot.exists() && join.snapshot.val().status === 'playing'){
-      await fbDb.ref('waiting/'+roomId).remove().catch(()=>{});
+    if(await onlineClaimRoom(roomId, myName)){
+      fbDb.ref('waiting/'+roomId).remove().catch(()=>{});
       return roomId;
     }
-    // 取れなかった（他の人に先を越された等）ので掃除して次を試す
-    await fbDb.ref('waiting/'+roomId).remove().catch(()=>{});
+    // 入れなかった場合、相手の受付は消さない（消すと相手が見つからなくなる）
     onlineState.oppName = '';
     onlineState.phase = 'waiting';
     render();
@@ -2407,30 +2425,21 @@ function onlineStartRescan(myName){
         onlineState.phase = 'joining';
         render();
 
-        const join = await fbDb.ref('rooms/'+roomId).transaction(room => {
-          if(room && room.status === 'waiting' && room.host && room.host.uid !== fbUid){
-            room.guest = {uid:fbUid, name:myName};
-            room.status = 'playing';
-            room.startedAt = Date.now();
-            return room;
-          }
-          return;
-        });
-
-        if(join.committed && join.snapshot.exists() && join.snapshot.val().status === 'playing'){
+        if(await onlineClaimRoom(roomId, myName)){
+          const myOld = onlineState.roomId;
           onlineStopRescan();
           onlineStopQueueHeartbeat();
           fbDb.ref('waiting/'+roomId).remove().catch(()=>{});
-          if(onlineState.roomId){
-            fbDb.ref('waiting/'+onlineState.roomId).remove().catch(()=>{});
-            fbDb.ref('rooms/'+onlineState.roomId).remove().catch(()=>{});
+          if(myOld){
+            fbDb.ref('waiting/'+myOld).remove().catch(()=>{});
+            fbDb.ref('rooms/'+myOld).remove().catch(()=>{});
           }
           onlineState.myColor = 2;
           onlineState.roomId = roomId;
           onlineAttachRoom(roomId);
           return;
         }
-        // 取れなかったので待機に戻る
+        // 入れなかった場合も、相手の受付は消さずに待機へ戻る
         onlineState.oppName = '';
         onlineState.phase = 'waiting';
         render();
@@ -2511,10 +2520,14 @@ async function onlineLeave(){
       if(onlineState.mode === 'random'){
         await fbDb.ref('waiting/'+onlineState.roomId).remove().catch(()=>{});
       }
-      await fbDb.ref('rooms/'+onlineState.roomId).transaction(room => {
-        if(room && room.status === 'waiting' && room.host && room.host.uid === fbUid) return null;
-        return;
-      }).catch(()=>{});
+      // 自分がホストで、まだ相手が来ていない部屋なら消す
+      try{
+        const snap = await fbDb.ref('rooms/'+onlineState.roomId).once('value');
+        const room = snap.val();
+        if(room && room.status === 'waiting' && room.host && room.host.uid === fbUid && !room.guest){
+          await fbDb.ref('rooms/'+onlineState.roomId).remove();
+        }
+      }catch(err){ console.warn('部屋の片付けに失敗:', err); }
     }
   }catch(err){ console.warn(err); }
   onlineDetach();
