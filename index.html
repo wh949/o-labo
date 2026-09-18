@@ -1982,6 +1982,12 @@ let onlineRoomRef = null, onlineRoomUnsub = null, onlineQueueRef = null;
 const ONLINE_IDLE_LIMIT = 180000;   // 3分動きがなければ対局放棄とみなす
 const ONLINE_QUEUE_TTL   = 45000;   // 受付が有効な時間
 let onlineQueueBeat = null;
+// 何が起きているか画面で確認するための記録
+let onlineDebug = { myUid:'', waitingCount:0, entries:[], lastError:'', lastEvent:'' };
+function onlineLog(msg){
+  onlineDebug.lastEvent = msg;
+  console.log('[online] ' + msg);
+}
 let onlineRescanTimer = null;
 let onlineIdleTimer = null;
 let onlineState = {
@@ -2012,6 +2018,8 @@ async function ensureFirebase(){
     const cred = await firebase.auth().signInAnonymously();
     fbUid = cred.user.uid;
     fbReady = true;
+    onlineDebug.myUid = fbUid;
+    onlineLog('接続完了 uid=' + fbUid.slice(0,8));
     return true;
   }catch(err){
     console.error('Firebase 初期化に失敗:', err);
@@ -2135,9 +2143,27 @@ async function onlineJoinByCode(code, myName){
 // ランダムマッチ：待っている部屋があれば入り、なければ作って待つ
 // 待っている人の一覧から、自分以外を探して入室を試みる
 async function onlineTryJoinWaiting(myName){
-  const snap = await fbDb.ref('waiting').limitToFirst(20).once('value');
+  let snap;
+  try{
+    snap = await fbDb.ref('waiting').limitToFirst(20).once('value');
+  }catch(err){
+    onlineDebug.lastError = '受付一覧を読めません: ' + (err && err.code ? err.code : err);
+    onlineLog(onlineDebug.lastError);
+    throw err;
+  }
   const list = snap.val() || {};
   const now = Date.now();
+  const keys = Object.keys(list);
+  onlineDebug.waitingCount = keys.length;
+  onlineDebug.entries = keys.map(k => ({
+    room: k,
+    uid: (list[k] && list[k].uid || '').slice(0,8),
+    name: list[k] && list[k].name || '',
+    mine: !!(list[k] && list[k].uid === fbUid),
+    age: list[k] && list[k].createdAt ? Math.round((now - list[k].createdAt)/1000) : -1
+  }));
+  onlineLog('受付一覧 ' + keys.length + '件 / 自分以外 ' +
+    onlineDebug.entries.filter(e=>!e.mine).length + '件');
   for(const roomId of Object.keys(list)){
     const e = list[roomId];
     if(!e || e.uid === fbUid) continue;
@@ -2214,6 +2240,7 @@ async function onlineRandomMatch(myName){
       })
     ]);
     fbDb.ref('waiting/'+myRoomId).onDisconnect().remove();
+    onlineLog('受付に登録した room=' + myRoomId);
 
     onlineState.myColor = 1;
     onlineState.roomId = myRoomId;
@@ -2225,7 +2252,9 @@ async function onlineRandomMatch(myName){
     onlineStartRescan(myName);
   }catch(err){
     console.error(err);
-    toast('マッチングに失敗しました');
+    onlineDebug.lastError = (err && err.code ? err.code : (err && err.message) || String(err));
+    onlineLog('失敗: ' + onlineDebug.lastError);
+    toast('マッチングに失敗しました（' + onlineDebug.lastError + '）');
     onlineState.phase = 'lobby';
     navigate(()=>{ sub.online = 'lobby'; });
   }
@@ -2346,14 +2375,31 @@ function onlineStartRescan(myName){
 
     const list = snap.val() || {};
     const now = Date.now();
-    for(const roomId of Object.keys(list)){
+    const keys = Object.keys(list);
+    onlineDebug.waitingCount = keys.length;
+    onlineDebug.entries = keys.map(k => ({
+      room: k,
+      uid: (list[k] && list[k].uid || '').slice(0,8),
+      name: list[k] && list[k].name || '',
+      mine: !!(list[k] && list[k].uid === fbUid),
+      age: list[k] && list[k].createdAt ? Math.round((now - list[k].createdAt)/1000) : -1
+    }));
+    const others = onlineDebug.entries.filter(e=>!e.mine).length;
+    onlineLog('監視: 受付 ' + keys.length + '件 / 自分以外 ' + others + '件');
+    render();
+
+    for(const roomId of keys){
       const e = list[roomId];
       if(!e || e.uid === fbUid || roomId === onlineState.roomId) continue;
       if(!e.createdAt || now - e.createdAt > ONLINE_QUEUE_TTL) continue;
 
       // 両方が同時に相手へ入室しにいくと二重に成立してしまうため、
       // 識別子の大きいほうだけが動く、と決めておく
-      if(!(String(fbUid) > String(e.uid))) continue;
+      if(!(String(fbUid) > String(e.uid))){
+        onlineLog('相手を発見（' + (e.name||'?') + '）: 相手側が入室する番なので待つ');
+        continue;
+      }
+      onlineLog('相手を発見（' + (e.name||'?') + '）: 入室します');
 
       onlineJoinBusy = true;
       try{
@@ -2656,6 +2702,25 @@ function renderOnlineRoom(){
                  : `対戦相手を探しています（${Math.floor((Date.now()-(onlineState.waitStartedAt||Date.now()))/1000)}秒）`}
       </p>
       <button class="btn btn-ghost" data-action="online-leave" style="width:100%;">やめる</button>
+    </div>
+    ${onlineState.mode==='random' ? onlineDebugPanel() : ''}
+  `;
+}
+
+// マッチングの状態を画面で確認するための表示
+function onlineDebugPanel(){
+  const d = onlineDebug;
+  const rows = d.entries.length
+    ? d.entries.map(e => `<div>${e.mine?'▶ 自分':'・ 相手'}：${escapeHtml(e.name||'(名前なし)')} / uid ${e.uid} / ${e.age}秒前</div>`).join('')
+    : '<div>（受付は空です）</div>';
+  return `
+    <div class="card" style="font-size:11px; line-height:1.7; color:var(--ink-soft);">
+      <b style="color:var(--ink);">マッチングの状態</b>
+      <div style="margin-top:6px;">自分のID: ${d.myUid ? d.myUid.slice(0,8) : '(未接続)'}</div>
+      <div>受付の人数: ${d.waitingCount}</div>
+      ${rows}
+      <div style="margin-top:6px;">直近の動き: ${escapeHtml(d.lastEvent||'-')}</div>
+      ${d.lastError ? `<div style="color:#d33;">エラー: ${escapeHtml(d.lastError)}</div>` : ''}
     </div>
   `;
 }
