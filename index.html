@@ -2202,14 +2202,17 @@ async function onlineRandomMatch(myName){
 
     // いなければ自分が待ち役になる
     const myRoomId = 'r' + Math.random().toString(36).slice(2,10);
-    await fbDb.ref('rooms/'+myRoomId).set({
-      status:'waiting', createdAt: Date.now(),
-      host:{uid:fbUid, name:myName},
-      board: boardToStr(newBoard()), turn:1, passStreak:0, moveCount:0
-    });
-    await fbDb.ref('waiting/'+myRoomId).set({
-      uid: fbUid, name: myName, createdAt: Date.now()
-    });
+    // 2つの書き込みを同時に投げる（順番に待つと、その分だけ遅くなる）
+    await Promise.all([
+      fbDb.ref('rooms/'+myRoomId).set({
+        status:'waiting', createdAt: Date.now(),
+        host:{uid:fbUid, name:myName},
+        board: boardToStr(newBoard()), turn:1, passStreak:0, moveCount:0
+      }),
+      fbDb.ref('waiting/'+myRoomId).set({
+        uid: fbUid, name: myName, createdAt: Date.now()
+      })
+    ]);
     fbDb.ref('waiting/'+myRoomId).onDisconnect().remove();
 
     onlineState.myColor = 1;
@@ -2320,38 +2323,83 @@ function onlineStartQueueHeartbeat(){
     }
     fbDb.ref('waiting/'+onlineState.roomId+'/createdAt').set(Date.now()).catch(()=>{});
     render();   // 経過時間の表示を更新する
-  }, 5000);
+  }, 10000);
 }
 function onlineStopQueueHeartbeat(){
   if(onlineQueueBeat){ clearInterval(onlineQueueBeat); onlineQueueBeat = null; }
 }
 
-// 待っているあいだも相手を探し続ける。
-// （両方が同時に待ち役になってしまっても、数秒で解消できる）
+// 待っているあいだ、受付一覧を監視して相手が現れた瞬間に動く。
+// 定期的に探すのではなく通知を受け取るので、待ち時間がほぼ無くなる。
+let onlineWaitingRef = null, onlineWaitingCb = null, onlineJoinBusy = false;
+
 function onlineStartRescan(myName){
   onlineStopRescan();
-  onlineRescanTimer = setInterval(async ()=>{
-    if(!fbDb || onlineState.phase !== 'waiting' || onlineState.mode !== 'random'){
-      onlineStopRescan(); return;
-    }
-    try{
-      const found = await onlineTryJoinWaiting(myName);
-      if(found){
-        onlineStopRescan();
-        onlineStopQueueHeartbeat();
-        // 自分の受付と部屋を片付けてから相手の部屋へ移る
-        if(onlineState.roomId){
-          fbDb.ref('waiting/'+onlineState.roomId).remove().catch(()=>{});
-          fbDb.ref('rooms/'+onlineState.roomId).remove().catch(()=>{});
+  onlineWaitingRef = fbDb.ref('waiting');
+  onlineWaitingCb = onlineWaitingRef.on('value', async snap => {
+    if(onlineJoinBusy) return;
+    if(onlineState.phase !== 'waiting' || onlineState.mode !== 'random') return;
+
+    const list = snap.val() || {};
+    const now = Date.now();
+    for(const roomId of Object.keys(list)){
+      const e = list[roomId];
+      if(!e || e.uid === fbUid || roomId === onlineState.roomId) continue;
+      if(!e.createdAt || now - e.createdAt > ONLINE_QUEUE_TTL) continue;
+
+      // 両方が同時に相手へ入室しにいくと二重に成立してしまうため、
+      // 識別子の大きいほうだけが動く、と決めておく
+      if(!(String(fbUid) > String(e.uid))) continue;
+
+      onlineJoinBusy = true;
+      try{
+        onlineState.oppName = e.name || '相手';
+        onlineState.phase = 'joining';
+        render();
+
+        const join = await fbDb.ref('rooms/'+roomId).transaction(room => {
+          if(room && room.status === 'waiting' && room.host && room.host.uid !== fbUid){
+            room.guest = {uid:fbUid, name:myName};
+            room.status = 'playing';
+            room.startedAt = Date.now();
+            return room;
+          }
+          return;
+        });
+
+        if(join.committed && join.snapshot.exists() && join.snapshot.val().status === 'playing'){
+          onlineStopRescan();
+          onlineStopQueueHeartbeat();
+          fbDb.ref('waiting/'+roomId).remove().catch(()=>{});
+          if(onlineState.roomId){
+            fbDb.ref('waiting/'+onlineState.roomId).remove().catch(()=>{});
+            fbDb.ref('rooms/'+onlineState.roomId).remove().catch(()=>{});
+          }
+          onlineState.myColor = 2;
+          onlineState.roomId = roomId;
+          onlineAttachRoom(roomId);
+          return;
         }
-        onlineState.myColor = 2;
-        onlineState.roomId = found;
-        onlineAttachRoom(found);
+        // 取れなかったので待機に戻る
+        onlineState.oppName = '';
+        onlineState.phase = 'waiting';
+        render();
+      }catch(err){
+        console.warn('入室に失敗:', err);
+        onlineState.oppName = '';
+        onlineState.phase = 'waiting';
+      }finally{
+        onlineJoinBusy = false;
       }
-    }catch(err){ console.warn('再探索に失敗:', err); }
-  }, 3000);
+      break;
+    }
+  });
 }
 function onlineStopRescan(){
+  if(onlineWaitingRef && onlineWaitingCb){
+    onlineWaitingRef.off('value', onlineWaitingCb);
+  }
+  onlineWaitingRef = null; onlineWaitingCb = null; onlineJoinBusy = false;
   if(onlineRescanTimer){ clearInterval(onlineRescanTimer); onlineRescanTimer = null; }
 }
 
@@ -2501,6 +2549,10 @@ function showMatchFound(oppName){
 function viewOnline(){
   if(game && game.mode==='online' && sub.online==='play') return renderBoardScreen();
   if(sub.online==='room') return renderOnlineRoom();
+
+  // ロビーを開いた時点で接続を済ませておく。
+  // （押してから接続すると、その待ち時間がそのまま体感の遅さになる）
+  if(firebaseConfigured() && !fbReady) ensureFirebase();
 
   const name = onlineState.myName || onlineDefaultName();
   const notReady = !firebaseConfigured();
