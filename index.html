@@ -1870,6 +1870,11 @@ function casualUnlockedList(){
   return list;
 }
 function checkStellaCommand(tabId){
+  // 難易度「α」を解禁していないと受け付けない
+  if(!(state.casual.unlocked && state.casual.unlocked.alpha)){
+    stellaCommandSequence = [];
+    return;
+  }
   // 対局中は受け付けない
   if(game){ stellaCommandSequence = []; return; }
   // すでに挑戦待ち・挑戦中なら重ねて受け付けない
@@ -3950,7 +3955,7 @@ function viewSettings(){
       <button class="btn btn-danger" data-action="delete-cache">キャッシュデータを${ruby('削除','さくじょ',2)}</button>
     </div>
     <div style="text-align:center; margin-top:20px; padding:10px; font-size:10px; color:var(--ink-soft);">
-      <span>ver. 2.4.0</span>
+      <span>ver. 2.4.1</span>
     </div>
     <input type="file" id="importFile" accept=".txt" style="display:none;">
   `;
