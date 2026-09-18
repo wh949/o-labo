@@ -511,6 +511,10 @@ html[data-theme="dark"] {
   animation:onlineSpin .9s linear infinite;
 }
 @keyframes onlineSpin{ to{ transform:rotate(360deg); } }
+
+/* オンラインで自分の側を示す */
+.score-chip.is-me{ outline:2px solid var(--jade-deep); outline-offset:1px; }
+.score-chip.is-me .sc-name::after{ content:'（あなた）'; font-size:10px; opacity:.75; }
 </style>
 </head>
 <body>
@@ -2348,6 +2352,11 @@ function onlineAttachRoom(id){
     game.moveCount = room.moveCount || 0;
     game.over = (room.status === 'finished');
 
+    // 手番が自分に回ってきて置けない場合、自動でパスする
+    if(room.status === 'playing' && !game.over){
+      setTimeout(onlineAutoPassIfNeeded, 300);
+    }
+
     if(room.status === 'finished' && onlineState.phase !== 'finished'){
       onlineState.phase = 'finished';
       onlineStopIdleWatch();
@@ -2538,6 +2547,43 @@ async function onlineLeave(){
 }
 
 // 自分の手を送信する
+// 自分の手番なのに置ける場所が無いとき、自動でパスする。
+// （オンラインには手動のパス手段が無いため、放っておくと進まなくなる）
+let onlinePassBusy = false;
+async function onlineAutoPassIfNeeded(){
+  if(onlinePassBusy) return;
+  if(!onlineRoomRef || !game || game.over) return;
+  if(onlineState.phase !== 'playing') return;
+  if(game.current !== onlineState.myColor) return;
+  if(validMoves(game.board, onlineState.myColor).length > 0) return;
+
+  const me = onlineState.myColor, opp = me===1?2:1;
+  const oppCanMove = validMoves(game.board, opp).length > 0;
+  onlinePassBusy = true;
+  try{
+    if(oppCanMove){
+      onlineLog('置ける場所が無いのでパスします');
+      await onlineRoomRef.update({
+        turn: opp,
+        passStreak: (game.passStreak||0) + 1,
+        updatedAt: Date.now()
+      });
+    } else {
+      // 双方とも置けない＝終局
+      onlineLog('双方とも置けないため終局します');
+      await onlineRoomRef.update({
+        status: 'finished',
+        updatedAt: Date.now()
+      });
+    }
+  }catch(err){
+    console.error(err);
+    onlineDebug.lastError = 'パスに失敗: ' + ((err && err.code) || err);
+  }finally{
+    onlinePassBusy = false;
+  }
+}
+
 async function onlineSendMove(r, c){
   if(!onlineRoomRef || !game) return;
   const flips = getFlips(game.board, r, c, onlineState.myColor);
@@ -2929,11 +2975,21 @@ function renderBoardScreen(){
   const g = game;
   const {black,white} = countStones(g.board);
   const meta = turnColorMeta(g);
-  const leftName = g.mode==='battle' ? state.settings.battle.p1
-                 : (g.mode==='online' ? (onlineState.myName||'あなた') : 'あなた');
-  const rightName = g.mode==='battle' ? state.settings.battle.p2
-                  : (g.mode==='online' ? (onlineState.oppName||'相手')
-                  : (g.mode==='training'?'AI（特訓）':'AI'));
+  // 表示は「左が黒・右が白」で固定なので、名前も色にあわせて割り当てる
+  let leftName, rightName;
+  if(g.mode==='battle'){
+    leftName = state.settings.battle.p1;
+    rightName = state.settings.battle.p2;
+  } else if(g.mode==='online'){
+    const meName = onlineState.myName || 'あなた';
+    const oppName = onlineState.oppName || '相手';
+    // 自分が黒（先手）なら左が自分、白（後手）なら右が自分
+    leftName  = onlineState.myColor === 1 ? meName : oppName;
+    rightName = onlineState.myColor === 1 ? oppName : meName;
+  } else {
+    leftName = 'あなた';
+    rightName = (g.mode==='training' ? 'AI（特訓）' : 'AI');
+  }
   const cells = [];
   const animateOn = state.settings.animFlip;
   const placed = g.animPlaced;
@@ -2989,9 +3045,16 @@ function renderBoardScreen(){
   } else if(g.mode==='online' && g.current !== onlineState.myColor){
     const left = Math.ceil(onlineIdleRemaining()/1000);
     const warn = (left <= 60) ? `<br><span style="font-size:11px;">あと${left}秒動きがないと、相手の放棄になります</span>` : '';
-    statusNote = `<div class="pass-note">${escapeHtml(onlineState.oppName||'相手')}の番です…${warn}</div>`;
+    const oppStuck = validMoves(g.board, g.current).length === 0;
+    statusNote = oppStuck
+      ? `<div class="pass-note">${escapeHtml(onlineState.oppName||'相手')}は置ける場所がないためパスします…</div>`
+      : `<div class="pass-note">${escapeHtml(onlineState.oppName||'相手')}の番です…${warn}</div>`;
   } else if(actualMoves.length===0 && !g.over){
     statusNote = `<div class="pass-note">置ける場所がないため、パスします</div>`;
+  }
+  if(g.mode==='online' && !g.over && g.current === onlineState.myColor
+     && validMoves(g.board, g.current).length === 0){
+    statusNote = `<div class="pass-note">置ける場所がないため、パスします…</div>`;
   }
   
   // バラエティモードのイベント表示
@@ -3013,8 +3076,8 @@ function renderBoardScreen(){
         ${timer}
       </div>
       <div class="score-strip">
-        <div class="score-chip ${black>=white?'leading':''}"><span class="sc-stone" style="background:#111;"></span><span class="sc-name">${escapeHtml(leftName)}</span><span class="sc-num">${black}</span></div>
-        <div class="score-chip ${white>black?'leading':''}"><span class="sc-stone" style="background:#eee; box-shadow:inset 0 0 0 1px #ccc;"></span><span class="sc-name">${escapeHtml(rightName)}</span><span class="sc-num">${white}</span></div>
+        <div class="score-chip ${black>=white?'leading':''} ${g.mode==='online'&&onlineState.myColor===1?'is-me':''}"><span class="sc-stone" style="background:#111;"></span><span class="sc-name">${escapeHtml(leftName)}</span><span class="sc-num">${black}</span></div>
+        <div class="score-chip ${white>black?'leading':''} ${g.mode==='online'&&onlineState.myColor===2?'is-me':''}"><span class="sc-stone" style="background:#eee; box-shadow:inset 0 0 0 1px #ccc;"></span><span class="sc-name">${escapeHtml(rightName)}</span><span class="sc-num">${white}</span></div>
       </div>
       <div class="board ${boardStyleClass()}" id="boardEl">${cells.join('')}</div>
       ${varietyEventMarkup}
