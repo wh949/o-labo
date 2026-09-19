@@ -607,6 +607,58 @@ html[data-theme="dark"] {
   to{ opacity:1; transform:scale(1); }
 }
 @keyframes suOut{ to{ opacity:0; } }
+
+/* アカウント表示 */
+.acc-row{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:6px 0; font-size:12.5px; }
+.acc-k{ color:var(--ink-soft); flex:0 0 auto; }
+.acc-v{ color:var(--ink); font-weight:700; text-align:right; word-break:break-all; }
+.acc-code{ font-family:monospace; letter-spacing:.12em; font-size:14px; color:var(--jade-deep); }
+
+/* フレンド一覧 */
+.friend-row{ display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line-soft); }
+.friend-row:last-child{ border-bottom:none; }
+.friend-info{ flex:1; min-width:0; }
+.friend-name{ font-weight:700; font-size:13.5px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.friend-code{ font-family:monospace; font-size:11px; color:var(--ink-soft); letter-spacing:.1em; }
+.friend-invite{ flex:0 0 auto; padding:7px 14px; font-size:12.5px; }
+.friend-del{ flex:0 0 auto; padding:7px 10px; font-size:14px; line-height:1; color:var(--ink-soft); }
+
+/* 招待の通知（画面上部から出る） */
+.invite-toast{
+  position:fixed; top:0; left:0; right:0; z-index:10000;
+  display:flex; align-items:center; gap:10px;
+  margin:0 auto; max-width:520px;
+  padding:calc(12px + env(safe-area-inset-top, 0px)) 14px 12px;
+  background:linear-gradient(135deg,#2f6fd0,#1f4f9e); color:#fff;
+  box-shadow:0 4px 18px rgba(0,0,0,.28);
+  transform:translateY(-120%); transition:transform .38s cubic-bezier(.16,1,.3,1);
+  cursor:pointer;
+}
+.invite-toast.is-in{ transform:translateY(0); }
+.it-text{ flex:1; font-size:13px; font-weight:700; line-height:1.4; }
+.it-btn{
+  flex:0 0 auto; border:none; border-radius:999px; padding:7px 16px;
+  background:#fff; color:#1f4f9e; font-weight:800; font-size:12.5px; cursor:pointer;
+}
+
+/* ホームの招待表示 */
+.invite-banner{
+  margin-bottom:12px; padding:14px;
+  border-radius:var(--radius-md);
+  background:linear-gradient(135deg,#eaf2ff,#d8e6ff);
+  border:1px solid #b9d0f5;
+  box-shadow:var(--shadow-1);
+}
+.ib-text{ font-size:13px; font-weight:800; color:#1b3f78; margin-bottom:10px; line-height:1.5; }
+.ib-actions{ display:flex; gap:8px; }
+.ib-join{ flex:1; padding:9px 12px; font-size:13px; }
+.ib-no{ flex:0 0 auto; padding:9px 14px; font-size:13px; }
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .invite-banner{
+    background:linear-gradient(135deg,#1e2c4a,#16233c); border-color:#2f4a78;
+  }
+  :root:not([data-theme="light"]) .ib-text{ color:#cfe0ff; }
+}
 </style>
 </head>
 <body>
@@ -883,6 +935,7 @@ function saveState(){
     }
   }
   renderHanko();
+  cloudSaveSoon();   // ログイン中ならクラウドにも保存する
 }
 
 /* ============================================================
@@ -1525,6 +1578,19 @@ function markdownToHtml(md){
   return html;
 }
 
+// ホームに出す招待のお知らせ
+function inviteBannerMarkup(){
+  if(!pendingInvites.length) return '';
+  return pendingInvites.slice(0,3).map(inv => `
+    <div class="invite-banner">
+      <div class="ib-text">${escapeHtml(inv.fromName || 'フレンド')}から対局に招待されました</div>
+      <div class="ib-actions">
+        <button class="btn btn-primary ib-join" data-action="invite-accept" data-id="${inv.id}">参加する</button>
+        <button class="btn btn-ghost ib-no" data-action="invite-decline" data-id="${inv.id}">あとで</button>
+      </div>
+    </div>`).join('');
+}
+
 function viewHome(){
   const loginDays = getConsecutiveLoginDays();
   const totalGames = state.totalGames || 0;
@@ -1538,6 +1604,8 @@ function viewHome(){
       <p style="margin:0; font-size:13px; color:var(--ink-soft);">ランク: ${rankLabel(state.training.rankIndex, state.training.xNumber)}</p>
     </div>
     
+    ${inviteBannerMarkup()}
+
     <div class="section-title">遊ぶ</div>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
       <button class="btn" style="background:linear-gradient(155deg, var(--jade-light), var(--jade-deep)); color:#fff; font-size:14px; padding:30px 12px; height:auto; line-height:1.3; flex-direction:column; white-space:normal; min-height:100px; display:flex; align-items:center; justify-content:center;" data-action="go-basic">
@@ -2168,8 +2236,447 @@ let onlineState = {
   mode: null,          // 'code' | 'random'
   oppLeft: false,
   abandoned: false,
+  invitedName: '',
   waitStartedAt: 0
 };
+
+
+/* ============================================================
+   アカウント（メール / Google / ゲスト）
+   ============================================================ */
+let fbUser = null;              // 現在ログインしている利用者
+let accountReady = false;       // 認証の初期化が済んだか
+let accountBusy = false;        // 処理中（二重実行を防ぐ）
+let accountError = '';
+let cloudSyncTimer = null;
+
+function isSignedIn(){ return !!(fbUser && !fbUser.isAnonymous); }
+function isGuest(){ return !!(fbUser && fbUser.isAnonymous); }
+
+function accountProviderLabel(){
+  if(!fbUser) return '未ログイン';
+  if(fbUser.isAnonymous) return 'ゲスト';
+  const ids = (fbUser.providerData || []).map(p => p.providerId);
+  const names = [];
+  if(ids.includes('password')) names.push('メール');
+  if(ids.includes('google.com')) names.push('Google');
+  return names.length ? names.join(' / ') : 'アカウント';
+}
+
+// 認証のエラーを日本語にする
+function authErrorText(err){
+  const c = err && err.code;
+  const map = {
+    'auth/invalid-email': 'メールアドレスの形式が正しくありません',
+    'auth/user-not-found': 'そのメールアドレスのアカウントが見つかりません',
+    'auth/wrong-password': 'パスワードが違います',
+    'auth/invalid-credential': 'メールアドレスまたはパスワードが違います',
+    'auth/email-already-in-use': 'そのメールアドレスはすでに使われています',
+    'auth/weak-password': 'パスワードは6文字以上にしてください',
+    'auth/popup-closed-by-user': 'ログインが中断されました',
+    'auth/popup-blocked': 'ポップアップがブロックされました。設定を確認してください',
+    'auth/cancelled-popup-request': '',
+    'auth/operation-not-allowed': 'この方法でのログインが有効になっていません',
+    'auth/unauthorized-domain': 'このドメインが許可されていません',
+    'auth/network-request-failed': '通信できませんでした。ネットワークを確認してください',
+    'auth/credential-already-in-use': 'そのアカウントはすでに別の利用者が使っています',
+    'auth/requires-recent-login': 'もう一度ログインしてから操作してください'
+  };
+  if(c && map[c] !== undefined) return map[c];
+  return '処理に失敗しました' + (c ? '（' + c + '）' : '');
+}
+
+// メールでアカウントを作る。ゲストで遊んでいた場合はそのまま引き継ぐ
+async function accountSignUpEmail(email, password){
+  if(accountBusy) return;
+  accountBusy = true; accountError = ''; render();
+  try{
+    if(!(await ensureFirebase())) throw new Error(fbInitError);
+    const cred = firebase.auth.EmailAuthProvider.credential(email, password);
+    if(firebase.auth().currentUser && firebase.auth().currentUser.isAnonymous){
+      await firebase.auth().currentUser.linkWithCredential(cred);
+    } else {
+      await firebase.auth().createUserWithEmailAndPassword(email, password);
+    }
+    toast('アカウントを作成しました');
+    sub.settings = 'home';
+  }catch(err){
+    console.error(err);
+    accountError = authErrorText(err);
+    if(accountError) toast(accountError);
+  }finally{
+    accountBusy = false; render();
+  }
+}
+
+async function accountLoginEmail(email, password){
+  if(accountBusy) return;
+  accountBusy = true; accountError = ''; render();
+  try{
+    if(!(await ensureFirebase())) throw new Error(fbInitError);
+    await firebase.auth().signInWithEmailAndPassword(email, password);
+    toast('ログインしました');
+    sub.settings = 'home';
+  }catch(err){
+    console.error(err);
+    accountError = authErrorText(err);
+    if(accountError) toast(accountError);
+  }finally{
+    accountBusy = false; render();
+  }
+}
+
+async function accountLoginGoogle(){
+  if(accountBusy) return;
+  accountBusy = true; accountError = ''; render();
+  try{
+    if(!(await ensureFirebase())) throw new Error(fbInitError);
+    const provider = new firebase.auth.GoogleAuthProvider();
+    const cur = firebase.auth().currentUser;
+    if(cur && cur.isAnonymous){
+      try{
+        await cur.linkWithPopup(provider);   // ゲストの記録を引き継ぐ
+      }catch(err){
+        // すでにそのGoogleアカウントが使われている場合は普通にログインする
+        if(err && err.code === 'auth/credential-already-in-use'){
+          await firebase.auth().signInWithPopup(provider);
+        } else throw err;
+      }
+    } else {
+      await firebase.auth().signInWithPopup(provider);
+    }
+    toast('ログインしました');
+    sub.settings = 'home';
+  }catch(err){
+    console.error(err);
+    accountError = authErrorText(err);
+    if(accountError) toast(accountError);
+  }finally{
+    accountBusy = false; render();
+  }
+}
+
+async function accountResetPassword(email){
+  try{
+    if(!(await ensureFirebase())) throw new Error(fbInitError);
+    await firebase.auth().sendPasswordResetEmail(email);
+    toast('再設定メールを送りました');
+  }catch(err){
+    console.error(err);
+    toast(authErrorText(err));
+  }
+}
+
+async function accountLogout(){
+  try{
+    await cloudSaveNow();            // 念のため最後に保存する
+    await firebase.auth().signOut();
+    toast('ログアウトしました');
+    sub.settings = 'home';
+  }catch(err){
+    console.error(err);
+    toast('ログアウトに失敗しました');
+  }
+  render();
+}
+
+/* ============================================================
+   ユーザー登録とセーブデータの同期
+   ============================================================ */
+
+// フレンド用の短いID（見間違えやすい文字は使わない）
+const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function makeUserCode(){
+  let s = '';
+  for(let i=0;i<8;i++) s += ID_CHARS[Math.floor(Math.random()*ID_CHARS.length)];
+  return s;
+}
+
+// 利用者の登録情報を用意する（無ければ作る）
+async function ensureUserRecord(){
+  if(!fbDb || !fbUid) return null;
+  try{
+    const ref = fbDb.ref('users/' + fbUid);
+    const snap = await ref.once('value');
+    let rec = snap.val();
+    if(!rec){
+      // 重複しないIDが取れるまで数回試す
+      let code = null;
+      for(let i=0;i<6 && !code;i++){
+        const cand = makeUserCode();
+        const res = await fbDb.ref('userCodes/' + cand).transaction(cur => (cur === null) ? fbUid : undefined);
+        if(res.committed) code = cand;
+      }
+      rec = {
+        code: code || fbUid.slice(0,8).toUpperCase(),
+        name: state.username || 'プレイヤー',
+        guest: !!(fbUser && fbUser.isAnonymous),
+        createdAt: Date.now()
+      };
+      await ref.set(rec);
+    } else {
+      // 名前やゲスト状態が変わっていたら更新する
+      const patch = {};
+      const nm = state.username || 'プレイヤー';
+      if(rec.name !== nm) patch.name = nm;
+      const g = !!(fbUser && fbUser.isAnonymous);
+      if(rec.guest !== g) patch.guest = g;
+      patch.lastSeen = Date.now();
+      await ref.update(patch);
+      Object.assign(rec, patch);
+    }
+    myUserRecord = rec;
+    return rec;
+  }catch(err){
+    console.warn('利用者情報の用意に失敗:', err);
+    return null;
+  }
+}
+let myUserRecord = null;
+function myUserCode(){ return myUserRecord && myUserRecord.code ? myUserRecord.code : '--------'; }
+
+// どちらのデータが進んでいるかを数値にする
+function progressScore(st){
+  if(!st) return -1;
+  const unlocked = st.casual && st.casual.unlocked
+    ? Object.keys(st.casual.unlocked).filter(k => st.casual.unlocked[k]).length : 0;
+  const rankIdx = (st.training && st.training.rankIndex) || 0;
+  const xNum    = (st.training && st.training.xNumber) || 0;
+  const rank    = st.playerRank || 0;
+  const games   = st.totalGames || 0;
+  const wins    = st.totalWins || 0;
+  const stella  = (st.settings && st.settings.stellaUnlocked) ? 1 : 0;
+  // 解禁数をいちばん重く見て、次に特訓ランク、最後に対局数で比べる
+  return unlocked*1e9 + rankIdx*1e7 + xNum*1e5 + stella*5e4 + rank*100 + wins*2 + games;
+}
+
+// 保存する形に整える（容量を抑えるため履歴を削る）
+function makeCloudPayload(){
+  trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
+  const copy = JSON.parse(JSON.stringify(state));
+  return { data: copy, progress: progressScore(copy), updatedAt: Date.now() };
+}
+
+async function cloudSaveNow(){
+  if(!fbDb || !isSignedIn()) return false;
+  try{
+    await fbDb.ref('saves/' + fbUid).set(makeCloudPayload());
+    return true;
+  }catch(err){
+    console.warn('クラウド保存に失敗:', err);
+    return false;
+  }
+}
+
+// 何度も書き込まないよう、少し待ってからまとめて保存する
+function cloudSaveSoon(){
+  if(!isSignedIn()) return;
+  if(cloudSyncTimer) clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(()=>{ cloudSaveNow(); cloudSyncTimer = null; }, 1500);
+}
+
+// ログイン直後：端末とクラウドを比べ、進んでいるほうを使う
+async function syncAfterLogin(){
+  if(!fbDb || !isSignedIn()) return;
+  try{
+    const snap = await fbDb.ref('saves/' + fbUid).once('value');
+    const cloud = snap.val();
+    const localScore = progressScore(state);
+    const cloudScore = cloud ? (cloud.progress ?? progressScore(cloud.data)) : -1;
+
+    if(cloud && cloud.data && cloudScore > localScore){
+      // クラウドのほうが進んでいる
+      state = deepMerge(structuredClone(DEFAULT_STATE), cloud.data);
+      trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
+      saveState();
+      toast('クラウドの記録を読み込みました');
+    } else {
+      // 端末のほうが進んでいる（または初回）
+      await cloudSaveNow();
+      if(cloud) toast('この端末の記録をクラウドに保存しました');
+    }
+    await ensureUserRecord();
+  }catch(err){
+    console.warn('同期に失敗:', err);
+    toast('クラウドとの同期に失敗しました');
+  }
+}
+
+/* ============================================================
+   フレンドと対局の招待
+   ============================================================ */
+let friendList = [];            // [{uid, code, name}]
+let friendBusy = false;
+let pendingInvites = [];        // 自分あての招待
+let inviteRef = null, inviteCb = null;
+let friendsRef = null, friendsCb = null;
+let shownInviteIds = {};        // 通知を出した招待（二重表示を防ぐ）
+
+// IDでフレンドを追加する
+async function friendAddByCode(code){
+  const c = String(code||'').trim().toUpperCase();
+  if(!c){ toast('IDを入力してください'); return; }
+  if(!(await ensureFirebase())){ toast(fbInitError); return; }
+  if(c === myUserCode()){ toast('自分のIDです'); return; }
+  friendBusy = true; render();
+  try{
+    const snap = await fbDb.ref('userCodes/' + c).once('value');
+    const uid = snap.val();
+    if(!uid){ toast('そのIDの利用者が見つかりません'); return; }
+    const uSnap = await fbDb.ref('users/' + uid).once('value');
+    const u = uSnap.val() || {};
+    await fbDb.ref('friends/' + fbUid + '/' + uid).set({
+      code: c, name: u.name || 'プレイヤー', addedAt: Date.now()
+    });
+    toast((u.name || 'プレイヤー') + ' をフレンドに追加しました');
+  }catch(err){
+    console.error(err);
+    toast('追加に失敗しました');
+  }finally{
+    friendBusy = false; render();
+  }
+}
+
+async function friendRemove(uid){
+  if(!fbDb || !fbUid) return;
+  try{
+    await fbDb.ref('friends/' + fbUid + '/' + uid).remove();
+    toast('フレンドから外しました');
+  }catch(err){ console.warn(err); }
+  render();
+}
+
+// フレンド一覧を監視する
+function watchFriends(){
+  if(!fbDb || !fbUid) return;
+  unwatchFriends();
+  friendsRef = fbDb.ref('friends/' + fbUid);
+  friendsCb = friendsRef.on('value', snap => {
+    const v = snap.val() || {};
+    friendList = Object.keys(v).map(uid => ({ uid, code: v[uid].code, name: v[uid].name }));
+    render();
+  });
+}
+function unwatchFriends(){
+  if(friendsRef && friendsCb) friendsRef.off('value', friendsCb);
+  friendsRef = null; friendsCb = null;
+}
+
+// フレンドを対局に招待する（自分が部屋を用意して待つ）
+async function friendInvite(friendUid, friendName){
+  if(!(await ensureFirebase())){ toast(fbInitError); return; }
+  const myName = (state.online && state.online.lastName) || state.username || 'プレイヤー';
+  try{
+    const roomId = 'r' + Math.random().toString(36).slice(2,10);
+    await fbDb.ref('rooms/' + roomId).set({
+      status:'waiting', createdAt: Date.now(),
+      host:{uid:fbUid, name:myName},
+      board: boardToStr(newBoard()), turn:1, passStreak:0, moveCount:0
+    });
+    const inviteId = 'i' + Math.random().toString(36).slice(2,10);
+    await fbDb.ref('invites/' + friendUid + '/' + inviteId).set({
+      fromUid: fbUid, fromName: myName, roomId, createdAt: Date.now()
+    });
+    fbDb.ref('invites/' + friendUid + '/' + inviteId).onDisconnect().remove();
+
+    onlineState.myName = myName;
+    onlineState.myColor = 1;
+    onlineState.roomId = roomId;
+    onlineState.mode = 'invite';
+    onlineState.phase = 'waiting';
+    onlineState.waitStartedAt = Date.now();
+    onlineState.invitedName = friendName || '';
+    sub.online = 'room';
+    onlineAttachRoom(roomId);
+    toast((friendName || 'フレンド') + ' を招待しました');
+  }catch(err){
+    console.error(err);
+    toast('招待に失敗しました');
+  }
+}
+
+// 自分あての招待を監視する
+function watchInvites(){
+  if(!fbDb || !fbUid) return;
+  unwatchInvites();
+  inviteRef = fbDb.ref('invites/' + fbUid);
+  inviteCb = inviteRef.on('value', snap => {
+    const v = snap.val() || {};
+    const now = Date.now();
+    pendingInvites = Object.keys(v)
+      .map(id => Object.assign({ id }, v[id]))
+      .filter(x => x.createdAt && now - x.createdAt < 5*60*1000)   // 5分で無効
+      .sort((a,b) => b.createdAt - a.createdAt);
+
+    // まだ知らせていない招待があれば通知を出す
+    for(const inv of pendingInvites){
+      if(shownInviteIds[inv.id]) continue;
+      shownInviteIds[inv.id] = true;
+      if(document.visibilityState === 'visible') showInviteToast(inv);
+    }
+    render();
+  });
+}
+function unwatchInvites(){
+  if(inviteRef && inviteCb) inviteRef.off('value', inviteCb);
+  inviteRef = null; inviteCb = null;
+}
+
+// 画面上部から出る通知
+function showInviteToast(inv){
+  const el = document.createElement('div');
+  el.className = 'invite-toast';
+  el.innerHTML = `
+    <div class="it-text">${escapeHtml(inv.fromName || 'フレンド')}から対局の招待がきています</div>
+    <button class="it-btn">参加</button>`;
+  document.body.appendChild(el);
+  const go = ()=>{ el.remove(); acceptInvite(inv.id); };
+  el.querySelector('.it-btn').addEventListener('click', go);
+  el.addEventListener('click', go);
+  requestAnimationFrame(()=> el.classList.add('is-in'));
+  setTimeout(()=>{
+    el.classList.remove('is-in');
+    setTimeout(()=>{ if(el.parentNode) el.remove(); }, 400);
+  }, 8000);
+}
+
+// 招待を受けて入室する
+async function acceptInvite(inviteId){
+  const inv = pendingInvites.find(x => x.id === inviteId);
+  if(!inv){ toast('招待が見つかりません'); return; }
+  if(!(await ensureFirebase())){ toast(fbInitError); return; }
+
+  const myName = (state.online && state.online.lastName) || state.username || 'プレイヤー';
+  onlineState.myName = myName;
+  onlineState.mode = 'invite';
+  onlineState.phase = 'connecting';
+  activeTab = 'basic'; currentBasicMode = 'online'; sub.online = 'room';
+  render();
+
+  try{
+    const ok = await onlineClaimRoom(inv.roomId, myName);
+    await fbDb.ref('invites/' + fbUid + '/' + inviteId).remove().catch(()=>{});
+    if(!ok){
+      toast('その対局はもう始められません');
+      onlineState.phase = 'lobby';
+      navigate(()=>{ sub.online = 'lobby'; });
+      return;
+    }
+    onlineState.myColor = 2;
+    onlineState.roomId = inv.roomId;
+    onlineAttachRoom(inv.roomId);
+  }catch(err){
+    console.error(err);
+    toast('参加に失敗しました');
+    onlineState.phase = 'lobby';
+    navigate(()=>{ sub.online = 'lobby'; });
+  }
+}
+
+async function declineInvite(inviteId){
+  try{ await fbDb.ref('invites/' + fbUid + '/' + inviteId).remove(); }catch(err){}
+  render();
+}
 
 function firebaseConfigured(){
   return !!(FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.apiKey);
@@ -2180,13 +2687,35 @@ async function ensureFirebase(){
   if(!firebaseConfigured()){ fbInitError = 'Firebase の設定が入力されていません'; return false; }
   if(typeof firebase === 'undefined'){ fbInitError = 'Firebase の読み込みに失敗しました（通信環境を確認してください）'; return false; }
   try{
-    if(!fbApp) fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+    if(!fbApp){
+      fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+      firebase.auth().onAuthStateChanged(async user => {
+        fbUser = user;
+        fbUid = user ? user.uid : null;
+        accountReady = true;
+        if(user){
+          onlineDebug.myUid = user.uid;
+          await ensureUserRecord();
+          watchFriends();
+          watchInvites();
+          if(!user.isAnonymous) await syncAfterLogin();
+        } else {
+          unwatchFriends(); unwatchInvites();
+          friendList = []; pendingInvites = []; myUserRecord = null;
+        }
+        render();
+      });
+    }
     fbDb = firebase.database();
-    const cred = await firebase.auth().signInAnonymously();
-    fbUid = cred.user.uid;
+    // まだ誰もログインしていなければ、ゲストとして接続する
+    if(!firebase.auth().currentUser){
+      await firebase.auth().signInAnonymously();
+    }
+    fbUser = firebase.auth().currentUser;
+    fbUid = fbUser ? fbUser.uid : null;
     fbReady = true;
-    onlineDebug.myUid = fbUid;
-    onlineLog('接続完了 uid=' + fbUid.slice(0,8));
+    onlineDebug.myUid = fbUid || '';
+    onlineLog('接続完了 uid=' + (fbUid||'').slice(0,8));
     return true;
   }catch(err){
     console.error('Firebase 初期化に失敗:', err);
@@ -2823,6 +3352,37 @@ function showMatchFound(oppName){
   setTimeout(()=>{ if(el.parentNode) el.parentNode.removeChild(el); }, 2400);
 }
 
+function friendSectionMarkup(){
+  if(!isSignedIn()){
+    return `<div class="card">
+      <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">フレンド機能はアカウントが必要です。設定から作成できます。</p>
+      <button class="btn btn-ghost" data-action="go-account" style="width:100%;">アカウントを作る</button>
+    </div>`;
+  }
+  const rows = friendList.length ? friendList.map(f => `
+    <div class="friend-row">
+      <div class="friend-info">
+        <div class="friend-name">${escapeHtml(f.name || 'プレイヤー')}</div>
+        <div class="friend-code">${escapeHtml(f.code || '')}</div>
+      </div>
+      <button class="btn btn-soft friend-invite" data-action="friend-invite" data-uid="${f.uid}" data-name="${escapeHtml(f.name||'')}">招待</button>
+      <button class="btn btn-ghost friend-del" data-action="friend-remove" data-uid="${f.uid}">×</button>
+    </div>`).join('')
+    : '<p style="font-size:12px; color:var(--ink-soft); margin:0; text-align:center; padding:8px 0;">まだフレンドがいません</p>';
+
+  return `
+    <div class="card">
+      <div class="acc-row"><span class="acc-k">あなたのID</span><span class="acc-v acc-code">${escapeHtml(myUserCode())}</span></div>
+      <p style="font-size:11px; color:var(--ink-soft); margin:4px 0 10px;">このIDを相手に伝えると追加してもらえます。</p>
+      <div style="display:flex; gap:8px;">
+        <input id="friendCode" type="text" maxlength="8" placeholder="相手のID"
+               style="flex:1; min-width:0; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; text-transform:uppercase; letter-spacing:.1em;">
+        <button class="btn btn-primary" data-action="friend-add" ${friendBusy?'disabled':''}>追加</button>
+      </div>
+    </div>
+    <div class="card">${rows}</div>`;
+}
+
 function viewOnline(){
   if(game && game.mode==='online' && sub.online==='play') return renderBoardScreen();
   if(sub.online==='room') return renderOnlineRoom();
@@ -2862,6 +3422,9 @@ function viewOnline(){
       <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">待っている人がいればすぐ対局が始まります。いなければ相手が来るまで待ちます。</p>
       <button class="btn btn-soft" data-action="online-random" style="width:100%;">相手を探す</button>
     </div>
+
+    <div class="section-title">フレンド</div>
+    ${friendSectionMarkup()}
   `;
 }
 
@@ -2907,11 +3470,13 @@ function renderOnlineRoom(){
     `;
   }
   const isCode = onlineState.mode === 'code';
+  const isInvite = onlineState.mode === 'invite';
   return `
     <div class="hero" style="background:linear-gradient(150deg, #6C8CD5, #34508F 78%);">
       <div class="hero-eyebrow">ONLINE</div>
       <h2>相手を待っています</h2>
-      <p>${isCode ? '同じ合言葉を相手に伝えてください。' : '対戦相手を探しています。'}</p>
+      <p>${isInvite ? escapeHtml(onlineState.invitedName||'フレンド') + ' の参加を待っています。'
+                    : (isCode ? '同じ合言葉を相手に伝えてください。' : '対戦相手を探しています。')}</p>
     </div>
     ${isCode ? `<div class="card" style="text-align:center;">
       <div style="font-size:11.5px; color:var(--ink-soft); margin-bottom:6px;">合言葉</div>
@@ -3850,10 +4415,81 @@ function replayTick(){
 /* ============================================================
    10. SETTINGS
    ============================================================ */
+function accountCardMarkup(){
+  if(!firebaseConfigured()){
+    return `<div class="card"><p style="margin:0; font-size:12px; color:var(--ink-soft);">サーバーの設定がないため、アカウントは利用できません。</p></div>`;
+  }
+  if(isSignedIn()){
+    return `
+      <div class="card">
+        <div class="acc-row"><span class="acc-k">ログイン中</span><span class="acc-v">${escapeHtml(fbUser.email || accountProviderLabel())}</span></div>
+        <div class="acc-row"><span class="acc-k">ログイン方法</span><span class="acc-v">${escapeHtml(accountProviderLabel())}</span></div>
+        <div class="acc-row"><span class="acc-k">ユーザーID</span><span class="acc-v acc-code">${escapeHtml(myUserCode())}</span></div>
+        <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:10px 0 10px;">記録は自動でクラウドに保存されます。ほかの端末で同じアカウントにログインすると、進んでいるほうの記録が使われます。</p>
+        <div class="file-actions">
+          <button class="btn btn-ghost" data-action="cloud-save-now">今すぐ保存</button>
+          <button class="btn btn-ghost" data-action="account-logout">ログアウト</button>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="card">
+      <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">アカウントを作ると、記録がクラウドに保存され、ほかの端末でも続きから遊べます。フレンド機能も使えます。</p>
+      <div class="file-actions">
+        <button class="btn btn-primary" data-action="account-open" data-mode="signup">アカウント作成</button>
+        <button class="btn btn-ghost" data-action="account-open" data-mode="login">ログイン</button>
+      </div>
+      <p style="font-size:11px; color:var(--ink-soft); margin:10px 0 0;">いまはゲストとして遊んでいます。記録はこの端末にだけ残ります。</p>
+    </div>`;
+}
+
+let accountFormMode = 'signup';   // 'signup' | 'login'
+
+function viewAccountForm(){
+  const isSignup = accountFormMode === 'signup';
+  return `
+    <div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);">
+      <div class="hero-eyebrow">ACCOUNT</div>
+      <h2>${isSignup ? 'アカウント作成' : 'ログイン'}</h2>
+      <p>${isSignup ? '記録をクラウドに保存し、ほかの端末でも続きから遊べます。' : '作成済みのアカウントでログインします。'}</p>
+    </div>
+
+    <div class="card">
+      <button class="btn btn-soft" data-action="account-google" style="width:100%;" ${accountBusy?'disabled':''}>
+        Google で${isSignup ? '登録' : 'ログイン'}
+      </button>
+    </div>
+
+    <div class="section-title">メールアドレス</div>
+    <div class="card">
+      <input id="accEmail" type="email" autocomplete="email" placeholder="メールアドレス"
+             style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; margin-bottom:8px;">
+      <input id="accPass" type="password" autocomplete="${isSignup?'new-password':'current-password'}" placeholder="パスワード（6文字以上）"
+             style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px;">
+      ${accountError ? `<p style="color:#d33; font-size:12px; margin:8px 0 0;">${escapeHtml(accountError)}</p>` : ''}
+      <button class="btn btn-primary" data-action="${isSignup?'account-signup-email':'account-login-email'}" style="width:100%; margin-top:10px;" ${accountBusy?'disabled':''}>
+        ${accountBusy ? '処理中…' : (isSignup ? 'この内容で作成' : 'ログイン')}
+      </button>
+      ${!isSignup ? `<button class="btn btn-ghost" data-action="account-reset" style="width:100%; margin-top:8px;">パスワードを忘れた場合</button>` : ''}
+    </div>
+
+    <div class="card">
+      <button class="btn btn-ghost" data-action="account-switch" style="width:100%;">
+        ${isSignup ? 'すでにアカウントをお持ちの方はこちら' : 'アカウントをお持ちでない方はこちら'}
+      </button>
+      <button class="btn btn-ghost" data-action="account-close" style="width:100%; margin-top:8px;">設定に戻る</button>
+    </div>
+  `;
+}
+
 function viewSettings(){
+  if(sub.settings === 'account') return viewAccountForm();
   const s = state.settings;
   const furiLabels = ['なし','1（最小限）','2','3','4','5（すべて）'];
   return `
+    <div class="section-title">アカウント</div>
+    ${accountCardMarkup()}
+
     <div class="section-title">プロフィール</div>
     <div class="card">
       <div class="field">
@@ -4369,6 +5005,60 @@ document.addEventListener('click', (e)=>{
       break;
     }
     case 'online-leave': onlineLeave(); break;
+    case 'account-open':
+      accountFormMode = el.dataset.mode === 'login' ? 'login' : 'signup';
+      accountError = '';
+      ensureFirebase();
+      navigate(()=>{ sub.settings = 'account'; });
+      break;
+    case 'account-switch':
+      accountFormMode = accountFormMode === 'signup' ? 'login' : 'signup';
+      accountError = '';
+      render();
+      break;
+    case 'account-close':
+      accountError = '';
+      navigate(()=>{ sub.settings = 'home'; });
+      break;
+    case 'account-signup-email': {
+      const em = (document.getElementById('accEmail')||{}).value || '';
+      const pw = (document.getElementById('accPass')||{}).value || '';
+      if(!em.trim() || !pw){ toast('メールアドレスとパスワードを入力してください'); break; }
+      accountSignUpEmail(em.trim(), pw);
+      break;
+    }
+    case 'account-login-email': {
+      const em2 = (document.getElementById('accEmail')||{}).value || '';
+      const pw2 = (document.getElementById('accPass')||{}).value || '';
+      if(!em2.trim() || !pw2){ toast('メールアドレスとパスワードを入力してください'); break; }
+      accountLoginEmail(em2.trim(), pw2);
+      break;
+    }
+    case 'account-google': accountLoginGoogle(); break;
+    case 'account-reset': {
+      const em3 = (document.getElementById('accEmail')||{}).value || '';
+      if(!em3.trim()){ toast('メールアドレスを入力してください'); break; }
+      accountResetPassword(em3.trim());
+      break;
+    }
+    case 'account-logout': accountLogout(); break;
+    case 'cloud-save-now':
+      cloudSaveNow().then(ok => toast(ok ? 'クラウドに保存しました' : '保存できませんでした'));
+      break;
+    case 'go-account':
+      accountFormMode = 'signup';
+      ensureFirebase();
+      navigate(()=>{ activeTab = 'settings'; sub.settings = 'account'; });
+      break;
+    case 'friend-add': {
+      const fc = (document.getElementById('friendCode')||{}).value || '';
+      friendAddByCode(fc);
+      break;
+    }
+    case 'friend-remove': friendRemove(el.dataset.uid); break;
+    case 'friend-invite': friendInvite(el.dataset.uid, el.dataset.name); break;
+    case 'invite-accept': acceptInvite(el.dataset.id); break;
+    case 'invite-decline': declineInvite(el.dataset.id); break;
     case 'export-save': exportSave(el.dataset.scope); break;
     case 'import-save': importSave(el.dataset.scope); break;
     case 'reset-settings':
@@ -4463,6 +5153,8 @@ applyTheme(state.settings.theme);
 render();
 preloadAudioFiles();
 setupAudioUnlock();
+// アカウント状態と招待を受け取れるよう、開いた時点で接続する
+if(firebaseConfigured()) ensureFirebase();
 // 開いた時点でBGMを鳴らす（スマホでは最初の操作の直後に鳴り出す）
 updateBGM();
 </script>
