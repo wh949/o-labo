@@ -791,6 +791,70 @@ const CASUAL_DIFFS = [
   {id:'chou_eiyuu', name:'超英雄', nameRuby:'ちょうえいゆう', nameRubyLevel:4, locked:true, star:true, depth:12, rnd:0, boost:10.43},
 ];
 
+/* ------------------------------------------------------------
+   難易度の強さを、並び順から自動で決める。
+   これにより段階を増やしても、なだらかな上達曲線が保たれる。
+   ------------------------------------------------------------ */
+// 最初の5段階は初心者が遊ぶ場所なので、個別に幅をもたせる
+const BASE_TIERS = [
+  {rnd:0.97, depth:1},   // 超かんたん
+  {rnd:0.88, depth:1},   // かんたん
+  {rnd:0.70, depth:2},   // ふつう
+  {rnd:0.52, depth:2},   // むずかしい
+  {rnd:0.36, depth:3},   // 超むずかしい
+];
+// ★つきの段階は、この節目のあいだを補間して決める
+const STAR_CURVE = [
+  // 位置, ミスの割合, 読む手数, 強さの係数
+  [0.00, 0.31, 3, 0   ],
+  [0.10, 0.24, 3, 0   ],
+  [0.20, 0.18, 4, 0   ],
+  [0.30, 0.13, 4, 1.0 ],
+  [0.40, 0.09, 5, 1.5 ],
+  [0.50, 0.06, 5, 2.1 ],
+  [0.60, 0.035,6, 2.8 ],
+  [0.70, 0.018,6, 3.6 ],
+  [0.80, 0.008,7, 4.6 ],
+  [0.88, 0.003,8, 5.6 ],
+  [0.94, 0.0,  9, 6.8 ],
+  [1.00, 0.0, 12, 8.5 ],
+];
+function curveAt(t){
+  t = Math.max(0, Math.min(1, t));
+  for(let i=0;i<STAR_CURVE.length-1;i++){
+    const a = STAR_CURVE[i], b = STAR_CURVE[i+1];
+    if(t <= b[0]){
+      const x = (t - a[0]) / ((b[0] - a[0]) || 1);
+      const mix = (p,q)=> p + (q-p)*x;
+      return {
+        rnd: Math.round(mix(a[1],b[1])*1000)/1000,
+        depth: Math.max(1, Math.round(mix(a[2],b[2]))),
+        boost: Math.round(mix(a[3],b[3])*100)/100
+      };
+    }
+  }
+  const L = STAR_CURVE[STAR_CURVE.length-1];
+  return {rnd:L[1], depth:L[2], boost:L[3]};
+}
+// 一覧全体に強さを割り当てる
+function calibrateDifficulties(){
+  const stars = CASUAL_DIFFS.filter(d => d.star);
+  const n = Math.max(1, stars.length - 1);
+  let si = 0;
+  CASUAL_DIFFS.forEach((d, i) => {
+    if(!d.star){
+      const b = BASE_TIERS[Math.min(i, BASE_TIERS.length-1)];
+      d.rnd = b.rnd; d.depth = b.depth; delete d.boost;
+    } else {
+      const p = curveAt(si / n);
+      d.rnd = p.rnd; d.depth = p.depth;
+      if(p.boost > 0) d.boost = p.boost; else delete d.boost;
+      si++;
+    }
+  });
+}
+calibrateDifficulties();
+
 const VARIETY_RULES = [
   {id:'random', name:'ランダム', desc:'毎ターンランダムイベントが発生'},
   {id:'lucky_unlucky', name:'ラッキー/アンラッキー', desc:'特定のマスに効果がある'},
