@@ -2293,8 +2293,21 @@ async function accountSignUpEmail(email, password){
   try{
     if(!(await ensureFirebase())) throw new Error(fbInitError);
     const cred = firebase.auth.EmailAuthProvider.credential(email, password);
-    if(firebase.auth().currentUser && firebase.auth().currentUser.isAnonymous){
-      await firebase.auth().currentUser.linkWithCredential(cred);
+    const cur = firebase.auth().currentUser;
+    if(cur && cur.isAnonymous){
+      try{
+        await cur.linkWithCredential(cred);   // ゲストの記録を引き継ぐ
+      }catch(err){
+        const code = err && err.code;
+        // すでにそのアドレスで登録済みなら、そのままログインする
+        if(code === 'auth/email-already-in-use' || code === 'auth/credential-already-in-use'){
+          await firebase.auth().signInWithEmailAndPassword(email, password);
+          toast('登録済みのアカウントにログインしました');
+          sub.settings = 'home';
+          return;
+        }
+        throw err;
+      }
     } else {
       await firebase.auth().createUserWithEmailAndPassword(email, password);
     }
@@ -2329,21 +2342,49 @@ async function accountLoginEmail(email, password){
 async function accountLoginGoogle(){
   if(accountBusy) return;
   accountBusy = true; accountError = ''; render();
+  // 万一応答が返らない場合にそなえ、一定時間で操作できる状態に戻す
+  const guard = setTimeout(()=>{
+    if(accountBusy && !accountRedirecting){
+      accountBusy = false;
+      accountError = 'ログインの応答がありませんでした。もう一度お試しください';
+      toast(accountError);
+      render();
+    }
+  }, 45000);
   try{
     if(!(await ensureFirebase())) throw new Error(fbInitError);
     const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
     const cur = firebase.auth().currentUser;
+
     if(cur && cur.isAnonymous){
       try{
-        await cur.linkWithPopup(provider);   // ゲストの記録を引き継ぐ
+        // ゲストの記録をそのまま引き継ぐ
+        await cur.linkWithPopup(provider);
       }catch(err){
-        // すでにそのGoogleアカウントが使われている場合は普通にログインする
-        if(err && err.code === 'auth/credential-already-in-use'){
-          await firebase.auth().signInWithPopup(provider);
+        const code = err && err.code;
+        // すでに使われているアカウントだった場合、
+        // 失敗時に返る認証情報でそのままログインする。
+        // （ここで再びポップアップを開くとブラウザに阻まれて止まってしまう）
+        if(code === 'auth/credential-already-in-use' || code === 'auth/email-already-in-use'){
+          const cred = err.credential
+            || (firebase.auth.GoogleAuthProvider.credentialFromError
+                ? firebase.auth.GoogleAuthProvider.credentialFromError(err)
+                : null);
+          if(cred){
+            await firebase.auth().signInWithCredential(cred);
+          } else {
+            // 認証情報が取れない場合だけ、あらためてログインし直す
+            await googleSignInWithFallback(provider);
+          }
+        } else if(isPopupProblem(code)){
+          await firebase.auth().signInWithRedirect(provider);
+          return;   // 画面が切り替わるのでここで終了
         } else throw err;
       }
     } else {
-      await firebase.auth().signInWithPopup(provider);
+      await googleSignInWithFallback(provider);
+      if(accountRedirecting) return;
     }
     toast('ログインしました');
     sub.settings = 'home';
@@ -2352,7 +2393,29 @@ async function accountLoginGoogle(){
     accountError = authErrorText(err);
     if(accountError) toast(accountError);
   }finally{
+    clearTimeout(guard);
     accountBusy = false; render();
+  }
+}
+
+// ポップアップが使えない環境では、画面遷移でのログインに切り替える
+let accountRedirecting = false;
+function isPopupProblem(code){
+  return code === 'auth/popup-blocked'
+      || code === 'auth/operation-not-supported-in-this-environment'
+      || code === 'auth/web-storage-unsupported'
+      || code === 'auth/popup-closed-by-user' && false;   // 利用者が閉じた場合は切り替えない
+}
+async function googleSignInWithFallback(provider){
+  try{
+    await firebase.auth().signInWithPopup(provider);
+  }catch(err){
+    if(isPopupProblem(err && err.code)){
+      accountRedirecting = true;
+      await firebase.auth().signInWithRedirect(provider);
+      return;
+    }
+    throw err;
   }
 }
 
@@ -2707,6 +2770,16 @@ async function ensureFirebase(){
       });
     }
     fbDb = firebase.database();
+
+    // 画面遷移でログインした場合、戻ってきたときに結果を受け取る
+    try{
+      const rr = await firebase.auth().getRedirectResult();
+      if(rr && rr.user) toast('ログインしました');
+    }catch(err){
+      const t = authErrorText(err);
+      if(t) toast(t);
+    }
+
     // まだ誰もログインしていなければ、ゲストとして接続する
     if(!firebase.auth().currentUser){
       await firebase.auth().signInAnonymously();
@@ -4607,7 +4680,7 @@ function viewSettings(){
       <button class="btn btn-danger" data-action="delete-cache">キャッシュデータを${ruby('削除','さくじょ',2)}</button>
     </div>
     <div style="text-align:center; margin-top:20px; padding:10px; font-size:10px; color:var(--ink-soft);">
-      <span>ver. 2.4.1</span>
+      <span>ver. 2.4.2</span>
     </div>
     <input type="file" id="importFile" accept=".txt" style="display:none;">
   `;
