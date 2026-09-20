@@ -795,29 +795,33 @@ const CASUAL_DIFFS = [
    難易度の強さを、並び順から自動で決める。
    これにより段階を増やしても、なだらかな上達曲線が保たれる。
    ------------------------------------------------------------ */
-// 最初の5段階は初心者が遊ぶ場所なので、個別に幅をもたせる
+// 最初の5段階は初心者が遊ぶ場所。ここは大きく幅をとる
+// rnd = でたらめに打つ割合 / greedy = 初心者らしい悪手を打つ割合
 const BASE_TIERS = [
-  {rnd:0.97, depth:1},   // 超かんたん
-  {rnd:0.88, depth:1},   // かんたん
-  {rnd:0.70, depth:2},   // ふつう
-  {rnd:0.52, depth:2},   // むずかしい
-  {rnd:0.36, depth:3},   // 超むずかしい
+  {rnd:0.20, greedy:0.95, depth:1},   // 超かんたん：ほぼ悪手しか打たない
+  {rnd:0.18, greedy:0.86, depth:1},   // かんたん
+  {rnd:0.16, greedy:0.76, depth:1},   // ふつう
+  {rnd:0.14, greedy:0.64, depth:1},   // むずかしい
+  {rnd:0.12, greedy:0.50, depth:1},   // 超むずかしい
 ];
-// ★つきの段階は、この節目のあいだを補間して決める
+// ★つきの段階。悪手を減らし、そのあと読みを深くしていく
 const STAR_CURVE = [
-  // 位置, ミスの割合, 読む手数, 強さの係数
-  [0.00, 0.31, 3, 0   ],
-  [0.10, 0.24, 3, 0   ],
-  [0.20, 0.18, 4, 0   ],
-  [0.30, 0.13, 4, 1.0 ],
-  [0.40, 0.09, 5, 1.5 ],
-  [0.50, 0.06, 5, 2.1 ],
-  [0.60, 0.035,6, 2.8 ],
-  [0.70, 0.018,6, 3.6 ],
-  [0.80, 0.008,7, 4.6 ],
-  [0.88, 0.003,8, 5.6 ],
-  [0.94, 0.0,  9, 6.8 ],
-  [1.00, 0.0, 12, 8.5 ],
+  // 位置, でたらめ, 悪手, 読む手数, 強さの係数
+  [0.00, 0.11, 0.40, 1,  0   ],
+  [0.06, 0.10, 0.30, 1,  0   ],
+  [0.12, 0.09, 0.20, 1,  0   ],
+  [0.18, 0.08, 0.10, 1,  0   ],
+  [0.24, 0.07, 0.30, 2,  0   ],
+  [0.31, 0.06, 0.18, 2,  0   ],
+  [0.38, 0.05, 0.08, 2,  0   ],
+  [0.45, 0.04, 0.20, 3,  0   ],
+  [0.52, 0.03, 0.08, 3,  0   ],
+  [0.60, 0.02, 0.0,  4,  0   ],
+  [0.68, 0.01, 0.0,  4,  1.4 ],
+  [0.76, 0.005,0.0,  5,  2.2 ],
+  [0.84, 0.0,  0.0,  6,  3.2 ],
+  [0.92, 0.0,  0.0,  8,  5.0 ],
+  [1.00, 0.0,  0.0, 12,  8.5 ],
 ];
 function curveAt(t){
   t = Math.max(0, Math.min(1, t));
@@ -827,14 +831,15 @@ function curveAt(t){
       const x = (t - a[0]) / ((b[0] - a[0]) || 1);
       const mix = (p,q)=> p + (q-p)*x;
       return {
-        rnd: Math.round(mix(a[1],b[1])*1000)/1000,
-        depth: Math.max(1, Math.round(mix(a[2],b[2]))),
-        boost: Math.round(mix(a[3],b[3])*100)/100
+        rnd:    Math.round(mix(a[1],b[1])*1000)/1000,
+        greedy: Math.round(mix(a[2],b[2])*1000)/1000,
+        depth:  Math.max(1, Math.round(mix(a[3],b[3]))),
+        boost:  Math.round(mix(a[4],b[4])*100)/100
       };
     }
   }
   const L = STAR_CURVE[STAR_CURVE.length-1];
-  return {rnd:L[1], depth:L[2], boost:L[3]};
+  return {rnd:L[1], greedy:L[2], depth:L[3], boost:L[4]};
 }
 // 一覧全体に強さを割り当てる
 function calibrateDifficulties(){
@@ -844,10 +849,10 @@ function calibrateDifficulties(){
   CASUAL_DIFFS.forEach((d, i) => {
     if(!d.star){
       const b = BASE_TIERS[Math.min(i, BASE_TIERS.length-1)];
-      d.rnd = b.rnd; d.depth = b.depth; delete d.boost;
+      d.rnd = b.rnd; d.greedy = b.greedy; d.depth = b.depth; delete d.boost;
     } else {
       const p = curveAt(si / n);
-      d.rnd = p.rnd; d.depth = p.depth;
+      d.rnd = p.rnd; d.greedy = p.greedy; d.depth = p.depth;
       if(p.boost > 0) d.boost = p.boost; else delete d.boost;
       si++;
     }
@@ -1187,13 +1192,21 @@ function minimax(board, depth, alpha, beta, maximizing, aiPlayer, curPlayer, ctx
   }
   return {score: best, move: bestMove};
 }
-function aiChooseMove(board, aiPlayer, depth, rnd, boost){
+function aiChooseMove(board, aiPlayer, depth, rnd, boost, greedy){
   const moves = validMoves(board, aiPlayer);
   if(!moves.length) return null;
   if(moves.length === 1) return moves[0];
 
+  // でたらめに打つ
   if(rnd && Math.random() < rnd){
     return moves[Math.floor(Math.random()*moves.length)];
+  }
+  // 初心者がやりがちな打ち方。「石をたくさん取れる手」は
+  // オセロでは悪手になりやすく、でたらめより自然に弱くなる。
+  if(greedy && Math.random() < greedy){
+    let big = moves[0];
+    for(const m of moves) if(m.flips.length > big.flips.length) big = m;
+    return big;
   }
 
   const empties = 64 - countDiscs(board,1) - countDiscs(board,2);
@@ -3756,7 +3769,7 @@ function startCasual(diffId){
 }
 function doStartCasual(d, playerStarts){
   navigate(()=>{
-    game = makeGameSession('casual', {aiDepth:d.depth, aiRnd:d.rnd, boost:d.boost||0, diffId:d.id, diffName:d.name, showHints:state.casual.showHints, playerStarts});
+    game = makeGameSession('casual', {aiDepth:d.depth, aiRnd:d.rnd, aiGreedy:d.greedy||0, boost:d.boost||0, diffId:d.id, diffName:d.name, showHints:state.casual.showHints, playerStarts});
     sub.casual='play';
   }, ()=>{
     startLiveTimer();
@@ -4231,7 +4244,7 @@ function maybeTriggerAI(g){
           startLiveTimer();
           return;
         }
-        const mv = aiChooseMove(g.board, 2, g.opts.aiDepth, g.opts.aiRnd, g.opts.boost);
+        const mv = aiChooseMove(g.board, 2, g.opts.aiDepth, g.opts.aiRnd, g.opts.boost, g.opts.aiGreedy);
         g.thinking=false;
         if(mv){
           g.board = applyMove(g.board, mv.row, mv.col, 2, mv.flips);
