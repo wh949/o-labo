@@ -2889,16 +2889,33 @@ function presenceLabel(st){
 
 /* ---------- 相手のマイページ ---------- */
 // 対戦相手のアイコンを取りに行く
+let friendIcons = {};   // uid → アイコン画像（取得済みの控え）
 async function fetchOpponentIcon(uid){
-  onlineState.oppIcon = '';
-  if(!fbDb || !uid) return;
+  if(!fbDb || !uid) return '';
+  // 一度取ったものは使い回す（フレンド一覧の控えと共用）
+  if(friendIcons[uid] !== undefined && friendIcons[uid] !== '') return friendIcons[uid];
   try{
     const snap = await fbDb.ref('users/' + uid + '/profile/icon').once('value');
-    if(onlineState.oppUid === uid){
-      onlineState.oppIcon = snap.val() || '';
-      render();
-    }
-  }catch(err){ /* 取れなくても支障はない */ }
+    const v = snap.val() || '';
+    friendIcons[uid] = v;
+    return v;
+  }catch(err){
+    return '';
+  }
+}
+
+// 画像が実際に表示できる状態になるまで待つ（最大で指定ミリ秒）
+function preloadIcon(dataUrl, timeoutMs){
+  return new Promise(resolve => {
+    if(!dataUrl || !dataUrl.startsWith('data:')) return resolve();
+    const img = new Image();
+    let done = false;
+    const finish = ()=>{ if(!done){ done = true; resolve(); } };
+    img.onload = finish;
+    img.onerror = finish;
+    img.src = dataUrl;
+    setTimeout(finish, timeoutMs || 1200);
+  });
 }
 
 async function openOtherProfile(uid, fallbackName){
@@ -3107,7 +3124,6 @@ function watchFriends(){
   });
 }
 // フレンドのアイコンを取りに行く（一度取ったものは覚えておく）
-let friendIcons = {};
 async function fetchFriendIcons(){
   if(!fbDb) return;
   let changed = false;
@@ -3598,7 +3614,7 @@ function onlineAttachRoom(id){
     const newOppUid = (oppSide && oppSide.uid) || '';
     if(newOppUid && newOppUid !== onlineState.oppUid){
       onlineState.oppUid = newOppUid;
-      fetchOpponentIcon(newOppUid);
+      onlineState.oppIcon = '';
     }
     const firstTime = onlineState.phase !== 'playing';
     onlineState.oppName = newOpp;
@@ -3615,7 +3631,22 @@ function onlineAttachRoom(id){
       onlineStopQueueHeartbeat();
       onlineStopRescan();
       onlineStartIdleWatch();
-      if(onlineState.mode === 'random') showMatchFound(newOpp);
+      // 相手のアイコンを読み込んでから演出を出す。
+      // 先に出すと、初対戦のときだけ既定の絵になってしまう。
+      if(onlineState.mode === 'random'){
+        (async ()=>{
+          const icon = await fetchOpponentIcon(newOppUid);
+          if(onlineState.oppUid !== newOppUid) return;   // 途中で相手が変わった
+          onlineState.oppIcon = icon || '';
+          await preloadIcon(icon, 1500);
+          showMatchFound(newOpp);
+          render();
+        })();
+      } else if(newOppUid){
+        fetchOpponentIcon(newOppUid).then(icon => {
+          if(onlineState.oppUid === newOppUid){ onlineState.oppIcon = icon || ''; render(); }
+        });
+      }
     }
     // 手が進んだら、放置判定の起点を更新する
     const movedOn = (room.moveCount || 0) !== (game.moveCount || 0) || firstTime;
