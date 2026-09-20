@@ -620,8 +620,14 @@ html[data-theme="dark"] {
 .friend-info{ flex:1; min-width:0; }
 .friend-name{ font-weight:700; font-size:13.5px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .friend-code{ font-family:monospace; font-size:11px; color:var(--ink-soft); letter-spacing:.1em; }
-.friend-invite{ flex:0 0 auto; padding:7px 14px; font-size:12.5px; }
-.friend-del{ flex:0 0 auto; padding:7px 10px; font-size:14px; line-height:1; color:var(--ink-soft); }
+.friend-invite{ flex:0 0 auto; width:auto; padding:8px 14px; font-size:12.5px; }
+.friend-del{ flex:0 0 auto; width:auto; padding:8px 11px; font-size:14px; line-height:1; color:var(--ink-soft); }
+/* 入力欄の横に置くボタン */
+.inline-row{ display:flex; gap:8px; align-items:stretch; }
+.inline-row input{ flex:1; min-width:0; }
+.inline-row .btn{ flex:0 0 auto; width:auto; padding:11px 18px; }
+/* 2つ並べるボタンは半分ずつ */
+.file-actions .btn{ flex:1 1 0; min-width:0; }
 
 /* 招待の通知（画面上部から出る） */
 .invite-toast{
@@ -658,6 +664,62 @@ html[data-theme="dark"] {
     background:linear-gradient(135deg,#1e2c4a,#16233c); border-color:#2f4a78;
   }
   :root:not([data-theme="light"]) .ib-text{ color:#cfe0ff; }
+}
+
+/* マイページ */
+.mp-head{ display:flex; align-items:center; gap:14px; }
+.mp-icon{
+  flex:0 0 auto; width:66px; height:66px; border-radius:50%; overflow:hidden;
+  background:rgba(255,255,255,.92); display:flex; align-items:center; justify-content:center;
+  box-shadow:0 2px 10px rgba(0,0,0,.18);
+}
+.mp-icon img{ width:100%; height:100%; object-fit:cover; display:block; }
+.icon-none{ font-size:26px; opacity:.55; }
+.mp-head-text{ min-width:0; }
+/* アイコンの編集 */
+.icon-edit{ display:flex; align-items:center; gap:14px; }
+.icon-preview{
+  flex:0 0 auto; width:72px; height:72px; border-radius:50%; overflow:hidden;
+  border:1px solid var(--line); background:var(--paper-deep);
+  display:flex; align-items:center; justify-content:center;
+}
+.icon-preview img{ width:100%; height:100%; object-fit:cover; display:block; }
+.icon-edit-btns{ flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
+.icon-edit-btns .btn{ width:100%; padding:10px 12px; font-size:12.5px; }
+/* マッチ演出の顔 */
+.mf-faces{ display:flex; align-items:center; justify-content:center; gap:14px; margin:14px 0 10px; }
+.mf-face{
+  width:64px; height:64px; border-radius:50%; overflow:hidden;
+  background:rgba(255,255,255,.9); display:flex; align-items:center; justify-content:center;
+  box-shadow:0 3px 14px rgba(0,0,0,.35);
+}
+.mf-face img{ width:100%; height:100%; object-fit:cover; display:block; }
+.mf-vs{ font-family:var(--font-title); font-weight:900; font-size:17px; color:#ffe9a8; }
+.pres-dot{ flex:0 0 auto; width:9px; height:9px; border-radius:50%; }
+/* ホームのマイページ入口 */
+.mp-home{
+  width:100%; display:flex; align-items:center; gap:10px; text-align:left;
+  padding:12px 14px; margin-bottom:12px;
+}
+.mp-home-icon{
+  flex:0 0 auto; width:32px; height:32px; border-radius:50%; overflow:hidden;
+  display:flex; align-items:center; justify-content:center; background:var(--paper-deep);
+}
+.mp-home-icon img{ width:100%; height:100%; object-fit:cover; display:block; }
+.mp-home-icon .icon-none{ font-size:16px; }
+.mp-home-name{ flex:1; min-width:0; font-weight:800; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mp-home-go{ flex:0 0 auto; font-size:11.5px; color:var(--ink-soft); }
+
+/* フレンド一覧のアイコン */
+.friend-icon{
+  position:relative; flex:0 0 auto; width:38px; height:38px; border-radius:50%;
+  overflow:visible; display:flex; align-items:center; justify-content:center;
+}
+.friend-icon img{ width:100%; height:100%; object-fit:cover; border-radius:50%; display:block; }
+.friend-icon .icon-none{ font-size:19px; }
+.friend-icon .pres-dot{
+  position:absolute; right:-1px; bottom:-1px; width:11px; height:11px;
+  border:2px solid var(--panel); border-radius:50%;
 }
 </style>
 </head>
@@ -1308,6 +1370,7 @@ function render(){
   attachDynamic();
   
   updateBGM();
+  if(presenceRef) updatePresence();
 
   // ホーム画面が表示されたとき、自動的にニュースを読み込む
   if(activeTab === 'home'){
@@ -1681,6 +1744,12 @@ function viewHome(){
       <p style="margin:0; font-size:13px; color:var(--ink-soft);">ランク: ${rankLabel(state.training.rankIndex, state.training.xNumber)}</p>
     </div>
     
+    ${isSignedIn() ? `<button class="btn btn-soft mp-home" data-action="open-mypage">
+      <span class="mp-home-icon">${iconMarkup(myProfile.icon)}</span>
+      <span class="mp-home-name">${escapeHtml(profileName())}</span>
+      <span class="mp-home-go">マイページ${friendRequests.length ? ` ・ 申請${friendRequests.length}` : ''}</span>
+    </button>` : ''}
+
     ${inviteBannerMarkup()}
 
     <div class="section-title">遊ぶ</div>
@@ -2025,6 +2094,8 @@ function casualUnlockedList(){
   return list;
 }
 function checkStellaCommand(tabId){
+  // すでに解禁している場合は受け付けない
+  if(state.settings.stellaUnlocked){ stellaCommandSequence = []; return; }
   // 難易度「α」を解禁していないと受け付けない
   if(!(state.casual.unlocked && state.casual.unlocked.alpha)){
     stellaCommandSequence = [];
@@ -2252,16 +2323,18 @@ function showStellaUnlock(){
   document.body.appendChild(overlay);
 
   let closed = false;
+  let tappable = false;   // 最初の1秒はタップを受け付けない
   const close = ()=>{
     if(closed) return;
     closed = true;
     clearTimeout(timer);
-    overlay.removeEventListener('pointerdown', close);
+    overlay.removeEventListener('pointerdown', onTap);
     overlay.classList.add('is-out');
     setTimeout(()=>{ if(overlay.parentNode) overlay.remove(); render(); }, 260);
   };
-  // タップで消す
-  overlay.addEventListener('pointerdown', close);
+  const onTap = ()=>{ if(tappable) close(); };
+  overlay.addEventListener('pointerdown', onTap);
+  setTimeout(()=>{ tappable = true; }, 1000);
   // 3秒で自動的に消す
   const timer = setTimeout(close, 3000);
 }
@@ -2314,6 +2387,8 @@ let onlineState = {
   oppLeft: false,
   abandoned: false,
   invitedName: '',
+  oppUid: '',
+  oppIcon: '',
   waitStartedAt: 0
 };
 
@@ -2652,6 +2727,334 @@ let inviteRef = null, inviteCb = null;
 let friendsRef = null, friendsCb = null;
 let shownInviteIds = {};        // 通知を出した招待（二重表示を防ぐ）
 
+
+/* ============================================================
+   マイページ（プロフィール・在席状態）
+   ※ここのデータはセーブデータとは別に保存するため、容量制限に含まれない
+   ============================================================ */
+const BIO_MAX = 300;
+const ICON_SIZE = 160;        // 保存する画像の大きさ
+const ICON_MAX_BYTES = 60000; // 保存できる上限
+
+// 選んだ画像を正方形に切り抜いて縮小する。
+// そのまま保存すると重すぎるため、端末側で小さくしてから送る。
+function imageToIconDataUrl(file){
+  return new Promise((resolve, reject) => {
+    if(!file) return reject(new Error('ファイルがありません'));
+    if(!/^image\//.test(file.type)) return reject(new Error('画像を選んでください'));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('画像を読み込めませんでした'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('画像を読み込めませんでした'));
+      img.onload = () => {
+        try{
+          const side = Math.min(img.width, img.height);
+          const sx = (img.width - side) / 2;
+          const sy = (img.height - side) / 2;
+          const cv = document.createElement('canvas');
+          cv.width = ICON_SIZE; cv.height = ICON_SIZE;
+          const ctx = cv.getContext('2d');
+          ctx.drawImage(img, sx, sy, side, side, 0, 0, ICON_SIZE, ICON_SIZE);
+          let q = 0.82, out = cv.toDataURL('image/jpeg', q);
+          // 大きすぎる場合は画質を落として収める
+          while(out.length > ICON_MAX_BYTES && q > 0.35){
+            q -= 0.12;
+            out = cv.toDataURL('image/jpeg', q);
+          }
+          if(out.length > ICON_MAX_BYTES) return reject(new Error('画像が大きすぎます'));
+          resolve(out);
+        }catch(err){ reject(err); }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// アイコンの表示（画像が無ければ人型の記号）
+function iconMarkup(src, cls){
+  if(src && src.startsWith('data:')){
+    return `<img class="${cls||''}" src="${src}" alt="">`;
+  }
+  return `<span class="icon-none">👤</span>`;
+}
+
+let myProfile = { icon:'', displayName:'', bio:'', title:'' };
+let otherProfile = null;        // 相手のマイページを開いているとき
+let profileBusy = false;
+let iconPickerOpen = false;
+let presenceRef = null;
+let friendPresence = {};        // uid → 状態
+let presenceWatch = {};
+
+function profileName(){
+  return (myProfile.displayName || state.username || 'プレイヤー');
+}
+
+// プロフィールを読み込む
+async function loadMyProfile(){
+  if(!fbDb || !fbUid) return;
+  try{
+    const snap = await fbDb.ref('users/' + fbUid + '/profile').once('value');
+    const p = snap.val();
+    if(p) myProfile = Object.assign({icon:'',displayName:'',bio:'',title:''}, p);
+  }catch(err){ console.warn('プロフィールの読み込みに失敗:', err); }
+}
+
+async function saveMyProfile(patch){
+  if(!fbDb || !fbUid || !isSignedIn()) return false;
+  Object.assign(myProfile, patch || {});
+  try{
+    await fbDb.ref('users/' + fbUid + '/profile').update({
+      icon: myProfile.icon || '',
+      displayName: myProfile.displayName || '',
+      bio: myProfile.bio || '',
+      updatedAt: Date.now()
+    });
+    // フレンド一覧に出る名前も合わせる
+    await fbDb.ref('users/' + fbUid + '/name').set(profileName());
+    return true;
+  }catch(err){
+    console.warn('プロフィールの保存に失敗:', err);
+    return false;
+  }
+}
+
+// 公開する戦績（相手のマイページでも見えるもの）
+async function publishStats(){
+  if(!fbDb || !fbUid || !isSignedIn()) return;
+  const unlocked = CASUAL_DIFFS.filter(d => !d.locked || state.casual.unlocked[d.id]).length;
+  try{
+    await fbDb.ref('users/' + fbUid + '/stats').set({
+      rank: state.playerRank || 0,
+      games: state.totalGames || 0,
+      wins: state.totalWins || 0,
+      casualUnlocked: unlocked,
+      casualTotal: CASUAL_DIFFS.length,
+      training: rankLabel(state.training.rankIndex, state.training.xNumber),
+      stella: !!state.settings.stellaUnlocked,
+      updatedAt: Date.now()
+    });
+  }catch(err){ console.warn('戦績の公開に失敗:', err); }
+}
+
+/* ---------- 在席状態 ---------- */
+function myPresenceState(){
+  if(game && game.mode === 'online') return 'playing_online';
+  if(game) return 'playing';
+  return 'online';
+}
+function startPresence(){
+  if(!fbDb || !fbUid) return;
+  presenceRef = fbDb.ref('presence/' + fbUid);
+  const conn = fbDb.ref('.info/connected');
+  conn.on('value', snap => {
+    if(snap.val() === false) return;
+    presenceRef.onDisconnect().set({ state:'offline', at: Date.now() });
+    updatePresence();
+  });
+}
+function updatePresence(){
+  if(!presenceRef) return;
+  presenceRef.set({ state: myPresenceState(), at: Date.now() }).catch(()=>{});
+}
+function watchFriendPresence(){
+  // いま見る必要のあるフレンドだけ監視する
+  const want = {};
+  friendList.forEach(f => { want[f.uid] = true; });
+  for(const uid of Object.keys(presenceWatch)){
+    if(!want[uid]){ presenceWatch[uid].ref.off('value', presenceWatch[uid].cb); delete presenceWatch[uid]; }
+  }
+  for(const uid of Object.keys(want)){
+    if(presenceWatch[uid]) continue;
+    const ref = fbDb.ref('presence/' + uid);
+    const cb = ref.on('value', s => {
+      const v = s.val();
+      const stale = !v || !v.at || (Date.now() - v.at > 5*60*1000);
+      friendPresence[uid] = stale ? 'offline' : (v.state || 'offline');
+      render();
+    });
+    presenceWatch[uid] = {ref, cb};
+  }
+}
+function presenceLabel(st){
+  switch(st){
+    case 'online': return {text:'オンライン', color:'#22a45d'};
+    case 'playing': return {text:'対局中', color:'#f5a300'};
+    case 'playing_online': return {text:'対局中（オンライン）', color:'#3b82f6'};
+    default: return {text:'オフライン', color:'#b8b2a6'};
+  }
+}
+
+/* ---------- 相手のマイページ ---------- */
+// 対戦相手のアイコンを取りに行く
+async function fetchOpponentIcon(uid){
+  onlineState.oppIcon = '';
+  if(!fbDb || !uid) return;
+  try{
+    const snap = await fbDb.ref('users/' + uid + '/profile/icon').once('value');
+    if(onlineState.oppUid === uid){
+      onlineState.oppIcon = snap.val() || '';
+      render();
+    }
+  }catch(err){ /* 取れなくても支障はない */ }
+}
+
+async function openOtherProfile(uid, fallbackName){
+  if(!uid){ toast('相手の情報がありません'); return; }
+  otherProfile = { uid, loading:true, name: fallbackName || 'プレイヤー' };
+  navigate(()=>{ activeTab='settings'; sub.settings='otherpage'; });
+  try{
+    const snap = await fbDb.ref('users/' + uid).once('value');
+    const u = snap.val() || {};
+    otherProfile = {
+      uid, loading:false,
+      name: (u.profile && u.profile.displayName) || u.name || fallbackName || 'プレイヤー',
+      code: u.code || '',
+      icon: (u.profile && u.profile.icon) || '',
+      bio: (u.profile && u.profile.bio) || '',
+      stats: u.stats || null
+    };
+  }catch(err){
+    console.warn(err);
+    otherProfile = { uid, loading:false, name: fallbackName || 'プレイヤー', error:true };
+  }
+  render();
+}
+
+/* ---------- アカウントの追加連携 ---------- */
+function linkedProviders(){
+  if(!fbUser) return [];
+  return (fbUser.providerData || []).map(p => p.providerId);
+}
+function hasProvider(id){ return linkedProviders().includes(id); }
+
+// Google を追加で連携する
+async function linkGoogle(){
+  if(accountBusy) return;
+  accountBusy = true; render();
+  try{
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    await firebase.auth().currentUser.linkWithPopup(provider);
+    await firebase.auth().currentUser.reload();
+    fbUser = firebase.auth().currentUser;
+    toast('Google を連携しました');
+  }catch(err){
+    console.error(err);
+    const c = err && err.code;
+    if(c === 'auth/credential-already-in-use'){
+      toast('そのGoogleアカウントは別の利用者が使っています');
+    } else if(c === 'auth/provider-already-linked'){
+      toast('すでにGoogleを連携しています');
+    } else {
+      toast(authErrorText(err));
+    }
+  }finally{
+    accountBusy = false; render();
+  }
+}
+
+// メールとパスワードを追加で連携する
+async function linkEmail(email, password){
+  if(accountBusy) return;
+  accountBusy = true; render();
+  try{
+    const cred = firebase.auth.EmailAuthProvider.credential(email, password);
+    await firebase.auth().currentUser.linkWithCredential(cred);
+    await firebase.auth().currentUser.reload();
+    fbUser = firebase.auth().currentUser;
+    toast('メールアドレスを連携しました');
+    sub.settings = 'mypage';
+  }catch(err){
+    console.error(err);
+    const c = err && err.code;
+    if(c === 'auth/email-already-in-use' || c === 'auth/credential-already-in-use'){
+      toast('そのメールアドレスはすでに使われています');
+    } else if(c === 'auth/provider-already-linked'){
+      toast('すでにメールアドレスを連携しています');
+    } else {
+      toast(authErrorText(err));
+    }
+  }finally{
+    accountBusy = false; render();
+  }
+}
+
+/* ---------- フレンド申請 ---------- */
+let friendRequests = [];              // 自分あての申請
+let reqRef = null, reqCb = null;
+let sentRequestTo = {};               // この端末で送った相手（ボタンの表示用）
+
+// 申請を送る（対局後のリザルトから）
+async function friendRequestSend(toUid, toName){
+  if(!isSignedIn()){ toast('フレンド申請にはアカウントが必要です'); return; }
+  if(!toUid || toUid === fbUid){ return; }
+  try{
+    // すでにフレンドなら何もしない
+    if(friendList.some(f => f.uid === toUid)){ toast('すでにフレンドです'); return; }
+    await fbDb.ref('friendRequests/' + toUid + '/' + fbUid).set({
+      name: (myUserRecord && myUserRecord.name) || state.username || 'プレイヤー',
+      code: myUserCode(),
+      createdAt: Date.now()
+    });
+    sentRequestTo[toUid] = true;
+    toast((toName || '相手') + ' にフレンド申請を送りました');
+  }catch(err){
+    console.error(err);
+    toast('申請を送れませんでした');
+  }
+  render();
+}
+
+// 自分あての申請を監視する
+function watchFriendRequests(){
+  if(!fbDb || !fbUid) return;
+  unwatchFriendRequests();
+  reqRef = fbDb.ref('friendRequests/' + fbUid);
+  reqCb = reqRef.on('value', snap => {
+    const v = snap.val() || {};
+    friendRequests = Object.keys(v).map(uid => ({
+      uid, name: v[uid].name || 'プレイヤー', code: v[uid].code || '', createdAt: v[uid].createdAt || 0
+    })).sort((a,b) => b.createdAt - a.createdAt);
+    render();
+  });
+}
+function unwatchFriendRequests(){
+  if(reqRef && reqCb) reqRef.off('value', reqCb);
+  reqRef = null; reqCb = null;
+}
+
+// 申請を承認する（両方のフレンド一覧に加える）
+async function friendRequestAccept(fromUid){
+  if(!fbDb || !fbUid) return;
+  try{
+    const req = friendRequests.find(r => r.uid === fromUid);
+    const me = myUserRecord || {};
+    await Promise.all([
+      fbDb.ref('friends/' + fbUid + '/' + fromUid).set({
+        code: (req && req.code) || '', name: (req && req.name) || 'プレイヤー', addedAt: Date.now()
+      }),
+      fbDb.ref('friends/' + fromUid + '/' + fbUid).set({
+        code: myUserCode(), name: me.name || state.username || 'プレイヤー', addedAt: Date.now()
+      })
+    ]);
+    await fbDb.ref('friendRequests/' + fbUid + '/' + fromUid).remove();
+    toast(((req && req.name) || '相手') + ' とフレンドになりました');
+  }catch(err){
+    console.error(err);
+    toast('承認できませんでした');
+  }
+  render();
+}
+
+async function friendRequestReject(fromUid){
+  try{ await fbDb.ref('friendRequests/' + fbUid + '/' + fromUid).remove(); }catch(err){ console.warn(err); }
+  toast('申請を断りました');
+  render();
+}
+
 // IDでフレンドを追加する
 async function friendAddByCode(code){
   const c = String(code||'').trim().toUpperCase();
@@ -2665,10 +3068,14 @@ async function friendAddByCode(code){
     if(!uid){ toast('そのIDの利用者が見つかりません'); return; }
     const uSnap = await fbDb.ref('users/' + uid).once('value');
     const u = uSnap.val() || {};
-    await fbDb.ref('friends/' + fbUid + '/' + uid).set({
-      code: c, name: u.name || 'プレイヤー', addedAt: Date.now()
+    if(uid === fbUid){ toast('自分のIDです'); return; }
+    if(friendList.some(f => f.uid === uid)){ toast('すでにフレンドです'); return; }
+    await fbDb.ref('friendRequests/' + uid + '/' + fbUid).set({
+      name: (myUserRecord && myUserRecord.name) || state.username || 'プレイヤー',
+      code: myUserCode(),
+      createdAt: Date.now()
     });
-    toast((u.name || 'プレイヤー') + ' をフレンドに追加しました');
+    toast((u.name || 'プレイヤー') + ' にフレンド申請を送りました');
   }catch(err){
     console.error(err);
     toast('追加に失敗しました');
@@ -2694,9 +3101,28 @@ function watchFriends(){
   friendsCb = friendsRef.on('value', snap => {
     const v = snap.val() || {};
     friendList = Object.keys(v).map(uid => ({ uid, code: v[uid].code, name: v[uid].name }));
+    watchFriendPresence();
+    fetchFriendIcons();
     render();
   });
 }
+// フレンドのアイコンを取りに行く（一度取ったものは覚えておく）
+let friendIcons = {};
+async function fetchFriendIcons(){
+  if(!fbDb) return;
+  let changed = false;
+  for(const f of friendList){
+    if(friendIcons[f.uid] !== undefined) continue;
+    friendIcons[f.uid] = '';          // 何度も取りに行かないよう先に印をつける
+    try{
+      const snap = await fbDb.ref('users/' + f.uid + '/profile/icon').once('value');
+      const v = snap.val() || '';
+      if(v){ friendIcons[f.uid] = v; changed = true; }
+    }catch(err){ /* 取れなくても支障はない */ }
+  }
+  if(changed) render();
+}
+
 function unwatchFriends(){
   if(friendsRef && friendsCb) friendsRef.off('value', friendsCb);
   friendsRef = null; friendsCb = null;
@@ -2836,12 +3262,15 @@ async function ensureFirebase(){
         if(user){
           onlineDebug.myUid = user.uid;
           await ensureUserRecord();
+          await loadMyProfile();
+          startPresence();
           watchFriends();
           watchInvites();
-          if(!user.isAnonymous) await syncAfterLogin();
+          watchFriendRequests();
+          if(!user.isAnonymous){ await syncAfterLogin(); publishStats(); }
         } else {
-          unwatchFriends(); unwatchInvites();
-          friendList = []; pendingInvites = []; myUserRecord = null;
+          unwatchFriends(); unwatchInvites(); unwatchFriendRequests();
+          friendList = []; pendingInvites = []; friendRequests = []; myUserRecord = null;
         }
         render();
       });
@@ -3164,9 +3593,13 @@ function onlineAttachRoom(id){
     }
 
     // 対局中
-    const newOpp = (onlineState.myColor === 1)
-      ? (room.guest && room.guest.name) || '相手'
-      : (room.host && room.host.name) || '相手';
+    const oppSide = (onlineState.myColor === 1) ? room.guest : room.host;
+    const newOpp = (oppSide && oppSide.name) || '相手';
+    const newOppUid = (oppSide && oppSide.uid) || '';
+    if(newOppUid && newOppUid !== onlineState.oppUid){
+      onlineState.oppUid = newOppUid;
+      fetchOpponentIcon(newOppUid);
+    }
     const firstTime = onlineState.phase !== 'playing';
     onlineState.oppName = newOpp;
 
@@ -3491,9 +3924,16 @@ function onlineFinish(room){
 function showMatchFound(oppName){
   const el = document.createElement('div');
   el.className = 'match-found';
+  const myIcon = myProfile.icon || '';
+  const oppIcon = onlineState.oppIcon || '';
   el.innerHTML = `
     <div class="match-found-inner">
       <div class="match-found-label">MATCH!</div>
+      <div class="mf-faces">
+        <div class="mf-face">${iconMarkup(myIcon)}</div>
+        <div class="mf-vs">VS</div>
+        <div class="mf-face">${iconMarkup(oppIcon)}</div>
+      </div>
       <div class="match-found-name">${escapeHtml(oppName||'相手')}</div>
       <div class="match-found-sub">とマッチしました！</div>
     </div>`;
@@ -3511,6 +3951,7 @@ function friendSectionMarkup(){
   }
   const rows = friendList.length ? friendList.map(f => `
     <div class="friend-row">
+      <span class="friend-icon">${iconMarkup(friendIcons[f.uid])}</span>
       <div class="friend-info">
         <div class="friend-name">${escapeHtml(f.name || 'プレイヤー')}</div>
         <div class="friend-code">${escapeHtml(f.code || '')}</div>
@@ -3524,10 +3965,10 @@ function friendSectionMarkup(){
     <div class="card">
       <div class="acc-row"><span class="acc-k">あなたのID</span><span class="acc-v acc-code">${escapeHtml(myUserCode())}</span></div>
       <p style="font-size:11px; color:var(--ink-soft); margin:4px 0 10px;">このIDを相手に伝えると追加してもらえます。</p>
-      <div style="display:flex; gap:8px;">
+      <div class="inline-row">
         <input id="friendCode" type="text" maxlength="8" placeholder="相手のID"
-               style="flex:1; min-width:0; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; text-transform:uppercase; letter-spacing:.1em;">
-        <button class="btn btn-primary" data-action="friend-add" ${friendBusy?'disabled':''}>追加</button>
+               style="padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; text-transform:uppercase; letter-spacing:.1em;">
+        <button class="btn btn-primary" data-action="friend-add" ${friendBusy?'disabled':''}>申請</button>
       </div>
     </div>
     <div class="card">${rows}</div>`;
@@ -3578,6 +4019,17 @@ function viewOnline(){
   `;
 }
 
+// 対局後に出すフレンド申請のボタン
+function onlineFriendButtonMarkup(){
+  const uid = onlineState.oppUid;
+  const name = onlineState.oppName || '相手';
+  if(!uid) return '';
+  if(!isSignedIn()){
+    return `<p style="font-size:11.5px; color:var(--ink-soft); margin:0 0 10px;">アカウントを作ると、対局した相手にフレンド申請ができます。</p>`;
+  }
+  return `<button class="btn btn-soft" data-action="open-other" data-uid="${uid}" data-name="${escapeHtml(name)}" style="width:100%; margin-bottom:10px;">${escapeHtml(name)} のマイページを見る</button>`;
+}
+
 function renderOnlineRoom(){
   if(onlineState.phase === 'finished'){
     const r = game && game.lastResult;
@@ -3589,6 +4041,7 @@ function renderOnlineRoom(){
       </div>
       <div class="card" style="text-align:center;">
         ${r ? `<p style="margin:0 0 12px; font-size:15px;">あなた ${r.myScore} - ${r.aiScore} ${escapeHtml(onlineState.oppName||'相手')}</p>` : ''}
+        ${onlineFriendButtonMarkup()}
         <button class="btn btn-primary" data-action="online-leave" style="width:100%;">オンラインに戻る</button>
       </div>
     `;
@@ -4576,6 +5029,8 @@ function accountCardMarkup(){
         <div class="acc-row"><span class="acc-k">ログイン方法</span><span class="acc-v">${escapeHtml(accountProviderLabel())}</span></div>
         <div class="acc-row"><span class="acc-k">ユーザーID</span><span class="acc-v acc-code">${escapeHtml(myUserCode())}</span></div>
         <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:10px 0 10px;">記録は自動でクラウドに保存されます。ほかの端末で同じアカウントにログインすると、進んでいるほうの記録が使われます。</p>
+        ${friendRequests.length ? `<p style="font-size:12px; color:var(--jade-deep); font-weight:700; margin:0 0 8px;">フレンド申請が${friendRequests.length}件届いています</p>` : ''}
+        <button class="btn btn-primary" data-action="open-mypage" style="width:100%; margin-bottom:8px;">マイページ</button>
         <div class="file-actions">
           <button class="btn btn-ghost" data-action="cloud-save-now">今すぐ保存</button>
           <button class="btn btn-ghost" data-action="account-logout">ログアウト</button>
@@ -4596,19 +5051,21 @@ function accountCardMarkup(){
 let accountFormMode = 'signup';   // 'signup' | 'login'
 
 function viewAccountForm(){
+  const isLink = accountFormMode === 'link';
   const isSignup = accountFormMode === 'signup';
   return `
     <div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);">
       <div class="hero-eyebrow">ACCOUNT</div>
-      <h2>${isSignup ? 'アカウント作成' : 'ログイン'}</h2>
-      <p>${isSignup ? '記録をクラウドに保存し、ほかの端末でも続きから遊べます。' : '作成済みのアカウントでログインします。'}</p>
+      <h2>${isLink ? 'メールアドレスを連携' : (isSignup ? 'アカウント作成' : 'ログイン')}</h2>
+      <p>${isLink ? 'このアカウントに、メールアドレスでのログインを追加します。'
+                  : (isSignup ? '記録をクラウドに保存し、ほかの端末でも続きから遊べます。' : '作成済みのアカウントでログインします。')}</p>
     </div>
 
-    <div class="card">
+    ${isLink ? '' : `<div class="card">
       <button class="btn btn-soft" data-action="account-google" style="width:100%;" ${accountBusy?'disabled':''}>
         Google で${isSignup ? '登録' : 'ログイン'}
       </button>
-    </div>
+    </div>`}
 
     <div class="section-title">メールアドレス</div>
     <div class="card">
@@ -4617,22 +5074,190 @@ function viewAccountForm(){
       <input id="accPass" type="password" autocomplete="${isSignup?'new-password':'current-password'}" placeholder="パスワード（6文字以上）"
              style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px;">
       ${accountError ? `<p style="color:#d33; font-size:12px; margin:8px 0 0;">${escapeHtml(accountError)}</p>` : ''}
-      <button class="btn btn-primary" data-action="${isSignup?'account-signup-email':'account-login-email'}" style="width:100%; margin-top:10px;" ${accountBusy?'disabled':''}>
-        ${accountBusy ? '処理中…' : (isSignup ? 'この内容で作成' : 'ログイン')}
+      <button class="btn btn-primary" data-action="${isLink?'link-email-do':(isSignup?'account-signup-email':'account-login-email')}" style="width:100%; margin-top:10px;" ${accountBusy?'disabled':''}>
+        ${accountBusy ? '処理中…' : (isLink ? 'このメールを連携' : (isSignup ? 'この内容で作成' : 'ログイン'))}
       </button>
       ${!isSignup ? `<button class="btn btn-ghost" data-action="account-reset" style="width:100%; margin-top:8px;">パスワードを忘れた場合</button>` : ''}
     </div>
 
     <div class="card">
-      <button class="btn btn-ghost" data-action="account-switch" style="width:100%;">
+      ${isLink ? '' : `<button class="btn btn-ghost" data-action="account-switch" style="width:100%;">
         ${isSignup ? 'すでにアカウントをお持ちの方はこちら' : 'アカウントをお持ちでない方はこちら'}
-      </button>
+      </button>`}
       <button class="btn btn-ghost" data-action="account-close" style="width:100%; margin-top:8px;">設定に戻る</button>
     </div>
   `;
 }
 
+function statRowsMarkup(st){
+  if(!st) return '<p style="font-size:12px; color:var(--ink-soft); margin:0; text-align:center; padding:8px 0;">記録がありません</p>';
+  const rate = st.games ? Math.round(st.wins / st.games * 100) : 0;
+  return `
+    <div class="acc-row"><span class="acc-k">プレイヤーランク</span><span class="acc-v">${st.rank}</span></div>
+    <div class="acc-row"><span class="acc-k">通算成績</span><span class="acc-v">${st.games}戦 ${st.wins}勝（${rate}%）</span></div>
+    <div class="acc-row"><span class="acc-k">ゆるモード解禁</span><span class="acc-v">${st.casualUnlocked} / ${st.casualTotal}</span></div>
+    <div class="acc-row"><span class="acc-k">特訓ランク</span><span class="acc-v">${escapeHtml(st.training||'-')}</span></div>
+    <div class="acc-row"><span class="acc-k">Stella</span><span class="acc-v">${st.stella ? '解禁済み' : '未解禁'}</span></div>`;
+}
+
+function profileHeroMarkup(icon, name, code){
+  return `
+    <div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);">
+      <div class="mp-head">
+        <div class="mp-icon">${iconMarkup(icon)}</div>
+        <div class="mp-head-text">
+          <h2 style="margin:0;">${escapeHtml(name)}</h2>
+          <p style="margin:4px 0 0;">ID ${escapeHtml(code || '--------')}</p>
+        </div>
+      </div>
+    </div>`;
+}
+
+// 自分のマイページ
+function viewMyPage(){
+  if(!isSignedIn()){
+    return `
+      <div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);">
+        <div class="hero-eyebrow">MY PAGE</div><h2>マイページ</h2>
+        <p>アカウントを作るとマイページが使えます。</p>
+      </div>
+      <div class="card">
+        <button class="btn btn-primary" data-action="go-account" style="width:100%;">アカウントを作る</button>
+        <button class="btn btn-ghost" data-action="account-close" style="width:100%; margin-top:8px;">戻る</button>
+      </div>`;
+  }
+
+  const unlocked = CASUAL_DIFFS.filter(d => !d.locked || state.casual.unlocked[d.id]).length;
+  const myStats = {
+    rank: state.playerRank, games: state.totalGames, wins: state.totalWins,
+    casualUnlocked: unlocked, casualTotal: CASUAL_DIFFS.length,
+    training: rankLabel(state.training.rankIndex, state.training.xNumber),
+    stella: !!state.settings.stellaUnlocked
+  };
+
+  const reqRows = friendRequests.length ? friendRequests.map(r => `
+    <div class="friend-row">
+      <div class="friend-info">
+        <div class="friend-name">${escapeHtml(r.name)}</div>
+        <div class="friend-code">${escapeHtml(r.code)}</div>
+      </div>
+      <button class="btn btn-primary friend-invite" data-action="req-accept" data-uid="${r.uid}">承認</button>
+      <button class="btn btn-ghost friend-del" data-action="req-reject" data-uid="${r.uid}">×</button>
+    </div>`).join('')
+    : '<p style="font-size:12px; color:var(--ink-soft); margin:0; text-align:center; padding:8px 0;">届いている申請はありません</p>';
+
+  const friendRows = friendList.length ? friendList.map(f => {
+    const p = presenceLabel(friendPresence[f.uid]);
+    return `
+    <div class="friend-row">
+      <span class="friend-icon">${iconMarkup(friendIcons[f.uid])}<span class="pres-dot" style="background:${p.color};"></span></span>
+      <div class="friend-info">
+        <div class="friend-name">${escapeHtml(f.name || 'プレイヤー')}</div>
+        <div class="friend-code">${p.text}</div>
+      </div>
+      <button class="btn btn-soft friend-invite" data-action="open-other" data-uid="${f.uid}" data-name="${escapeHtml(f.name||'')}">見る</button>
+      <button class="btn btn-ghost friend-del" data-action="friend-remove" data-uid="${f.uid}">×</button>
+    </div>`;
+  }).join('')
+    : '<p style="font-size:12px; color:var(--ink-soft); margin:0; text-align:center; padding:8px 0;">まだフレンドがいません</p>';
+
+  const bio = myProfile.bio || '';
+  return `
+    ${profileHeroMarkup(myProfile.icon, profileName(), myUserCode())}
+
+    <div class="section-title">プロフィール</div>
+    <div class="card">
+      <div class="trow-text" style="margin-bottom:8px;"><b>アイコン</b><span>マイページや対局で表示されます</span></div>
+      <div class="icon-edit">
+        <div class="icon-preview">${iconMarkup(myProfile.icon)}</div>
+        <div class="icon-edit-btns">
+          <button class="btn btn-soft" data-action="icon-choose" ${profileBusy?'disabled':''}>${myProfile.icon ? '画像を変える' : '画像を選ぶ'}</button>
+          ${myProfile.icon ? '<button class="btn btn-ghost" data-action="icon-clear">削除</button>' : ''}
+        </div>
+      </div>
+      <input type="file" id="iconFile" accept="image/*" style="display:none;">
+      <p style="font-size:11px; color:var(--ink-soft); margin:6px 0 12px;">正方形に切り取って小さくしてから保存します。</p>
+
+      <div class="field" style="margin-top:6px;">
+        <label>ユーザー名</label>
+        <input type="text" id="mpName" maxlength="20" value="${escapeHtml(profileName())}" placeholder="表示する名前">
+      </div>
+      <div class="field">
+        <label>自己紹介（${BIO_MAX}文字まで）</label>
+        <textarea id="mpBio" maxlength="${BIO_MAX}" rows="4"
+          style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; resize:vertical;"
+          placeholder="ひとこと">${escapeHtml(bio)}</textarea>
+        <div style="text-align:right; font-size:11px; color:var(--ink-soft);"><span id="bioCount">${bio.length}</span> / ${BIO_MAX}</div>
+      </div>
+      <button class="btn btn-primary" data-action="profile-save" style="width:100%;" ${profileBusy?'disabled':''}>${profileBusy?'保存中…':'保存する'}</button>
+      <p style="font-size:11px; color:var(--ink-soft); margin:8px 0 0;">オンライン対局の表示名とは別です。</p>
+    </div>
+
+    <div class="section-title">称号</div>
+    <div class="card"><p style="margin:0; font-size:13px; color:var(--ink-soft);">なし</p></div>
+
+    <div class="section-title">戦績</div>
+    <div class="card">${statRowsMarkup(myStats)}</div>
+
+    <div class="section-title">フレンド申請${friendRequests.length ? `（${friendRequests.length}件）` : ''}</div>
+    <div class="card">${reqRows}</div>
+
+    <div class="section-title">フレンド（${friendList.length}人）</div>
+    <div class="card">${friendRows}</div>
+
+    <div class="section-title">アカウントの連携</div>
+    <div class="card">
+      <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">連携すると、どちらの方法でも同じアカウントにログインできます。</p>
+      <div class="acc-row"><span class="acc-k">メールアドレス</span><span class="acc-v">${hasProvider('password') ? escapeHtml(fbUser.email||'連携済み') : '未連携'}</span></div>
+      <div class="acc-row"><span class="acc-k">Google</span><span class="acc-v">${hasProvider('google.com') ? '連携済み' : '未連携'}</span></div>
+      ${!hasProvider('google.com') ? `<button class="btn btn-soft" data-action="link-google" style="width:100%; margin-top:10px;" ${accountBusy?'disabled':''}>Google を連携する</button>` : ''}
+      ${!hasProvider('password') ? `<button class="btn btn-soft" data-action="link-email-open" style="width:100%; margin-top:8px;">メールアドレスを連携する</button>` : ''}
+      <button class="btn btn-ghost" data-action="account-logout" style="width:100%; margin-top:10px;">ログアウト</button>
+    </div>
+
+    <div class="card">
+      <button class="btn btn-ghost" data-action="account-close" style="width:100%;">戻る</button>
+    </div>
+  `;
+}
+
+// 相手のマイページ
+function viewOtherPage(){
+  const p = otherProfile;
+  if(!p) return '<div class="card"><p>読み込めませんでした</p></div>';
+  if(p.loading){
+    return `<div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);">
+      <div class="hero-eyebrow">PROFILE</div><h2>読み込み中…</h2></div>
+      <div class="card" style="text-align:center;"><div class="online-spinner"></div></div>`;
+  }
+  const isFriend = friendList.some(f => f.uid === p.uid);
+  const sent = !!sentRequestTo[p.uid];
+  return `
+    ${profileHeroMarkup(p.icon, p.name, p.code)}
+
+    ${p.bio ? `<div class="section-title">自己紹介</div>
+    <div class="card"><p style="margin:0; font-size:13px; line-height:1.8; white-space:pre-wrap;">${escapeHtml(p.bio)}</p></div>` : ''}
+
+    <div class="section-title">称号</div>
+    <div class="card"><p style="margin:0; font-size:13px; color:var(--ink-soft);">なし</p></div>
+
+    <div class="section-title">戦績</div>
+    <div class="card">${statRowsMarkup(p.stats)}</div>
+
+    <div class="card">
+      ${isFriend
+        ? '<p style="margin:0 0 10px; font-size:13px; color:var(--jade-deep); font-weight:700; text-align:center;">フレンドです</p>'
+        : (sent
+          ? '<p style="margin:0 0 10px; font-size:13px; color:var(--ink-soft); text-align:center;">申請済み（承認待ち）</p>'
+          : `<button class="btn btn-primary" data-action="friend-request" data-uid="${p.uid}" data-name="${escapeHtml(p.name)}" style="width:100%;">フレンド申請</button>`)}
+      <button class="btn btn-ghost" data-action="other-close" style="width:100%; margin-top:8px;">戻る</button>
+    </div>
+  `;
+}
+
 function viewSettings(){
+  if(sub.settings === 'mypage') return viewMyPage();
+  if(sub.settings === 'otherpage') return viewOtherPage();
   if(sub.settings === 'account') return viewAccountForm();
   const s = state.settings;
   const furiLabels = ['なし','1（最小限）','2','3','4','5（すべて）'];
@@ -4925,6 +5550,11 @@ document.addEventListener('input', (e)=>{
   const el = e.target;
   if(!el || !el.dataset) return;
   const act = el.dataset.action;
+  if(el.id === 'mpBio'){
+    const n = document.getElementById('bioCount');
+    if(n) n.textContent = el.value.length;
+    return;
+  }
   if(act === 'set-bgm-volume'){
     const v = Math.max(0, Math.min(100, parseInt(el.value, 10) || 0));
     state.settings.bgmVolume = v;
@@ -5206,6 +5836,62 @@ document.addEventListener('click', (e)=>{
       break;
     }
     case 'friend-remove': friendRemove(el.dataset.uid); break;
+    case 'friend-request': friendRequestSend(el.dataset.uid, el.dataset.name); break;
+    case 'req-accept': friendRequestAccept(el.dataset.uid); break;
+    case 'req-reject': friendRequestReject(el.dataset.uid); break;
+    case 'open-mypage':
+      iconPickerOpen = false;
+      navigate(()=>{ activeTab='settings'; sub.settings='mypage'; });
+      break;
+    case 'open-other': openOtherProfile(el.dataset.uid, el.dataset.name); break;
+    case 'other-close': otherProfile = null; navigate(()=>{ sub.settings='mypage'; }); break;
+    case 'icon-choose': {
+      const inp = document.getElementById('iconFile');
+      if(!inp) break;
+      inp.value = '';
+      inp.onchange = async () => {
+        const f = inp.files && inp.files[0];
+        if(!f) return;
+        profileBusy = true; render();
+        try{
+          const url = await imageToIconDataUrl(f);
+          const ok = await saveMyProfile({icon: url});
+          toast(ok ? 'アイコンを変えました' : '保存できませんでした');
+        }catch(err){
+          console.error(err);
+          toast(err.message || '画像を使えませんでした');
+        }finally{
+          profileBusy = false; render();
+        }
+      };
+      inp.click();
+      break;
+    }
+    case 'icon-clear':
+      saveMyProfile({icon: ''}).then(()=>{ toast('アイコンを削除しました'); render(); });
+      break;
+    case 'profile-save': {
+      const nm = (document.getElementById('mpName')||{}).value || '';
+      const bi = (document.getElementById('mpBio')||{}).value || '';
+      if(bi.length > BIO_MAX){ toast('自己紹介は' + BIO_MAX + '文字までです'); break; }
+      profileBusy = true; render();
+      saveMyProfile({displayName: nm.trim(), bio: bi}).then(ok => {
+        profileBusy = false;
+        toast(ok ? 'プロフィールを保存しました' : '保存できませんでした');
+        publishStats();
+        render();
+      });
+      break;
+    }
+    case 'link-google': linkGoogle(); break;
+    case 'link-email-open': accountFormMode = 'link'; navigate(()=>{ sub.settings='account'; }); break;
+    case 'link-email-do': {
+      const le = (document.getElementById('accEmail')||{}).value || '';
+      const lp = (document.getElementById('accPass')||{}).value || '';
+      if(!le.trim() || !lp){ toast('メールアドレスとパスワードを入力してください'); break; }
+      linkEmail(le.trim(), lp);
+      break;
+    }
     case 'friend-invite': friendInvite(el.dataset.uid, el.dataset.name); break;
     case 'invite-accept': acceptInvite(el.dataset.id); break;
     case 'invite-decline': declineInvite(el.dataset.id); break;
