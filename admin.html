@@ -263,7 +263,7 @@ async function loadAll(){
     db.ref('admins').once('value').catch(()=>({ val:()=>({}) }))
   ]);
   users = u.val() || {};
-  titles = t.val() || {};
+  titles = Object.assign({}, AUTO_TITLES, t.val() || {});
   presence = p.val() || {};
   admins = a.val() || {};
 }
@@ -545,6 +545,11 @@ async function wipeUser(){
 
 /* ---------- 称号 ---------- */
 let editTitleId = null;
+// 条件を満たすと自動で付く称号。ゲーム本体に内蔵しているので、ここでは編集・削除しない
+const AUTO_TITLES = {
+  auto_casual_master:      { name:'ゆるモード制覇者',   desc:'ゆるモードの全難易度を解禁し、すべてに勝利した', color:'#0f7a3f', createdAt:1, auto:true },
+  auto_casual_master_true: { name:'真・ゆるモード制覇者', desc:'ゆるモードの全難易度で完封勝利した',               color:'#b8860b', createdAt:2, auto:true }
+};
 // 読みやすさを確かめた色の候補（白地・暗い地のどちらでも文字が読める濃さ）
 const TITLE_COLORS = ['#0f7a3f','#1f6fd1','#7b3fc4','#c2185b','#d0421b','#b8860b','#00838f','#5d4037','#455a64','#2e7d32'];
 function pickColor(c, fromCustom){
@@ -598,8 +603,9 @@ function viewTitles(){
             <td>${esc(x.desc||'')}</td>
             <td class="num">${holders(id)}</td>
             <td style="white-space:nowrap;">
+              ${x.auto ? '<span class="tag admin">自動で付与</span>' : `
               <button class="btn" onclick="editTitleId='${id}'; render()">編集</button>
-              <button class="btn ghost-danger" onclick="deleteTitle('${id}')">削除</button>
+              <button class="btn ghost-danger" onclick="deleteTitle('${id}')">削除</button>`}
             </td>
           </tr>`).join('') : '<tr><td colspan="4" class="empty">まだ称号はありません</td></tr>'}
         </tbody>
@@ -622,6 +628,7 @@ async function saveTitle(){
   }catch(err){ console.error(err); toast('保存できませんでした'); }
 }
 async function deleteTitle(id){
+  if(titles[id] && titles[id].auto){ toast('自動で付く称号は削除できません'); return; }
   const n = Object.values(users).filter(u => titlesOf(u)[id]).length;
   if(!confirm(`「${titles[id].name}」を削除しますか？${n?`\n付けている ${n}人 からも外れます。`:''}`)) return;
   try{
