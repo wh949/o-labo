@@ -128,6 +128,22 @@ tbody tr:hover{ background:var(--leaf-soft); }
 }
 .tag{ white-space:nowrap; }
 @media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
+
+/* 色の見本 */
+.swatches{ display:flex; flex-wrap:wrap; gap:10px; }
+.sw{ width:34px; height:34px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
+  box-shadow:inset 0 0 0 2px var(--panel); position:relative; }
+.sw.on{ border-color:var(--ink); }
+.sw-custom{ display:inline-block; overflow:hidden;
+  background:conic-gradient(#e53935,#fdd835,#43a047,#1e88e5,#8e24aa,#e53935); }
+.sw-custom input{ position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; border:0; padding:0; }
+
+/* 称号の付け外し */
+.title-picks{ display:flex; flex-wrap:wrap; gap:8px; }
+.tp{ display:inline-flex; align-items:center; gap:6px; padding:5px 10px 5px 6px; border:1px solid var(--line);
+  border-radius:999px; cursor:pointer; user-select:none; }
+.tp.on{ border-color:var(--leaf); background:var(--leaf-soft); }
+.tp input{ width:16px; height:16px; margin:0; accent-color:var(--leaf); }
 </style>
 </head>
 <body>
@@ -338,8 +354,7 @@ function viewUser(){
   const [pl,pc] = presenceOf(uid);
   const src = iconSrc(u);
   const d = detail;
-  const titleOpts = ['<option value="">なし</option>'].concat(
-    Object.entries(titles).map(([id,t]) => `<option value="${esc(id)}" ${u.title===id?'selected':''}>${esc(t.name)}</option>`)).join('');
+  const owned = titlesOf(u);
   const isAdm = admins[uid] || u.code === OWNER_CODE;
   return `
     <button class="back" onclick="go('users')">‹ 利用者の一覧</button>
@@ -369,12 +384,23 @@ function viewUser(){
       <input type="text" id="edName" maxlength="20" value="${esc(p.displayName || u.name || '')}">
       <label class="f" for="edBio">自己紹介</label>
       <textarea id="edBio" maxlength="300">${esc(p.bio||'')}</textarea>
-      <label class="f" for="edTitle">称号</label>
-      <select id="edTitle">${titleOpts}</select>
       <div class="row" style="margin-top:12px;">
         <button class="btn primary" onclick="saveProfile()" ${busy?'disabled':''}>変更を保存</button>
         ${src ? '<button class="btn ghost-danger" onclick="removeIcon()">アイコンを削除</button>' : ''}
       </div>
+    </div>
+
+    <div class="box">
+      <h3>称号（${Object.keys(owned).filter(k=>titles[k]).length}個）</h3>
+      ${Object.keys(titles).length ? `<div class="title-picks">${
+        Object.entries(titles).sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0)).map(([id,t]) => `
+          <label class="tp ${owned[id]?'on':''}">
+            <input type="checkbox" ${owned[id]?'checked':''} onchange="toggleTitle('${esc(id)}', this.checked)">
+            ${titleTag(t)}
+          </label>`).join('')
+      }</div>
+      <p style="margin:10px 0 0; font-size:12px; color:var(--ink-soft);">押すとすぐに反映されます。</p>`
+      : '<p class="empty" style="padding:8px;">称号がまだありません。「称号」から作ってください。</p>'}
     </div>
 
     <div class="box">
@@ -414,23 +440,57 @@ function viewUser(){
     </div>`;
 }
 
+/* ---------- 称号の持ち方 ---------- */
+// 以前は users/<uid>/title に1つだけ、今は users/<uid>/titles に何個でも持つ
+function titlesOf(u){
+  const out = {};
+  if(u && u.titles) for(const k of Object.keys(u.titles)) if(u.titles[k]) out[k] = true;
+  if(u && u.title) out[u.title] = true;      // 以前の形の名残も数える
+  return out;
+}
+const isDarkMode = () => window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+// 暗い画面では文字を明るくして読めるようにする
+function titleTone(hex){
+  if(!isDarkMode() || !/^#[0-9a-f]{6}$/i.test(hex)) return hex;
+  const v=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));
+  return '#'+v.map(x=>Math.round(x+(255-x)*0.45).toString(16).padStart(2,'0')).join('');
+}
+function titleTag(t){
+  const c = (t && t.color) || '#0f7a3f';
+  return `<span class="tag" style="background:${esc(c)}22; color:${esc(titleTone(c))};">${esc(t ? t.name : '')}</span>`;
+}
+
 /* ---------- 利用者の操作 ---------- */
 async function saveProfile(){
   const uid = selectedUid;
   const name = $('#edName').value.trim();
   const bio = $('#edBio').value;
-  const title = $('#edTitle').value;
   if(bio.length > 300){ toast('自己紹介は300文字までです'); return; }
   busy = true; render();
   try{
     await db.ref('users/'+uid+'/profile').update({ displayName: name, bio, updatedAt: Date.now() });
     await db.ref('users/'+uid+'/name').set(name || '(名前なし)');
-    if(title) await db.ref('users/'+uid+'/title').set(title);
-    else await db.ref('users/'+uid+'/title').remove();
     await loadAll();
     toast('変更を保存しました');
   }catch(err){ console.error(err); toast('保存できませんでした（権限を確認してください）'); }
   busy = false; render();
+}
+async function toggleTitle(titleId, on){
+  const uid = selectedUid;
+  try{
+    if(on) await db.ref('users/'+uid+'/titles/'+titleId).set(true);
+    else   await db.ref('users/'+uid+'/titles/'+titleId).remove();
+    // 以前の1つだけの形で持っていた場合は、新しい形へ移しておく
+    const u = users[uid] || {};
+    if(u.title){
+      if(u.title !== titleId || on) await db.ref('users/'+uid+'/titles/'+u.title).set(true);
+      await db.ref('users/'+uid+'/title').remove();
+      if(!on && u.title === titleId) await db.ref('users/'+uid+'/titles/'+titleId).remove();
+    }
+    await loadAll();
+    toast(on ? '称号を付けました' : '称号を外しました');
+    render();
+  }catch(err){ console.error(err); toast('変更できませんでした（権限を確認してください）'); render(); }
 }
 async function removeIcon(){
   if(!confirm('この利用者のアイコンを削除しますか？')) return;
@@ -485,9 +545,22 @@ async function wipeUser(){
 
 /* ---------- 称号 ---------- */
 let editTitleId = null;
+// 読みやすさを確かめた色の候補（白地・暗い地のどちらでも文字が読める濃さ）
+const TITLE_COLORS = ['#0f7a3f','#1f6fd1','#7b3fc4','#c2185b','#d0421b','#b8860b','#00838f','#5d4037','#455a64','#2e7d32'];
+function pickColor(c, fromCustom){
+  $('#tColor').value = c;
+  const pv = $('#tPreview');
+  if(pv){ pv.style.background = c + '22'; pv.style.color = titleTone(c); }
+  document.querySelectorAll('.sw').forEach(el => el.classList.remove('on'));
+  if(fromCustom){ document.querySelector('.sw-custom').classList.add('on'); }
+  else {
+    const b = [...document.querySelectorAll('.sw:not(.sw-custom)')].find(el => el.getAttribute('aria-label') === c);
+    if(b) b.classList.add('on');
+  }
+}
 function viewTitles(){
   const list = Object.entries(titles).sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
-  const holders = id => Object.values(users).filter(u => u.title === id).length;
+  const holders = id => Object.values(users).filter(u => titlesOf(u)[id]).length;
   const t = editTitleId ? (titles[editTitleId] || {}) : {};
   return `
     <h2>称号</h2>
@@ -495,11 +568,22 @@ function viewTitles(){
     <div class="box">
       <h3>${editTitleId ? '称号を編集' : '称号を作る'}</h3>
       <label class="f" for="tName">名前（30文字まで）</label>
-      <input type="text" id="tName" maxlength="30" value="${esc(t.name||'')}">
+      <input type="text" id="tName" maxlength="30" value="${esc(t.name||'')}" oninput="const p=$('#tPreview'); if(p) p.textContent=this.value||'称号の名前';">
       <label class="f" for="tDesc">説明（120文字まで）</label>
       <input type="text" id="tDesc" maxlength="120" value="${esc(t.desc||'')}">
-      <label class="f" for="tColor">色</label>
-      <div class="row"><input type="color" id="tColor" value="${esc(t.color||'#0f7a3f')}" style="width:56px; height:38px; padding:2px;"></div>
+      <span class="f">色</span>
+      <div class="swatches" role="radiogroup" aria-label="称号の色">
+        ${TITLE_COLORS.map(c => `<button type="button" class="sw ${(t.color||TITLE_COLORS[0])===c?'on':''}" style="background:${c};"
+            onclick="pickColor('${c}')" aria-label="${c}" aria-checked="${(t.color||TITLE_COLORS[0])===c}" role="radio"></button>`).join('')}
+        <label class="sw sw-custom ${TITLE_COLORS.includes(t.color||TITLE_COLORS[0])?'':'on'}" title="ほかの色">
+          <input type="color" id="tColorCustom" value="${esc(t.color||TITLE_COLORS[0])}" oninput="pickColor(this.value, true)">
+        </label>
+      </div>
+      <input type="hidden" id="tColor" value="${esc(t.color||TITLE_COLORS[0])}">
+      <div class="row" style="margin-top:10px;">
+        <span style="font-size:12px; color:var(--ink-soft);">見え方</span>
+        <span class="tag" id="tPreview" style="background:${esc(t.color||TITLE_COLORS[0])}22; color:${esc(titleTone(t.color||TITLE_COLORS[0]))};">${esc(t.name||'称号の名前')}</span>
+      </div>
       <div class="row" style="margin-top:12px;">
         <button class="btn primary" onclick="saveTitle()">${editTitleId?'変更を保存':'作る'}</button>
         ${editTitleId ? '<button class="btn" onclick="editTitleId=null; render()">やめる</button>' : ''}
@@ -510,7 +594,7 @@ function viewTitles(){
         <thead><tr><th>称号</th><th>説明</th><th class="num">持っている人</th><th></th></tr></thead>
         <tbody>${list.length ? list.map(([id,x]) => `
           <tr style="cursor:default;">
-            <td><span class="tag" style="background:${esc(x.color||'#0f7a3f')}22; color:${esc(x.color||'#0f7a3f')};">${esc(x.name)}</span></td>
+            <td>${titleTag(x)}</td>
             <td>${esc(x.desc||'')}</td>
             <td class="num">${holders(id)}</td>
             <td style="white-space:nowrap;">
@@ -538,11 +622,14 @@ async function saveTitle(){
   }catch(err){ console.error(err); toast('保存できませんでした'); }
 }
 async function deleteTitle(id){
-  const n = Object.values(users).filter(u => u.title === id).length;
+  const n = Object.values(users).filter(u => titlesOf(u)[id]).length;
   if(!confirm(`「${titles[id].name}」を削除しますか？${n?`\n付けている ${n}人 からも外れます。`:''}`)) return;
   try{
-    const tasks = Object.entries(users).filter(([,u]) => u.title === id)
-      .map(([uid]) => db.ref('users/'+uid+'/title').remove());
+    const tasks = [];
+    for(const [uid,u] of Object.entries(users)){
+      if(u.titles && u.titles[id]) tasks.push(db.ref('users/'+uid+'/titles/'+id).remove());
+      if(u.title === id) tasks.push(db.ref('users/'+uid+'/title').remove());
+    }
     await Promise.all(tasks);
     await db.ref('titles/'+id).remove();
     await loadAll(); toast('称号を削除しました'); render();
