@@ -741,6 +741,27 @@ html[data-theme="dark"] {
 .title-badge{ display:inline-block; font-size:13px; font-weight:800; padding:4px 12px; border-radius:999px; border:1px solid; }
 
 .title-list{ display:flex; flex-wrap:wrap; gap:6px; }
+
+/* 称号獲得の演出 */
+.title-earned{ position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center;
+  background:rgba(10,14,12,.7); backdrop-filter:blur(8px); animation:suIn .45s cubic-bezier(.16,1,.3,1); }
+.title-earned.is-out{ animation:suOut .25s ease forwards; }
+.te-inner{ text-align:center; padding:24px; }
+.te-label{ color:#fff; font-weight:800; font-size:clamp(14px,4.4vw,18px); letter-spacing:.12em; margin-bottom:10px; white-space:nowrap; }
+.te-name{ color:#FFD34D; font-weight:900; font-size:clamp(26px,9vw,46px); white-space:nowrap;
+  text-shadow:0 0 22px rgba(255,211,77,.5); }
+
+/* 行事のスキン：盤は画像で塗り、マス目は線だけ残す */
+.board.event{
+  background-image:var(--ev-stage) !important;
+  background-size:cover !important; background-position:center !important;
+}
+.board.event .cell{ background:transparent !important; box-shadow:inset 0 0 0 1px rgba(255,255,255,.18) !important; }
+.board.event .stone{ box-shadow:none !important; background-size:contain !important;
+  background-repeat:no-repeat !important; background-position:center !important; }
+.board.event .stone::before, .board.event .stone::after{ display:none !important; }
+.board.event .stone.black{ background-image:var(--ev-black) !important; background-color:transparent !important; }
+.board.event .stone.white{ background-image:var(--ev-white) !important; background-color:transparent !important; }
 </style>
 </head>
 <body>
@@ -879,6 +900,26 @@ const CASUAL_DIFFS = [
   {id:'chou_taito', name:'超𱁬', nameRuby:'ちょうたいと', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:9.744},
   {id:'chou_maou', name:'超魔王', nameRuby:'ちょうまおう', nameRubyLevel:4, locked:true, star:true, depth:12, rnd:0, boost:10.08},
   {id:'chou_eiyuu', name:'超英雄', nameRuby:'ちょうえいゆう', nameRubyLevel:4, locked:true, star:true, depth:12, rnd:0, boost:10.43},
+  {id:'modoru', name:'戻', nameRuby:'もどる', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'otosu', name:'落', nameRuby:'おとす', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'a_kyuji', name:'亞', nameRuby:'あ', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'period', name:'.', nameRuby:'ピリオド', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'comma', name:',', nameRuby:'カンマ', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'chou_modoru', name:'超戻', nameRuby:'ちょうもどる', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'chou_otosu', name:'超落', nameRuby:'ちょうおとす', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'chou_a_kyuji', name:'超亞', nameRuby:'ちょうあ', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'chou_period', name:'超.', nameRuby:'ちょうピリオド', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'chou_comma', name:'超,', nameRuby:'ちょうカンマ', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'chou3_transcendent', name:'超超超越者', nameRuby:'ちょうちょうちょうえつしゃ', nameRubyLevel:1, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'modori_modoru', name:'戻戻', nameRuby:'もどりもどる', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'chou2_oni', name:'超超越鬼', nameRuby:'ちょうちょうえつおに', nameRubyLevel:1, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'chou2_kami', name:'超超越神', nameRuby:'ちょうちょうえつしん', nameRubyLevel:1, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'chou2_infinity', name:'超超♾️', nameRuby:'ちょうちょうインフィニティ', nameRubyLevel:2, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'sakanoboru', name:'遡', nameRuby:'さかのぼる', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'nozomi', name:'希', nameRuby:'のぞみ', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'nozomu', name:'望', nameRuby:'のぞむ', nameRubyLevel:0, locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'yuru', name:'ゆる', locked:true, star:true, depth:12, rnd:0, boost:1},
+  {id:'olabo', name:'O-LABO', nameRuby:'オラボ', nameRubyLevel:2, locked:true, star:true, depth:12, rnd:0, boost:1},
 ];
 
 /* ------------------------------------------------------------
@@ -1010,13 +1051,14 @@ const DEFAULT_STATE = {
     stellaUnlocked:false,   // 解禁済みか（スキン選択に出るか）
     stellaCheckedV2:false,  // 旧方式の解禁を一度だけ解除するための印
     casualSkin:'default',   // 'default' | 'stella'
+    eventSkins:true,        // 行事の見た目を使うか
     battle:{
       p1:'プレイヤー1', p2:'プレイヤー2', flipMode:'auto',
       hintPrefsByName:{}
     }
   },
   training:{ rankIndex:0, xNumber:0, history:[], winCount:0, startMode:'choice' },
-  casual:{ unlocked:{ultra_easy:true,easy:true,normal:true,hard:true,ultra_hard:true,oni:false,ultra_oni:false,kami:false,ultra_kami:false,infinity:false,super_infinity:false,alpha:false,beta:false,gamma:false,super_alpha:false,super_beta:false,super_gamma:false,transcendent:false,zero:false,maru:false,equal:false,not_equal:false,approx:false,chou_transcendent:false,chou_zero:false,chou_maru:false,chou_equal:false,chou_not_equal:false,chou_approx:false,chou:false,null:false,z:false,reverse_a:false,you:false,no_cap:false,sup:false,verse:false,re_no_cap:false,re_sup:false,re_verse:false,exe:false,othello:false,othello_exe:false,exclamation:false,question:false,nijinoten:false,yagyoue:false,kunojiten_ue:false,kunojiten_shita:false,kunojiten:false,kunojiten_daku:false,kunojiten_handaku:false,ka:false,jun:false,nuta:false,tai:false,tou:false,taito:false,maou:false,eiyuu:false,chou_exe:false,chou_othello:false,chou_othello_exe:false,chou_exclamation:false,chou_question:false,chou_nijinoten:false,chou_yagyoue:false,chou_kunojiten_ue:false,chou_kunojiten_shita:false,chou_kunojiten:false,chou_kunojiten_daku:false,chou_kunojiten_handaku:false,chou_ka:false,chou_jun:false,chou_nuta:false,chou_tai:false,chou_tou:false,chou_taito:false,chou_maou:false,chou_eiyuu:false}, results:{}, history:[], showHints:true, startMode:'choice' },
+  casual:{ unlocked:{ultra_easy:true,easy:true,normal:true,hard:true,ultra_hard:true,oni:false,ultra_oni:false,kami:false,ultra_kami:false,infinity:false,super_infinity:false,alpha:false,beta:false,gamma:false,super_alpha:false,super_beta:false,super_gamma:false,transcendent:false,zero:false,maru:false,equal:false,not_equal:false,approx:false,chou_transcendent:false,chou_zero:false,chou_maru:false,chou_equal:false,chou_not_equal:false,chou_approx:false,chou:false,null:false,z:false,reverse_a:false,you:false,no_cap:false,sup:false,verse:false,re_no_cap:false,re_sup:false,re_verse:false,exe:false,othello:false,othello_exe:false,exclamation:false,question:false,nijinoten:false,yagyoue:false,kunojiten_ue:false,kunojiten_shita:false,kunojiten:false,kunojiten_daku:false,kunojiten_handaku:false,ka:false,jun:false,nuta:false,tai:false,tou:false,taito:false,maou:false,eiyuu:false,chou_exe:false,chou_othello:false,chou_othello_exe:false,chou_exclamation:false,chou_question:false,chou_nijinoten:false,chou_yagyoue:false,chou_kunojiten_ue:false,chou_kunojiten_shita:false,chou_kunojiten:false,chou_kunojiten_daku:false,chou_kunojiten_handaku:false,chou_ka:false,chou_jun:false,chou_nuta:false,chou_tai:false,chou_tou:false,chou_taito:false,chou_maou:false,chou_eiyuu:false,modoru:false,otosu:false,a_kyuji:false,period:false,comma:false,chou_modoru:false,chou_otosu:false,chou_a_kyuji:false,chou_period:false,chou_comma:false,chou3_transcendent:false,modori_modoru:false,chou2_oni:false,chou2_kami:false,chou2_infinity:false,sakanoboru:false,nozomi:false,nozomu:false,yuru:false,olabo:false}, results:{}, history:[], showHints:true, startMode:'choice' },
   battleHistory: [],
   online:{ lastName:'', history:[] },
   variety:{ history:[], customRules:{random:false, lucky_unlucky:false, warp:false, timer:false} },
@@ -1355,6 +1397,73 @@ const FIREBASE_CONFIG = {
 const SKIN_BASE_URL = 'db/skins';
 function skinAssetUrl(skinName, file){
   return SKIN_BASE_URL + '/' + encodeURIComponent(skinName) + '/' + file;
+}
+
+/* ------------------------------------------------------------
+   行事のスキン
+   db/skins/<フォルダ名>/ に次の6枚を置く
+     r-black.png  r-white.png  r-stage.png   … リアル
+     i-black.png  i-white.png  i-stage.png   … イラスト
+   画像がそろっていない行事は、自動的にふだんの見た目のまま
+   ------------------------------------------------------------ */
+// イースター（春分後の最初の満月の次の日曜日）を求める
+function easterDate(y){
+  const a=y%19, b=Math.floor(y/100), c=y%100, d=Math.floor(b/4), e=b%4;
+  const f=Math.floor((b+8)/25), g=Math.floor((b-f+1)/3);
+  const h=(19*a+b-d-g+15)%30, i=Math.floor(c/4), k=c%4;
+  const l=(32+2*e+2*i-h-k)%7, m=Math.floor((a+11*h+22*l)/451);
+  const month=Math.floor((h+l-7*m+114)/31), day=((h+l-7*m+114)%31)+1;
+  return {month, day};
+}
+// 期間は「開始日〜終了日」（月日で指定）。上にあるものほど優先
+const EVENT_SKINS = [
+  { id:'birthday',   name:'誕生日',         match: (m,d)=> isMyBirthday() },
+  { id:'aprilfools', name:'エイプリルフール', match: (m,d)=> m===4 && d===1 },
+  { id:'easter',     name:'イースター',       match: (m,d,y)=>{ const e=easterDate(y); return m===e.month && d===e.day; } },
+  { id:'othelloday', name:'オセロの日',       match: (m,d)=> m===4 && d===29 },
+  { id:'halloween',  name:'ハロウィン',       match: (m,d)=> m===10 && d===31 },
+  { id:'christmas',  name:'クリスマス',       match: (m,d)=> m===12 && (d===24 || d===25) },
+  { id:'newyear',    name:'正月',             match: (m,d)=> m===1 && d>=1 && d<=3 },
+];
+function activeEvent(now){
+  const t = now || new Date();
+  const m=t.getMonth()+1, d=t.getDate(), y=t.getFullYear();
+  return EVENT_SKINS.find(ev => { try{ return ev.match(m,d,y); }catch(e){ return false; } }) || null;
+}
+
+// 画像が3枚ともそろっているかを確かめてから使う（そろっていない行事は使わない）
+const eventSkinReady = {};   // "行事/r" → true / false / 読み込み中
+function eventSkinKey(ev, style){ return ev.id + '/' + style; }
+function preloadEventSkin(ev, style){
+  const key = eventSkinKey(ev, style);
+  if(eventSkinReady[key] !== undefined) return;
+  eventSkinReady[key] = 'loading';
+  const files = ['black','white','stage'].map(n => skinAssetUrl(ev.id, style + '-' + n + '.png'));
+  Promise.all(files.map(u => new Promise(res => {
+    const img = new Image();
+    img.onload = () => res(true);
+    img.onerror = () => res(false);
+    img.src = u;
+  }))).then(r => {
+    eventSkinReady[key] = r.every(Boolean);
+    if(eventSkinReady[key]) requestRender();
+  });
+}
+// いま盤に使う行事スキン（無ければ null）
+function currentEventSkin(){
+  if(state.settings.eventSkins === false) return null;
+  if(useStellaSkin()) return null;             // Stella は自分で選んだ見た目なので優先する
+  const ev = activeEvent();
+  if(!ev) return null;
+  const style = state.settings.boardStyle === 'illust' ? 'i' : 'r';
+  preloadEventSkin(ev, style);
+  return eventSkinReady[eventSkinKey(ev, style)] === true ? { ev, style } : null;
+}
+function eventBoardStyle(){
+  const sk = currentEventSkin();
+  if(!sk) return '';
+  const u = n => `url('${skinAssetUrl(sk.ev.id, sk.style + '-' + n + '.png')}')`;
+  return ` style="--ev-black:${u('black')}; --ev-white:${u('white')}; --ev-stage:${u('stage')};"`;
 }
 
 const AUDIO_BASE_URL = 'db/audio';
@@ -2905,8 +3014,13 @@ function isMyBirthday(){
   return (t.getMonth()+1) === myProfile.birthMonth && t.getDate() === myProfile.birthDay;
 }
 
-// 称号の一覧（管理者ページで作ったもの）
-let titleCatalog = {};
+// 自動で付く称号（条件を満たすと本人の端末が付与する）
+const AUTO_TITLES = {
+  auto_casual_master:      { name:'ゆるモード制覇者',   desc:'ゆるモードの全難易度を解禁し、すべてに勝利した', color:'#0f7a3f', createdAt:1, auto:true },
+  auto_casual_master_true: { name:'真・ゆるモード制覇者', desc:'ゆるモードの全難易度で完封勝利した',               color:'#b8860b', createdAt:2, auto:true }
+};
+// 称号の一覧（管理者ページで作ったもの＋自動で付くもの）
+let titleCatalog = Object.assign({}, AUTO_TITLES);
 let myTitleIds = [];
 let myBanned = false, myBanReason = '';
 async function loadTitlesAndStatus(){
@@ -2916,7 +3030,7 @@ async function loadTitlesAndStatus(){
       fbDb.ref('titles').once('value'),
       fbDb.ref('users/' + fbUid).once('value')
     ]);
-    titleCatalog = t.val() || {};
+    titleCatalog = Object.assign({}, AUTO_TITLES, t.val() || {});
     const u = me.val() || {};
     myTitleIds = titleIdsOf(u);
     myBanned = !!u.banned;
@@ -2932,6 +3046,58 @@ function bannedNoticeMarkup(){
     </div>`;
 }
 // 以前は1つだけ（title）、今は何個でも（titles）持てる。両方を読む
+// ゆるモードの達成度を調べる
+function casualMastery(){
+  const res = (state.casual && state.casual.results) || {};
+  const unl = (state.casual && state.casual.unlocked) || {};
+  const all = CASUAL_DIFFS.every(d => !d.locked || unl[d.id]);
+  const won = CASUAL_DIFFS.every(d => res[d.id] === 'won' || res[d.id] === 'perfect');
+  const perfect = CASUAL_DIFFS.every(d => res[d.id] === 'perfect');
+  return { allUnlocked: all, allWon: all && won, allPerfect: all && perfect };
+}
+
+// 条件を満たしていれば称号を付ける。
+// 完封で制覇したら、ふつうの制覇者は外して「真」に置き換える。
+let masteryChecking = false;
+async function checkAutoTitles(){
+  if(masteryChecking || !fbDb || !fbUid || !isSignedIn()) return;
+  const m = casualMastery();
+  let want = null;
+  if(m.allPerfect) want = 'auto_casual_master_true';
+  else if(m.allWon) want = 'auto_casual_master';
+  if(!want) return;
+  if(myTitleIds.includes(want) && !(want === 'auto_casual_master_true' && myTitleIds.includes('auto_casual_master'))) return;
+
+  masteryChecking = true;
+  try{
+    const ref = fbDb.ref('users/' + fbUid + '/titles');
+    await ref.child(want).set(true);
+    if(want === 'auto_casual_master_true') await ref.child('auto_casual_master').remove();
+    const already = myTitleIds.includes(want);
+    myTitleIds = myTitleIds.filter(id => id !== 'auto_casual_master' || want !== 'auto_casual_master_true');
+    if(!myTitleIds.includes(want)) myTitleIds.push(want);
+    if(!already) showTitleEarned(AUTO_TITLES[want].name);
+  }catch(err){
+    console.warn('称号を付けられませんでした:', err);
+  }finally{
+    masteryChecking = false;
+  }
+}
+
+// 称号を手に入れたときの演出
+function showTitleEarned(name){
+  if(document.querySelector('.title-earned')) return;
+  const el = document.createElement('div');
+  el.className = 'title-earned';
+  el.innerHTML = `<div class="te-inner"><div class="te-label">称号を獲得</div><div class="te-name">${escapeHtml(name)}</div></div>`;
+  document.body.appendChild(el);
+  let tappable = false;
+  const close = ()=>{ if(!tappable) return; el.classList.add('is-out'); setTimeout(()=>el.remove(), 260); };
+  el.addEventListener('pointerdown', close);
+  setTimeout(()=>{ tappable = true; }, 1000);
+  setTimeout(()=>{ tappable = true; close(); }, 3500);
+}
+
 function titleIdsOf(u){
   const ids = [];
   if(u && u.titles) for(const k of Object.keys(u.titles)) if(u.titles[k]) ids.push(k);
@@ -3756,6 +3922,7 @@ async function ensureFirebase(){
           await loadMyProfile();
           await loadTitlesAndStatus();
           startPresence();
+          setTimeout(checkAutoTitles, 1500);
           watchFriends();
           watchInvites();
           watchFriendRequests();
@@ -4861,7 +5028,8 @@ function useStellaSkin(){
             && state.settings.casualSkin === 'stella');
 }
 function boardStyleClass(){ 
-  return (state.settings.boardStyle==='illust' ? 'illust' : '') + (useStellaSkin() ? ' stella' : '');
+  return (state.settings.boardStyle==='illust' ? 'illust' : '') + (useStellaSkin() ? ' stella' : '')
+       + (currentEventSkin() ? ' event' : '');
 }
 
 function renderBoardScreen(){
@@ -4975,7 +5143,7 @@ function renderBoardScreen(){
         <div class="score-chip ${black>=white?'leading':''} ${g.mode==='online'&&onlineState.myColor===1?'is-me':''}"><span class="sc-stone" style="background:#111;"></span><span class="sc-name">${escapeHtml(leftName)}</span><span class="sc-num">${black}</span></div>
         <div class="score-chip ${white>black?'leading':''} ${g.mode==='online'&&onlineState.myColor===2?'is-me':''}"><span class="sc-stone" style="background:#eee; box-shadow:inset 0 0 0 1px #ccc;"></span><span class="sc-name">${escapeHtml(rightName)}</span><span class="sc-num">${white}</span></div>
       </div>
-      <div class="board ${boardStyleClass()}" id="boardEl">${cells.join('')}</div>
+      <div class="board ${boardStyleClass()}" id="boardEl"${eventBoardStyle()}>${cells.join('')}</div>
       ${varietyEventMarkup}
       ${stellaChallengeActive ? '<div class="stella-banner">この対局に勝利すると Stella が解禁！</div>' : ''}
       ${statusNote}
@@ -5323,6 +5491,7 @@ function endGame(g){
     const prev = state.casual.results[g.opts.diffId];
     if(!prev || order[newMark] > (order[prev]||0)){
       state.casual.results[g.opts.diffId] = newMark;
+      setTimeout(checkAutoTitles, 800);   // 称号の条件を満たしたか確かめる
     }
 
     if(entry.result==='win'){
@@ -5940,6 +6109,10 @@ function viewSettings(){
     </div>
     <div class="card">
       <div class="toggle-row">
+        <div class="trow-text"><b>行事の見た目</b><span>誕生日やクリスマスなどの日に、盤と石が特別な見た目になります</span></div>
+        <label class="switch"><input type="checkbox" ${s.eventSkins!==false?'checked':''} data-action="toggle-event-skins"><span class="toggle-track"></span></label>
+      </div>
+      <div class="toggle-row">
         <div class="trow-text"><b>石がひっくり返るアニメーション</b><span>オフにすると即座に色が変わります</span></div>
         <label class="switch"><input type="checkbox" ${s.animFlip?'checked':''} data-action="toggle-anim-flip"><span class="toggle-track"></span></label>
       </div>
@@ -6027,7 +6200,7 @@ function viewSettings(){
       <button class="btn btn-danger" data-action="delete-cache">キャッシュデータを${ruby('削除','さくじょ',2)}</button>
     </div>
     <div style="text-align:center; margin-top:20px; padding:10px; font-size:10px; color:var(--ink-soft);">
-      <span>ver. 2.4.2</span>
+      <span>ver. 2.4.3</span>
     </div>
     <input type="file" id="importFile" accept=".txt" style="display:none;">
   `;
@@ -6475,6 +6648,10 @@ document.addEventListener('click', (e)=>{
       break;
     }
     case 'account-logout': accountLogout(); break;
+    case 'toggle-event-skins':
+      state.settings.eventSkins = !(state.settings.eventSkins !== false);
+      saveState(); render();
+      break;
     case 'cloud-save-now':
       cloudSaveNow().then(ok => toast(ok ? 'クラウドに保存しました' : '保存できませんでした'));
       break;
