@@ -2772,6 +2772,77 @@ function imageToIconDataUrl(file){
   });
 }
 
+// アイコンから代表的な色を取り出す。
+// マイページの見出しの背景に使う。
+function extractIconColor(dataUrl){
+  return new Promise(resolve => {
+    if(!dataUrl || !dataUrl.startsWith('data:')) return resolve(null);
+    const img = new Image();
+    img.onerror = () => resolve(null);
+    img.onload = () => {
+      try{
+        const n = 24;
+        const cv = document.createElement('canvas');
+        cv.width = n; cv.height = n;
+        const ctx = cv.getContext('2d');
+        ctx.drawImage(img, 0, 0, n, n);
+        const d = ctx.getImageData(0, 0, n, n).data;
+
+        // 色みのまとまりごとに数える（灰色は候補から外す）
+        const bins = {};
+        let sumR=0, sumG=0, sumB=0, count=0;
+        for(let i=0;i<d.length;i+=4){
+          const r=d[i], g=d[i+1], b=d[i+2], a=d[i+3];
+          if(a < 128) continue;
+          sumR+=r; sumG+=g; sumB+=b; count++;
+          const key = (r>>5)+'_'+(g>>5)+'_'+(b>>5);
+          if(!bins[key]) bins[key] = {n:0, r:0, g:0, b:0};
+          const t = bins[key];
+          t.n++; t.r+=r; t.g+=g; t.b+=b;
+        }
+        if(!count) return resolve(null);
+
+        let best=null, bestScore=-1;
+        for(const k of Object.keys(bins)){
+          const t = bins[k];
+          const r=t.r/t.n, g=t.g/t.n, b=t.b/t.n;
+          const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+          const sat = mx ? (mx-mn)/mx : 0;
+          // 多く使われていて、かつ色みがはっきりしているものを選ぶ
+          const score = t.n * (0.35 + sat);
+          if(score > bestScore){ bestScore = score; best = {r,g,b}; }
+        }
+        const c = best || {r:sumR/count, g:sumG/count, b:sumB/count};
+        resolve({ r:Math.round(c.r), g:Math.round(c.g), b:Math.round(c.b) });
+      }catch(err){ resolve(null); }
+    };
+    img.src = dataUrl;
+  });
+}
+// 背景の明るさから、読みやすい文字色を決める
+function colorLum(c){
+  const f = v => { v/=255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); };
+  return 0.2126*f(c.r) + 0.7152*f(c.g) + 0.0722*f(c.b);
+}
+function textColorFor(c){
+  if(!c) return '#fff';
+  return colorLum(c) > 0.18 ? '#1b1a17' : '#ffffff';
+}
+// 中くらいの明るさだと文字が沈むので、薄い影を敷いて読みやすくする
+function textShadowFor(c){
+  if(!c) return '';
+  const L = colorLum(c);
+  if(L > 0.55) return 'text-shadow:0 1px 2px rgba(255,255,255,.55);';
+  if(L < 0.08) return '';
+  return (textColorFor(c) === '#ffffff')
+    ? 'text-shadow:0 1px 3px rgba(0,0,0,.55);'
+    : 'text-shadow:0 1px 2px rgba(255,255,255,.6);';
+}
+function shade(c, k){
+  const m = v => Math.max(0, Math.min(255, Math.round(v*k)));
+  return `rgb(${m(c.r)},${m(c.g)},${m(c.b)})`;
+}
+
 // アイコンの表示（画像が無ければ人型の記号）
 function iconMarkup(src, cls){
   if(src && src.startsWith('data:')){
@@ -3168,7 +3239,11 @@ async function friendInvite(friendUid, friendName){
     onlineState.phase = 'waiting';
     onlineState.waitStartedAt = Date.now();
     onlineState.invitedName = friendName || '';
+    // どの画面から招待しても、待機画面へ移動する
+    activeTab = 'basic';
+    currentBasicMode = 'online';
     sub.online = 'room';
+    otherProfile = null;
     onlineAttachRoom(roomId);
     toast((friendName || 'フレンド') + ' を招待しました');
   }catch(err){
@@ -5131,17 +5206,36 @@ function statRowsMarkup(st){
     <div class="acc-row"><span class="acc-k">Stella</span><span class="acc-v">${st.stella ? '解禁済み' : '未解禁'}</span></div>`;
 }
 
+// 見出しの色。アイコンから取り出した色が分かっていればそれを使う
+let heroColorCache = {};   // アイコン画像 → 取り出した色
 function profileHeroMarkup(icon, name, code){
+  const c = icon ? heroColorCache[icon] : null;
+  const bg = c
+    ? `background:linear-gradient(150deg, ${shade(c,1.18)}, ${shade(c,0.72)} 78%);`
+    : 'background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);';
+  const fg = c ? textColorFor(c) : '#fff';
+  const sh = c ? textShadowFor(c) : '';
+  const sub = c ? (fg === '#ffffff' ? 'rgba(255,255,255,.86)' : 'rgba(27,26,23,.72)') : '';
   return `
-    <div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);">
+    <div class="hero" style="${bg} color:${fg};">
       <div class="mp-head">
         <div class="mp-icon">${iconMarkup(icon)}</div>
         <div class="mp-head-text">
-          <h2 style="margin:0;">${escapeHtml(name)}</h2>
-          <p style="margin:4px 0 0;">ID ${escapeHtml(code || '--------')}</p>
+          <h2 style="margin:0; color:${fg}; ${sh}">${escapeHtml(name)}</h2>
+          <p style="margin:4px 0 0; ${sub?`color:${sub};`:''} ${sh}">ID ${escapeHtml(code || '--------')}</p>
         </div>
       </div>
     </div>`;
+}
+
+// アイコンの色をまだ調べていなければ調べて、分かったら描き直す
+function ensureHeroColor(icon){
+  if(!icon || heroColorCache[icon] !== undefined) return;
+  heroColorCache[icon] = null;          // 調査中の印
+  extractIconColor(icon).then(c => {
+    heroColorCache[icon] = c;
+    if(c) render();
+  });
 }
 
 // 自分のマイページ
@@ -5186,12 +5280,13 @@ function viewMyPage(){
         <div class="friend-name">${escapeHtml(f.name || 'プレイヤー')}</div>
         <div class="friend-code">${p.text}</div>
       </div>
-      <button class="btn btn-soft friend-invite" data-action="open-other" data-uid="${f.uid}" data-name="${escapeHtml(f.name||'')}">見る</button>
-      <button class="btn btn-ghost friend-del" data-action="friend-remove" data-uid="${f.uid}">×</button>
+      <button class="btn btn-soft friend-invite" data-action="friend-invite" data-uid="${f.uid}" data-name="${escapeHtml(f.name||'')}">招待</button>
+      <button class="btn btn-ghost friend-del" data-action="open-other" data-uid="${f.uid}" data-name="${escapeHtml(f.name||'')}">›</button>
     </div>`;
   }).join('')
     : '<p style="font-size:12px; color:var(--ink-soft); margin:0; text-align:center; padding:8px 0;">まだフレンドがいません</p>';
 
+  ensureHeroColor(myProfile.icon);
   const bio = myProfile.bio || '';
   return `
     ${profileHeroMarkup(myProfile.icon, profileName(), myUserCode())}
@@ -5261,6 +5356,7 @@ function viewOtherPage(){
       <div class="hero-eyebrow">PROFILE</div><h2>読み込み中…</h2></div>
       <div class="card" style="text-align:center;"><div class="online-spinner"></div></div>`;
   }
+  ensureHeroColor(p.icon);
   const isFriend = friendList.some(f => f.uid === p.uid);
   const sent = !!sentRequestTo[p.uid];
   return `
@@ -5277,7 +5373,7 @@ function viewOtherPage(){
 
     <div class="card">
       ${isFriend
-        ? '<p style="margin:0 0 10px; font-size:13px; color:var(--jade-deep); font-weight:700; text-align:center;">フレンドです</p>'
+        ? `<button class="btn btn-primary" data-action="friend-invite" data-uid="${p.uid}" data-name="${escapeHtml(p.name)}" style="width:100%; margin-bottom:8px;">対局に招待する</button>`
         : (sent
           ? '<p style="margin:0 0 10px; font-size:13px; color:var(--ink-soft); text-align:center;">申請済み（承認待ち）</p>'
           : `<button class="btn btn-primary" data-action="friend-request" data-uid="${p.uid}" data-name="${escapeHtml(p.name)}" style="width:100%;">フレンド申請</button>`)}
