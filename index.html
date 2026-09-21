@@ -735,6 +735,10 @@ html[data-theme="dark"] {
 .bio-text a{ color:var(--jade-deep); text-decoration:underline; }
 .bio-preview{ margin-top:10px; padding:10px 12px; border:1px dashed var(--line); border-radius:10px; }
 .bio-preview-label{ font-size:10.5px; color:var(--ink-soft); margin-bottom:4px; }
+
+.copy-btn{ width:auto; padding:4px 10px; font-size:11px; font-weight:700; border-radius:8px; }
+
+.title-badge{ display:inline-block; font-size:13px; font-weight:800; padding:4px 12px; border-radius:999px; border:1px solid; }
 </style>
 </head>
 <body>
@@ -1390,7 +1394,16 @@ function toast(msg){
 /* ============================================================
    4. render: shell
    ============================================================ */
+// 監視処理などから頻繁に呼ばれても、描画は1フレームに1回にまとめる。
+// （作り直しが続くと、タップした瞬間に要素が差し替わって反応しなくなる）
+let renderQueued = false;
+function requestRender(){
+  if(renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(()=>{ renderQueued = false; render(); });
+}
 function render(){
+  renderQueued = false;
   document.body.classList.toggle('gfx-light', state.settings.graphics==='light');
   document.body.classList.toggle('anim-flip', state.settings.animFlip);
   document.body.classList.toggle('furigana-on', state.settings.furigana);
@@ -1404,11 +1417,8 @@ function render(){
   updateBGM();
   if(presenceRef) updatePresence();
 
-  // ホーム画面が表示されたとき、自動的にニュースを読み込む
-  if(activeTab === 'home'){
-    // DOM が完全に描画された後にニュースを読み込む
-    Promise.resolve().then(() => displayHomeNews());
-  }
+  // ホーム画面ではお知らせを表示する（取得は数分に1回だけ）
+  if(activeTab === 'home') showHomeNews();
 }
 function renderTabs(){
   let tabs;
@@ -1601,76 +1611,59 @@ function formatNewsDate(dateStr){
   return `${year}年${month}月${day}日`;
 }
 
-async function displayHomeNews(){
-  const newsSection = document.getElementById('news-section');
-  if(!newsSection) {
-    console.warn('news-section not found in DOM');
-    return;
-  }
-  
-  try{
-    console.log('1. Starting news fetch...');
-    const newsItems = await fetchNewsList();
-    console.log('2. News items received:', newsItems);
-    console.log('3. Number of items:', newsItems.length);
-    
-    // ピン留めを除外した最新2件を取得
-    const regularNews = newsItems.filter(n => !n.isPinned).slice(0, 2);
-    console.log('4. Regular news to display:', regularNews.length);
-    
-    if(newsItems.length === 0){
-      newsSection.innerHTML = `
-        <div class="section-title">お知らせ</div>
-        <div class="card" style="padding:16px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-1);">
-          <p style="text-align:center; color:var(--ink-soft); margin:0;">${newsNetworkError ? 'お知らせを読み込めませんでした<br><span style="font-size:11px;">（サーバーの設定を確認してください）</span>' : 'お知らせはまだありません'}</p>
-        </div>
-      `;
-      return;
-    }
-    
-    if(regularNews.length === 0){
-      newsSection.innerHTML = `
-        <div class="section-title">お知らせ</div>
-        <div class="card" style="padding:16px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-1);">
-          <p style="text-align:center; color:var(--ink-soft); margin:0;">${newsNetworkError ? 'お知らせを読み込めませんでした<br><span style="font-size:11px;">（サーバーの設定を確認してください）</span>' : 'お知らせはまだありません'}</p>
-        </div>
-      `;
-      return;
-    }
-    
-    const newsHtml = regularNews.map(news => `
-      <div style="padding:12px; border-bottom:1px solid var(--line-soft); display:flex; justify-content:space-between; align-items:flex-start;">
-        <div style="flex:1;">
-          <div style="font-weight:700; font-size:13px; color:var(--ink); margin-bottom:4px;">
-            ${markdownToHtmlInline(news.content.split('\n')[0].replace(/^#+\s*/, ''))}
-            ${isNewBadge(news.newsDate) ? '<span style="display:inline-block; background:#ff9500; color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; margin-left:8px;">NEW</span>' : ''}
-          </div>
-          <div style="font-size:11px; color:var(--ink-soft);">${formatNewsDate(news.dateStr)}</div>
-        </div>
-      </div>
-    `).join('');
-    
-    newsSection.innerHTML = `
+// お知らせは一度取ったら数分間は使い回す。
+// 描画のたびに取り直すと、空→表示→空…と点滅してしまう。
+let newsCache = null, newsFetchedAt = 0, newsLoading = false;
+const NEWS_TTL = 5 * 60 * 1000;
+
+function homeNewsMarkup(items){
+  const regularNews = (items || []).filter(n => !n.isPinned).slice(0, 2);
+  if(!regularNews.length){
+    return `
       <div class="section-title">お知らせ</div>
-      <div class="card" style="padding:0; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-1); overflow:hidden;">
-        ${newsHtml}
-        <div style="padding:12px; text-align:center; border-top:1px solid var(--line-soft);">
+      <div class="card" style="padding:16px;">
+        <p style="text-align:center; color:var(--ink-soft); margin:0;">${newsNetworkError ? 'お知らせを読み込めませんでした' : 'お知らせはまだありません'}</p>
+      </div>`;
+  }
+  const rows = regularNews.map(news => `
+      <div style="padding:12px; border-bottom:1px solid var(--line-soft);">
+        <div style="font-weight:700; font-size:13px; color:var(--ink); margin-bottom:4px;">
+          ${markdownToHtmlInline(news.content.split('\n')[0].replace(/^#+\s*/, ''))}
+          ${isNewBadge(news.newsDate) ? '<span style="display:inline-block; background:#ff9500; color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; margin-left:8px;">NEW</span>' : ''}
+        </div>
+        <div style="font-size:11px; color:var(--ink-soft);">${formatNewsDate(news.dateStr)}</div>
+      </div>`).join('');
+  return `
+      <div class="section-title">お知らせ</div>
+      <div class="card" style="padding:0; overflow:hidden;">
+        ${rows}
+        <div style="padding:12px; text-align:center;">
           <button class="btn btn-soft" data-action="view-news-list" style="width:100%;">すべて見る</button>
         </div>
-      </div>
-    `;
-    console.log('5. News displayed successfully');
-  }catch(err){
-    console.error('Failed to display home news:', err);
-    newsSection.innerHTML = `
-      <div class="section-title">お知らせ</div>
-      <div class="card" style="padding:16px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-1);">
-        <p style="text-align:center; color:var(--ink-soft); margin:0;">お知らせを読み込めませんでした</p>
-        <p style="text-align:center; color:#f44336; margin:8px 0 0; font-size:11px;">${err.message}</p>
-      </div>
-    `;
-  }
+      </div>`;
 }
+
+// 手元の内容ですぐ描き、古ければ裏で取り直す
+function showHomeNews(){
+  const el = document.getElementById('news-section');
+  if(el && newsCache) el.innerHTML = homeNewsMarkup(newsCache);
+  if(newsLoading) return;
+  if(newsCache && Date.now() - newsFetchedAt < NEWS_TTL) return;
+  newsLoading = true;
+  fetchNewsList().then(items => {
+    newsCache = items || [];
+    newsFetchedAt = Date.now();
+  }).catch(()=>{
+    if(!newsCache) newsCache = [];
+  }).finally(()=>{
+    newsLoading = false;
+    const el2 = document.getElementById('news-section');
+    if(el2) el2.innerHTML = homeNewsMarkup(newsCache);
+  });
+}
+
+// 以前の呼び出し口（ほかから呼ばれても同じ動きにする）
+async function displayHomeNews(){ showHomeNews(); }
 
 function markdownToHtmlInline(text){
   // インライン用の簡易マークダウン変換
@@ -1802,7 +1795,7 @@ function viewHome(){
       </button>
     </div>
     
-    <div id="news-section"></div>
+    <div id="news-section">${newsCache ? homeNewsMarkup(newsCache) : ''}</div>
     <div class="card">
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
         <div style="text-align:center; padding:12px; background:var(--jade-mist); border-radius:10px;">
@@ -2666,7 +2659,9 @@ async function ensureUserRecord(){
         guest: !!(fbUser && fbUser.isAnonymous),
         createdAt: Date.now()
       };
-      await ref.set(rec);
+      // set だと users/<自分> 全体への書き込みとして判定され、ルールで拒否される。
+      // update なら項目ごとの権限で判定されるので通る。
+      await ref.update(rec);
     } else {
       // 名前やゲスト状態が変わっていたら更新する
       const patch = {};
@@ -2908,6 +2903,40 @@ function isMyBirthday(){
   return (t.getMonth()+1) === myProfile.birthMonth && t.getDate() === myProfile.birthDay;
 }
 
+// 称号の一覧（管理者ページで作ったもの）
+let titleCatalog = {};
+let myTitleId = '';
+let myBanned = false, myBanReason = '';
+async function loadTitlesAndStatus(){
+  if(!fbDb || !fbUid) return;
+  try{
+    const [t, me] = await Promise.all([
+      fbDb.ref('titles').once('value'),
+      fbDb.ref('users/' + fbUid).once('value')
+    ]);
+    titleCatalog = t.val() || {};
+    const u = me.val() || {};
+    myTitleId = u.title || '';
+    myBanned = !!u.banned;
+    myBanReason = u.banReason || '';
+  }catch(err){ console.warn('称号の読み込みに失敗:', err); }
+}
+function bannedNoticeMarkup(){
+  return `
+    <div class="card" style="border:1px solid #b3261e;">
+      <p style="margin:0; font-weight:800; color:#b3261e;">このアカウントは利用が停止されています</p>
+      ${myBanReason ? `<p style="margin:8px 0 0; font-size:13px;">理由：${escapeHtml(myBanReason)}</p>` : ''}
+      <p style="margin:8px 0 0; font-size:12px; color:var(--ink-soft);">オンライン対局とフレンド機能は使えません。ひとりで遊ぶモードは今までどおり使えます。</p>
+    </div>`;
+}
+function titleMarkup(id){
+  const t = id && titleCatalog[id];
+  if(!t) return '<p style="margin:0; font-size:13px; color:var(--ink-soft);">なし</p>';
+  const c = t.color || '#0f7a3f';
+  return `<span class="title-badge" style="background:${escapeHtml(c)}22; color:${escapeHtml(c)}; border-color:${escapeHtml(c)}55;">${escapeHtml(t.name)}</span>
+    ${t.desc ? `<p style="margin:6px 0 0; font-size:12px; color:var(--ink-soft);">${escapeHtml(t.desc)}</p>` : ''}`;
+}
+
 function profileName(){
   return (myProfile.displayName || state.username || 'プレイヤー');
 }
@@ -2991,12 +3020,20 @@ function startPresence(){
   conn.on('value', snap => {
     if(snap.val() === false) return;
     presenceRef.onDisconnect().set({ state:'offline', at: Date.now() });
-    updatePresence();
+    updatePresence(true);
   });
 }
-function updatePresence(){
+let lastPresenceState = null, lastPresenceAt = 0;
+function updatePresence(force){
   if(!presenceRef) return;
-  presenceRef.set({ state: myPresenceState(), at: Date.now() }).catch(()=>{});
+  const st = myPresenceState();
+  const now = Date.now();
+  // 状態が同じなら書かない（書くたびにフレンドの画面が描き直されるため）。
+  // ただし「生きている印」として、1分に1回だけは時刻を更新する。
+  if(!force && st === lastPresenceState && now - lastPresenceAt < 60000) return;
+  lastPresenceState = st;
+  lastPresenceAt = now;
+  presenceRef.set({ state: st, at: now }).catch(()=>{});
 }
 function watchFriendPresence(){
   // いま見る必要のあるフレンドだけ監視する
@@ -3012,7 +3049,7 @@ function watchFriendPresence(){
       const v = s.val();
       const stale = !v || !v.at || (Date.now() - v.at > 5*60*1000);
       friendPresence[uid] = stale ? 'offline' : (v.state || 'offline');
-      render();
+      requestRender();
     });
     presenceWatch[uid] = {ref, cb};
   }
@@ -3071,6 +3108,7 @@ async function openOtherProfile(uid, fallbackName){
       icon: (u.profile && u.profile.icon) || '',
       bio: (u.profile && u.profile.bio) || '',
       birthday: (u.profile && u.profile.birthday) || null,
+      title: u.title || '',
       stats: u.stats || null
     };
   }catch(err){
@@ -3249,6 +3287,113 @@ function stopQRScan(){
   if(qrStream){ qrStream.getTracks().forEach(t => t.stop()); qrStream = null; }
 }
 
+/* ---------- 画像からQRコードを読み取る ---------- */
+async function readQRFromImage(file){
+  if(!file) return;
+  if(!/^image\//.test(file.type)){ toast('画像を選んでください'); return; }
+  try{
+    await loadScriptOnce(QR_LIBS.scan);
+    const url = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = () => rej(new Error('画像を読み込めませんでした'));
+      r.readAsDataURL(file);
+    });
+    const img = await new Promise((res, rej) => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = () => rej(new Error('画像を読み込めませんでした'));
+      im.src = url;
+    });
+    // 大きさを変えながら何度か試す（小さく写ったQRにも対応するため）
+    for(const target of [800, 1200, 500, 1600]){
+      const k = Math.min(1, target / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width*k)), h = Math.max(1, Math.round(img.height*k));
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      const ctx = cv.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, w, h);
+      const data = ctx.getImageData(0, 0, w, h);
+      const res = jsQR(data.data, w, h, { inversionAttempts: 'attemptBoth' });
+      if(res && res.data){
+        const code = String(res.data).trim().toUpperCase();
+        if(/^[A-Z0-9]{6,12}$/.test(code)){ onQRCodeRead(code); return; }
+        toast('O-LABOのQRコードではありません');
+        return;
+      }
+    }
+    toast('画像からQRコードが見つかりませんでした');
+  }catch(err){
+    console.error(err);
+    toast(err.message || '読み取れませんでした');
+  }
+}
+
+/* ---------- 自分のQRコードを保存する ---------- */
+async function saveMyQR(){
+  try{
+    // 保存用は余白と名前入りで大きめに描く
+    const qrCv = document.createElement('canvas');
+    await drawMyQR(qrCv);
+    const pad = 36, label = 64;
+    const out = document.createElement('canvas');
+    out.width = qrCv.width + pad*2;
+    out.height = qrCv.height + pad*2 + label;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(qrCv, pad, pad);
+    ctx.fillStyle = '#1b1a17';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText(profileName(), out.width/2, qrCv.height + pad + 30);
+    ctx.fillStyle = '#6b665d';
+    ctx.font = '16px monospace';
+    ctx.fillText('O-LABO  ID ' + myUserCode(), out.width/2, qrCv.height + pad + 54);
+
+    const blob = await new Promise(res => out.toBlob(res, 'image/png'));
+    const fileName = 'O-LABO_' + myUserCode() + '.png';
+    const file = new File([blob], fileName, { type: 'image/png' });
+
+    // 共有メニューが使えれば、そこから「画像を保存」で写真に入れられる
+    if(navigator.canShare && navigator.canShare({ files: [file] })){
+      try{
+        await navigator.share({ files: [file], title: 'O-LABO フレンドコード' });
+        return;
+      }catch(err){
+        if(err && err.name === 'AbortError') return;   // 利用者が閉じた
+      }
+    }
+    // 使えない端末ではファイルとして保存する
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1500);
+    toast('QRコードを保存しました');
+  }catch(err){
+    console.error(err);
+    toast('保存できませんでした');
+  }
+}
+
+/* ---------- IDをコピーする ---------- */
+async function copyMyId(){
+  const id = myUserCode();
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(id);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = id; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    }
+    toast('IDをコピーしました');
+  }catch(err){
+    toast('コピーできませんでした');
+  }
+}
+
 // 読み取ったコードの人のマイページを開く
 async function onQRCodeRead(code){
   if(code === myUserCode()){ toast('自分のQRコードです'); return; }
@@ -3306,6 +3451,7 @@ let sentRequestTo = {};               // この端末で送った相手（ボタ
 
 // 申請を送る（対局後のリザルトから）
 async function friendRequestSend(toUid, toName){
+  if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
   if(!isSignedIn()){ toast('フレンド申請にはアカウントが必要です'); return; }
   if(!toUid || toUid === fbUid){ return; }
   try{
@@ -3335,7 +3481,7 @@ function watchFriendRequests(){
     friendRequests = Object.keys(v).map(uid => ({
       uid, name: v[uid].name || 'プレイヤー', code: v[uid].code || '', createdAt: v[uid].createdAt || 0
     })).sort((a,b) => b.createdAt - a.createdAt);
-    render();
+    requestRender();
   });
 }
 function unwatchFriendRequests(){
@@ -3420,7 +3566,7 @@ function watchFriends(){
     friendList = Object.keys(v).map(uid => ({ uid, code: v[uid].code, name: v[uid].name }));
     watchFriendPresence();
     fetchFriendIcons();
-    render();
+    requestRender();
   });
 }
 // フレンドのアイコンを取りに行く（一度取ったものは覚えておく）
@@ -3436,7 +3582,7 @@ async function fetchFriendIcons(){
       if(v){ friendIcons[f.uid] = v; changed = true; }
     }catch(err){ /* 取れなくても支障はない */ }
   }
-  if(changed) render();
+  if(changed) requestRender();
 }
 
 function unwatchFriends(){
@@ -3446,6 +3592,7 @@ function unwatchFriends(){
 
 // フレンドを対局に招待する（自分が部屋を用意して待つ）
 async function friendInvite(friendUid, friendName){
+  if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
   if(!(await ensureFirebase())){ toast(fbInitError); return; }
   const myName = (state.online && state.online.lastName) || state.username || 'プレイヤー';
   try{
@@ -3500,7 +3647,7 @@ function watchInvites(){
       shownInviteIds[inv.id] = true;
       if(document.visibilityState === 'visible') showInviteToast(inv);
     }
-    render();
+    requestRender();
   });
 }
 function unwatchInvites(){
@@ -3583,6 +3730,7 @@ async function ensureFirebase(){
           onlineDebug.myUid = user.uid;
           await ensureUserRecord();
           await loadMyProfile();
+          await loadTitlesAndStatus();
           startPresence();
           watchFriends();
           watchInvites();
@@ -3658,6 +3806,7 @@ function normalizeRoomCode(v){
 
 // 合言葉で入室（居なければ作成して待機、居れば参加）
 async function onlineJoinByCode(code, myName){
+  if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
   const id = normalizeRoomCode(code);
   if(!id){ toast('合言葉を入力してください'); return; }
 
@@ -3813,6 +3962,7 @@ async function onlineTryJoinWaiting(myName){
 }
 
 async function onlineRandomMatch(myName){
+  if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
   // 押した瞬間に画面を切り替える
   onlineState.myName = myName;
   onlineState.mode = 'random';
@@ -3992,7 +4142,7 @@ function onlineStartQueueHeartbeat(){
     fbDb.ref('waiting/'+onlineState.roomId).set({
       uid: fbUid, name: onlineState.myName || '', createdAt: Date.now()
     }).catch(()=>{});
-    render();   // 経過時間の表示を更新する
+    requestRender();   // 経過時間の表示を更新する
   }, 10000);
 }
 function onlineStopQueueHeartbeat(){
@@ -4095,10 +4245,10 @@ function onlineIdleRemaining(){
 async function onlineIdleTick(){
   if(onlineState.phase !== 'playing' || !game || game.over){ return; }
   // 自分の番なら、待たせているのは自分なので何もしない
-  if(game.current === onlineState.myColor){ render(); return; }
+  if(game.current === onlineState.myColor){ return; }
   if(onlineIdleRemaining() > 0){
     // 残り1分を切ったら画面に出す
-    if(onlineIdleRemaining() <= 60000) render();
+    if(onlineIdleRemaining() <= 60000) requestRender();
     return;
   }
   // 相手が放棄した
@@ -4313,6 +4463,13 @@ function viewOnline(){
   if(game && game.mode==='online' && sub.online==='play') return renderBoardScreen();
   if(sub.online==='room') return renderOnlineRoom();
 
+  if(myBanned){
+    return `
+      <div class="hero" style="background:linear-gradient(150deg, #6C8CD5, #34508F 78%);">
+        <div class="hero-eyebrow">ONLINE</div><h2>オンライン</h2>
+      </div>
+      ${bannedNoticeMarkup()}`;
+  }
   // ロビーを開いた時点で接続を済ませておく。
   // （押してから接続すると、その待ち時間がそのまま体感の遅さになる）
   if(firebaseConfigured() && !fbReady) ensureFirebase();
@@ -5463,7 +5620,7 @@ function ensureHeroColor(icon){
   heroColorCache[icon] = null;          // 調査中の印
   extractIconColor(icon).then(c => {
     heroColorCache[icon] = c;
-    if(c) render();
+    if(c) requestRender();
   });
 }
 
@@ -5571,7 +5728,7 @@ function viewMyPage(){
     </div>
 
     <div class="section-title">称号</div>
-    <div class="card"><p style="margin:0; font-size:13px; color:var(--ink-soft);">なし</p></div>
+    <div class="card">${titleMarkup(myTitleId)}</div>
 
     <div class="section-title">戦績</div>
     <div class="card">${statRowsMarkup(myStats)}</div>
@@ -5594,6 +5751,7 @@ function viewMyPage(){
 
 // フレンド画面（マイページのメニューから開く）
 function viewFriendsTab(){
+  if(myBanned) return bannedNoticeMarkup();
   if(!isSignedIn()){
     return `
       <div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);">
@@ -5612,7 +5770,10 @@ function viewFriendsTab(){
         <div class="qr-code-text">${escapeHtml(myUserCode())}</div>
         <p class="qr-note">相手に「相手のQRコードを読み取る」で読んでもらってください。</p>
       </div>
-      <button class="btn btn-ghost" data-action="qr-close" style="width:100%; margin-top:10px;">閉じる</button>`;
+      <div class="file-actions" style="margin-top:10px;">
+        <button class="btn btn-soft" data-action="qr-save">画像として保存</button>
+        <button class="btn btn-ghost" data-action="qr-close">閉じる</button>
+      </div>`;
   } else if(friendAddMode === 'scan'){
     addBody = `
       <div class="qr-scan">
@@ -5620,14 +5781,24 @@ function viewFriendsTab(){
         <div class="qr-frame"></div>
       </div>
       <p id="qrStatus" class="qr-note" style="text-align:center;">準備しています…</p>
-      <button class="btn btn-ghost" data-action="qr-close" style="width:100%; margin-top:10px;">やめる</button>`;
+      <div class="file-actions" style="margin-top:10px;">
+        <button class="btn btn-soft" data-action="qr-upload">画像から読み取る</button>
+        <button class="btn btn-ghost" data-action="qr-close">やめる</button>
+      </div>`;
   } else {
     addBody = `
       <div class="file-actions">
         <button class="btn btn-soft" data-action="qr-show">自分のQRコードを表示する</button>
         <button class="btn btn-soft" data-action="qr-scan">相手のQRコードを読み取る</button>
       </div>
-      <div class="acc-row" style="margin-top:12px;"><span class="acc-k">あなたのID</span><span class="acc-v acc-code">${escapeHtml(myUserCode())}</span></div>
+      <button class="btn btn-ghost" data-action="qr-upload" style="width:100%; margin-top:8px; padding:10px; font-size:12.5px;">保存したQRコードの画像から読み取る</button>
+      <div class="acc-row" style="margin-top:12px;">
+        <span class="acc-k">あなたのID</span>
+        <span class="acc-v" style="display:flex; align-items:center; gap:8px;">
+          <span class="acc-code">${escapeHtml(myUserCode())}</span>
+          <button class="btn btn-ghost copy-btn" data-action="copy-id" aria-label="IDをコピー">コピー</button>
+        </span>
+      </div>
       <div class="inline-row" style="margin-top:6px;">
         <input id="friendCode" type="text" maxlength="8" placeholder="相手のIDで申請"
                style="padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; text-transform:uppercase; letter-spacing:.1em;">
@@ -5652,7 +5823,7 @@ function viewFriendsTab(){
 
   return `
     <div class="section-title">フレンドの追加</div>
-    <div class="card">${addBody}</div>
+    <div class="card">${addBody}<input type="file" id="qrImageFile" accept="image/*" style="display:none;"></div>
 
     ${friendRequests.length ? `<div class="section-title">届いている申請（${friendRequests.length}件）</div>
     <div class="card">${friendRequests.map(r => `
@@ -5689,7 +5860,7 @@ function viewOtherPage(){
     <div class="card"><p style="margin:0; font-size:14px; font-weight:700;">${p.birthday.month}月${p.birthday.day}日</p></div>` : ''}
 
     <div class="section-title">称号</div>
-    <div class="card"><p style="margin:0; font-size:13px; color:var(--ink-soft);">なし</p></div>
+    <div class="card">${titleMarkup(p.title)}</div>
 
     <div class="section-title">戦績</div>
     <div class="card">${statRowsMarkup(p.stats)}</div>
@@ -6315,6 +6486,21 @@ document.addEventListener('click', (e)=>{
     case 'qr-close':
       stopQRScan(); friendAddMode = null; render();
       break;
+    case 'qr-save': saveMyQR(); break;
+    case 'copy-id': copyMyId(); break;
+    case 'qr-upload': {
+      const inp = document.getElementById('qrImageFile');
+      if(!inp) break;
+      inp.value = '';
+      inp.onchange = () => {
+        const f = inp.files && inp.files[0];
+        if(!f) return;
+        stopQRScan();
+        readQRFromImage(f);
+      };
+      inp.click();
+      break;
+    }
     case 'other-close': otherProfile = null; navigate(()=>{ activeTab='mypage'; sub.mypage='main'; }); break;
     case 'icon-choose': {
       const inp = document.getElementById('iconFile');
