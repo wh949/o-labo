@@ -739,6 +739,8 @@ html[data-theme="dark"] {
 .copy-btn{ width:auto; padding:4px 10px; font-size:11px; font-weight:700; border-radius:8px; }
 
 .title-badge{ display:inline-block; font-size:13px; font-weight:800; padding:4px 12px; border-radius:999px; border:1px solid; }
+
+.title-list{ display:flex; flex-wrap:wrap; gap:6px; }
 </style>
 </head>
 <body>
@@ -2905,7 +2907,7 @@ function isMyBirthday(){
 
 // 称号の一覧（管理者ページで作ったもの）
 let titleCatalog = {};
-let myTitleId = '';
+let myTitleIds = [];
 let myBanned = false, myBanReason = '';
 async function loadTitlesAndStatus(){
   if(!fbDb || !fbUid) return;
@@ -2916,7 +2918,7 @@ async function loadTitlesAndStatus(){
     ]);
     titleCatalog = t.val() || {};
     const u = me.val() || {};
-    myTitleId = u.title || '';
+    myTitleIds = titleIdsOf(u);
     myBanned = !!u.banned;
     myBanReason = u.banReason || '';
   }catch(err){ console.warn('称号の読み込みに失敗:', err); }
@@ -2929,12 +2931,34 @@ function bannedNoticeMarkup(){
       <p style="margin:8px 0 0; font-size:12px; color:var(--ink-soft);">オンライン対局とフレンド機能は使えません。ひとりで遊ぶモードは今までどおり使えます。</p>
     </div>`;
 }
-function titleMarkup(id){
-  const t = id && titleCatalog[id];
-  if(!t) return '<p style="margin:0; font-size:13px; color:var(--ink-soft);">なし</p>';
-  const c = t.color || '#0f7a3f';
-  return `<span class="title-badge" style="background:${escapeHtml(c)}22; color:${escapeHtml(c)}; border-color:${escapeHtml(c)}55;">${escapeHtml(t.name)}</span>
-    ${t.desc ? `<p style="margin:6px 0 0; font-size:12px; color:var(--ink-soft);">${escapeHtml(t.desc)}</p>` : ''}`;
+// 以前は1つだけ（title）、今は何個でも（titles）持てる。両方を読む
+function titleIdsOf(u){
+  const ids = [];
+  if(u && u.titles) for(const k of Object.keys(u.titles)) if(u.titles[k]) ids.push(k);
+  if(u && u.title && !ids.includes(u.title)) ids.push(u.title);
+  // 作った順に並べる
+  return ids.sort((a,b) => ((titleCatalog[a]||{}).createdAt||0) - ((titleCatalog[b]||{}).createdAt||0));
+}
+function isDarkNow(){
+  const t = document.documentElement.getAttribute('data-theme');
+  if(t === 'dark') return true;
+  if(t === 'light') return false;
+  return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+// 暗い画面では文字を明るくして読めるようにする
+function titleTone(hex){
+  if(!isDarkNow() || !/^#[0-9a-f]{6}$/i.test(hex)) return hex;
+  const v=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));
+  return '#'+v.map(x=>Math.round(x+(255-x)*0.45).toString(16).padStart(2,'0')).join('');
+}
+function titleMarkup(ids){
+  const list = (ids || []).filter(id => titleCatalog[id]);
+  if(!list.length) return '<p style="margin:0; font-size:13px; color:var(--ink-soft);">なし</p>';
+  return `<div class="title-list">${list.map(id => {
+    const t = titleCatalog[id], c = t.color || '#0f7a3f';
+    return `<span class="title-badge" title="${escapeHtml(t.desc||'')}"
+      style="background:${escapeHtml(c)}22; color:${escapeHtml(titleTone(c))}; border-color:${escapeHtml(c)}55;">${escapeHtml(t.name)}</span>`;
+  }).join('')}</div>`;
 }
 
 function profileName(){
@@ -3108,7 +3132,7 @@ async function openOtherProfile(uid, fallbackName){
       icon: (u.profile && u.profile.icon) || '',
       bio: (u.profile && u.profile.bio) || '',
       birthday: (u.profile && u.profile.birthday) || null,
-      title: u.title || '',
+      titleIds: titleIdsOf(u),
       stats: u.stats || null
     };
   }catch(err){
@@ -5728,7 +5752,7 @@ function viewMyPage(){
     </div>
 
     <div class="section-title">称号</div>
-    <div class="card">${titleMarkup(myTitleId)}</div>
+    <div class="card">${titleMarkup(myTitleIds)}</div>
 
     <div class="section-title">戦績</div>
     <div class="card">${statRowsMarkup(myStats)}</div>
@@ -5860,7 +5884,7 @@ function viewOtherPage(){
     <div class="card"><p style="margin:0; font-size:14px; font-weight:700;">${p.birthday.month}月${p.birthday.day}日</p></div>` : ''}
 
     <div class="section-title">称号</div>
-    <div class="card">${titleMarkup(p.title)}</div>
+    <div class="card">${titleMarkup(p.titleIds)}</div>
 
     <div class="section-title">戦績</div>
     <div class="card">${statRowsMarkup(p.stats)}</div>
