@@ -721,6 +721,20 @@ html[data-theme="dark"] {
   position:absolute; right:-1px; bottom:-1px; width:11px; height:11px;
   border:2px solid var(--panel); border-radius:50%;
 }
+
+/* QRコード */
+.qr-box{ text-align:center; }
+.qr-canvas{ width:220px; height:220px; image-rendering:pixelated; border-radius:12px; background:#fff; box-shadow:var(--shadow-1); }
+.qr-code-text{ margin-top:10px; font-family:monospace; font-size:18px; letter-spacing:.18em; font-weight:800; color:var(--jade-deep); }
+.qr-note{ font-size:11.5px; color:var(--ink-soft); line-height:1.6; margin:8px 0 0; }
+.qr-scan{ position:relative; width:100%; max-width:320px; margin:0 auto; aspect-ratio:1/1; border-radius:14px; overflow:hidden; background:#000; }
+.qr-video{ width:100%; height:100%; object-fit:cover; display:block; }
+.qr-frame{ position:absolute; inset:16%; border:3px solid rgba(255,255,255,.9); border-radius:14px; box-shadow:0 0 0 999px rgba(0,0,0,.35); pointer-events:none; }
+/* 自己紹介 */
+.bio-text{ margin:0; font-size:13px; line-height:1.8; word-break:break-word; }
+.bio-text a{ color:var(--jade-deep); text-decoration:underline; }
+.bio-preview{ margin-top:10px; padding:10px 12px; border:1px dashed var(--line); border-radius:10px; }
+.bio-preview-label{ font-size:10.5px; color:var(--ink-soft); margin-bottom:4px; }
 </style>
 </head>
 <body>
@@ -766,6 +780,14 @@ const ADVENTURE_TABS = [
   {id:'memory', label:'カフェ', icon:'☕️'},
   {id:'home-sub', label:'ホーム', icon:'🏠'},
 ];
+// マイページを開いているときの下部メニュー（今後項目を足していく前提）
+const MYPAGE_TABS = [
+  {id:'mp-profile', label:'マイページ', icon:'👤'},
+  {id:'mp-friends', label:'フレンド', icon:'👥'},
+  {id:'home-sub', label:'ホーム', icon:'🏠'},
+];
+let currentMyPageMode = 'profile';   // profile | friends
+let friendAddMode = null;            // null | 'show' | 'scan'
 
 const RANK_LADDER = ['E','D','C','B-','B','B+','A-','A','A+','AA','AA+','AAA','AAA+','S','S+','SS','SS+','SSS','SSS+','X'];
 const RANK_MAX_X = 999;
@@ -1319,6 +1341,16 @@ const FIREBASE_CONFIG = {
   appId: "1:5105208435:web:5e089d3752b1e603c76e06"
 };
 
+/* ------------------------------------------------------------
+   スキンの置き場（行事ごとのスキンを今後ここに追加する）
+   構成: db/skins/<スキン名>/ に画像や設定を置く予定
+   ※デフォルトは本体のCSS、Stella はいまは本体に内蔵
+   ------------------------------------------------------------ */
+const SKIN_BASE_URL = 'db/skins';
+function skinAssetUrl(skinName, file){
+  return SKIN_BASE_URL + '/' + encodeURIComponent(skinName) + '/' + file;
+}
+
 const AUDIO_BASE_URL = 'db/audio';
 let audioContext = null;
 let audioBuffers = {
@@ -1344,7 +1376,7 @@ const AUDIO_FILES = {
     'tap', 'place', 'flip', 'pass', 'win', 'lose', 'unlock', 'modal_open'
   ]
 };
-const sub={ battle:'home', training:'home', casual:'home', online:'lobby', library:'list', settings:'home' };
+const sub={ battle:'home', training:'home', casual:'home', online:'lobby', library:'list', settings:'home', mypage:'main' };
 let libTab='battle';
 let game=null; // active game session object
 
@@ -1382,6 +1414,7 @@ function renderTabs(){
   let tabs;
   if(activeTab === 'basic') tabs = BASIC_TABS;
   else if(activeTab === 'adventure') tabs = ADVENTURE_TABS;
+  else if(activeTab === 'mypage') tabs = MYPAGE_TABS;
   else tabs = TAB_DEFS;
   
   const markup = tabs.map(t=>{
@@ -1389,6 +1422,7 @@ function renderTabs(){
     if(t.id === 'home-sub') isActive = (activeTab === 'home');
     else if(activeTab === 'basic') isActive = (currentBasicMode === t.id);
     else if(activeTab === 'adventure') isActive = (currentAdventureMode === t.id);
+    else if(activeTab === 'mypage') isActive = ('mp-' + currentMyPageMode === t.id);
     else isActive = (activeTab === t.id);
     
     return `<button class="tab-btn ${isActive?'active':''}" data-action="${t.id === 'home-sub' ? 'go-home' : 'tab'}" data-tab="${t.id}">
@@ -1424,6 +1458,10 @@ function viewFor(tab){
     if(currentAdventureMode==='variety') return viewVariety();
     if(currentAdventureMode==='story') return viewStory();
     if(currentAdventureMode==='memory') return viewMemory();
+  }
+  if(tab==='mypage'){
+    if(sub.mypage === 'other') return viewOtherPage();
+    return currentMyPageMode === 'friends' ? viewFriendsTab() : viewMyPage();
   }
   if(tab==='library') return viewLibrary();
   if(tab==='settings') return viewSettings();
@@ -2851,13 +2889,24 @@ function iconMarkup(src, cls){
   return `<span class="icon-none">👤</span>`;
 }
 
-let myProfile = { icon:'', displayName:'', bio:'', title:'' };
+let myProfile = { icon:'', displayName:'', bio:'', title:'', birthMonth:0, birthDay:0, birthPublic:false };
 let otherProfile = null;        // 相手のマイページを開いているとき
 let profileBusy = false;
 let iconPickerOpen = false;
 let presenceRef = null;
 let friendPresence = {};        // uid → 状態
 let presenceWatch = {};
+
+function isValidDate(m, d){
+  const days = [31,29,31,30,31,30,31,31,30,31,30,31];
+  return m>=1 && m<=12 && d>=1 && d<=days[m-1];
+}
+// 今日が誕生日か（行事スキンの準備）
+function isMyBirthday(){
+  if(!myProfile.birthMonth || !myProfile.birthDay) return false;
+  const t = new Date();
+  return (t.getMonth()+1) === myProfile.birthMonth && t.getDate() === myProfile.birthDay;
+}
 
 function profileName(){
   return (myProfile.displayName || state.username || 'プレイヤー');
@@ -2869,7 +2918,12 @@ async function loadMyProfile(){
   try{
     const snap = await fbDb.ref('users/' + fbUid + '/profile').once('value');
     const p = snap.val();
-    if(p) myProfile = Object.assign({icon:'',displayName:'',bio:'',title:''}, p);
+    if(p) myProfile = Object.assign({icon:'',displayName:'',bio:'',title:'',birthMonth:0,birthDay:0,birthPublic:false}, p);
+    const pv = await fbDb.ref('private/' + fbUid).once('value');
+    const v = pv.val() || {};
+    myProfile.birthMonth = v.birthMonth || 0;
+    myProfile.birthDay = v.birthDay || 0;
+    myProfile.birthPublic = !!v.birthPublic;
   }catch(err){ console.warn('プロフィールの読み込みに失敗:', err); }
 }
 
@@ -2883,6 +2937,20 @@ async function saveMyProfile(patch){
       bio: myProfile.bio || '',
       updatedAt: Date.now()
     });
+    // 誕生日は本人しか読めない場所に保存する
+    await fbDb.ref('private/' + fbUid).update({
+      birthMonth: myProfile.birthMonth || 0,
+      birthDay: myProfile.birthDay || 0,
+      birthPublic: !!myProfile.birthPublic
+    });
+    // 公開を選んだときだけ、誰でも見られる場所へ写す。
+    // 非公開にしたら公開側からは消すので、他人からは読めなくなる。
+    const pubRef = fbDb.ref('users/' + fbUid + '/profile/birthday');
+    if(myProfile.birthPublic && myProfile.birthMonth && myProfile.birthDay){
+      await pubRef.set({ month: myProfile.birthMonth, day: myProfile.birthDay });
+    } else {
+      await pubRef.remove();
+    }
     // フレンド一覧に出る名前も合わせる
     await fbDb.ref('users/' + fbUid + '/name').set(profileName());
     return true;
@@ -2992,7 +3060,7 @@ function preloadIcon(dataUrl, timeoutMs){
 async function openOtherProfile(uid, fallbackName){
   if(!uid){ toast('相手の情報がありません'); return; }
   otherProfile = { uid, loading:true, name: fallbackName || 'プレイヤー' };
-  navigate(()=>{ activeTab='settings'; sub.settings='otherpage'; });
+  navigate(()=>{ activeTab='mypage'; sub.mypage='other'; });
   try{
     const snap = await fbDb.ref('users/' + uid).once('value');
     const u = snap.val() || {};
@@ -3002,6 +3070,7 @@ async function openOtherProfile(uid, fallbackName){
       code: u.code || '',
       icon: (u.profile && u.profile.icon) || '',
       bio: (u.profile && u.profile.bio) || '',
+      birthday: (u.profile && u.profile.birthday) || null,
       stats: u.stats || null
     };
   }catch(err){
@@ -3068,6 +3137,166 @@ async function linkEmail(email, password){
   }finally{
     accountBusy = false; render();
   }
+}
+
+
+/* ============================================================
+   QRコード（フレンドコードの受け渡し）
+   ライブラリは使うときだけ読み込む（普段の起動を重くしないため）
+   ============================================================ */
+const QR_LIBS = {
+  gen:  'https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js',
+  scan: 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js'
+};
+const loadedScripts = {};
+function loadScriptOnce(url){
+  if(loadedScripts[url]) return loadedScripts[url];
+  loadedScripts[url] = new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = url; el.async = true;
+    el.onload = () => resolve();
+    el.onerror = () => { delete loadedScripts[url]; reject(new Error('読み込みに失敗しました')); };
+    document.head.appendChild(el);
+  });
+  return loadedScripts[url];
+}
+
+// 自分のQRコードを描く
+async function drawMyQR(canvas){
+  await loadScriptOnce(QR_LIBS.gen);
+  if(typeof qrcode !== 'function') throw new Error('QRコードを作れませんでした');
+  const q = qrcode(0, 'M');
+  q.addData(myUserCode());
+  q.make();
+  const n = q.getModuleCount(), margin = 4;
+  const scale = Math.max(4, Math.floor(240 / (n + margin*2)));
+  const size = (n + margin*2) * scale;
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#111111';
+  for(let r=0;r<n;r++) for(let c=0;c<n;c++){
+    if(q.isDark(r,c)) ctx.fillRect((c+margin)*scale, (r+margin)*scale, scale, scale);
+  }
+}
+
+/* ---------- 読み取り ---------- */
+let qrStream = null, qrLoopId = null, qrScanning = false;
+
+async function startQRScan(){
+  const video = document.getElementById('qrVideo');
+  const status = document.getElementById('qrStatus');
+  if(!video) return;
+  const say = t => { if(status) status.textContent = t; };
+
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    say('この端末ではカメラが使えません');
+    return;
+  }
+  try{
+    say('準備しています…');
+    await loadScriptOnce(QR_LIBS.scan);
+    qrStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }, audio: false
+    });
+    video.srcObject = qrStream;
+    video.setAttribute('playsinline', '');   // iPhone で全画面にならないように
+    await video.play();
+    qrScanning = true;
+    say('QRコードを枠に合わせてください');
+    scanFrame();
+  }catch(err){
+    console.warn(err);
+    const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+    say(denied ? 'カメラの使用が許可されていません。端末の設定を確認してください'
+               : 'カメラを起動できませんでした');
+    stopQRScan();
+  }
+}
+
+function scanFrame(){
+  if(!qrScanning) return;
+  const video = document.getElementById('qrVideo');
+  if(!video || video.readyState < 2){ qrLoopId = requestAnimationFrame(scanFrame); return; }
+  const w = video.videoWidth, h = video.videoHeight;
+  if(!w || !h){ qrLoopId = requestAnimationFrame(scanFrame); return; }
+
+  // 処理を軽くするため縮小して調べる
+  const k = Math.min(1, 480 / Math.max(w, h));
+  const cw = Math.round(w*k), ch = Math.round(h*k);
+  const cv = scanFrame._cv || (scanFrame._cv = document.createElement('canvas'));
+  cv.width = cw; cv.height = ch;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(video, 0, 0, cw, ch);
+  const img = ctx.getImageData(0, 0, cw, ch);
+  const res = (typeof jsQR === 'function') ? jsQR(img.data, cw, ch, { inversionAttempts: 'dontInvert' }) : null;
+
+  if(res && res.data){
+    const code = String(res.data).trim().toUpperCase();
+    if(/^[A-Z0-9]{6,12}$/.test(code)){
+      stopQRScan();
+      onQRCodeRead(code);
+      return;
+    }
+  }
+  qrLoopId = requestAnimationFrame(scanFrame);
+}
+
+function stopQRScan(){
+  qrScanning = false;
+  if(qrLoopId) cancelAnimationFrame(qrLoopId);
+  qrLoopId = null;
+  if(qrStream){ qrStream.getTracks().forEach(t => t.stop()); qrStream = null; }
+}
+
+// 読み取ったコードの人のマイページを開く
+async function onQRCodeRead(code){
+  if(code === myUserCode()){ toast('自分のQRコードです'); return; }
+  try{
+    const snap = await fbDb.ref('userCodes/' + code).once('value');
+    const uid = snap.val();
+    if(!uid){ toast('その利用者が見つかりません'); return; }
+    openOtherProfile(uid, '');
+  }catch(err){
+    console.error(err);
+    toast('読み取った相手を確認できませんでした');
+  }
+}
+
+/* ============================================================
+   自己紹介の簡易マークダウン
+   必ず先に全体を無害化してから、決まった記法だけを戻す。
+   （書き込まれた文字列がそのまま HTML として動くのを防ぐため）
+   ============================================================ */
+function safeUrl(u){
+  // http と https だけを許す（javascript: などは弾く）
+  return /^https?:\/\/[^\s<>"']+$/i.test(u) ? u : null;
+}
+function bioToHtml(text){
+  if(!text) return '';
+  let s = escapeHtml(text);
+
+  // [文字](URL)
+  s = s.replace(/\[([^\]\n]{1,80})\]\((https?:\/\/[^\s)]+)\)/g, (m, label, url) => {
+    const u = safeUrl(url.replace(/&amp;/g, '&'));
+    if(!u) return m;
+    return `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer nofollow">${label}</a>`;
+  });
+  // そのまま書かれたURL（すでにリンクになった部分は除く）
+  s = s.replace(/(^|[\s（(])((https?:\/\/)[^\s<]+)/g, (m, pre, url) => {
+    const u = safeUrl(url.replace(/&amp;/g, '&'));
+    if(!u) return m;
+    const shown = url.length > 42 ? url.slice(0, 40) + '…' : url;
+    return `${pre}<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer nofollow">${shown}</a>`;
+  });
+  // **太字** と *斜体*
+  s = s.replace(/\*\*([^*\n]{1,100})\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^*])\*([^*\n]{1,100})\*(?!\*)/g, '$1<em>$2</em>');
+  // ~~取り消し~~
+  s = s.replace(/~~([^~\n]{1,100})~~/g, '<del>$1</del>');
+  // 改行
+  s = s.replace(/\n/g, '<br>');
+  return s;
 }
 
 /* ---------- フレンド申請 ---------- */
@@ -5313,7 +5542,29 @@ function viewMyPage(){
         <textarea id="mpBio" maxlength="${BIO_MAX}" rows="4"
           style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; resize:vertical;"
           placeholder="ひとこと">${escapeHtml(bio)}</textarea>
-        <div style="text-align:right; font-size:11px; color:var(--ink-soft);"><span id="bioCount">${bio.length}</span> / ${BIO_MAX}</div>
+        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--ink-soft); margin-top:4px;">
+          <span>**太字** *斜体* ~~取り消し~~ [文字](URL)</span>
+          <span><span id="bioCount">${bio.length}</span> / ${BIO_MAX}</span>
+        </div>
+        ${bio ? `<div class="bio-preview"><div class="bio-preview-label">表示のされ方</div><p class="bio-text">${bioToHtml(bio)}</p></div>` : ''}
+      </div>
+      <div class="field">
+        <label>誕生日</label>
+        <div class="inline-row">
+          <select id="mpBMonth" style="flex:1; padding:10px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px;">
+            <option value="0">月</option>
+            ${Array.from({length:12},(_,k)=>`<option value="${k+1}" ${myProfile.birthMonth===k+1?'selected':''}>${k+1}月</option>`).join('')}
+          </select>
+          <select id="mpBDay" style="flex:1; padding:10px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px;">
+            <option value="0">日</option>
+            ${Array.from({length:31},(_,k)=>`<option value="${k+1}" ${myProfile.birthDay===k+1?'selected':''}>${k+1}日</option>`).join('')}
+          </select>
+        </div>
+        <div class="toggle-row" style="margin-top:8px;">
+          <div class="trow-text"><b>誕生日を公開する</b><span>オンにすると、ほかの人のマイページから見えます</span></div>
+          <label class="switch"><input type="checkbox" id="mpBPublic" ${myProfile.birthPublic?'checked':''}><span class="toggle-track"></span></label>
+        </div>
+        <p style="font-size:11px; color:var(--ink-soft); margin:6px 0 0;">公開しなくても、誕生日にはちょっとしたお楽しみがあるかもしれません。</p>
       </div>
       <button class="btn btn-primary" data-action="profile-save" style="width:100%;" ${profileBusy?'disabled':''}>${profileBusy?'保存中…':'保存する'}</button>
       <p style="font-size:11px; color:var(--ink-soft); margin:8px 0 0;">オンライン対局の表示名とは別です。</p>
@@ -5324,12 +5575,6 @@ function viewMyPage(){
 
     <div class="section-title">戦績</div>
     <div class="card">${statRowsMarkup(myStats)}</div>
-
-    <div class="section-title">フレンド申請${friendRequests.length ? `（${friendRequests.length}件）` : ''}</div>
-    <div class="card">${reqRows}</div>
-
-    <div class="section-title">フレンド（${friendList.length}人）</div>
-    <div class="card">${friendRows}</div>
 
     <div class="section-title">アカウントの連携</div>
     <div class="card">
@@ -5344,6 +5589,81 @@ function viewMyPage(){
     <div class="card">
       <button class="btn btn-ghost" data-action="account-close" style="width:100%;">戻る</button>
     </div>
+  `;
+}
+
+// フレンド画面（マイページのメニューから開く）
+function viewFriendsTab(){
+  if(!isSignedIn()){
+    return `
+      <div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);">
+        <div class="hero-eyebrow">FRIENDS</div><h2>フレンド</h2>
+        <p>フレンド機能はアカウントが必要です。</p>
+      </div>
+      <div class="card"><button class="btn btn-primary" data-action="go-account" style="width:100%;">アカウントを作る</button></div>`;
+  }
+
+  // フレンドの追加（QR表示・QR読み取り・ID入力）
+  let addBody = '';
+  if(friendAddMode === 'show'){
+    addBody = `
+      <div class="qr-box">
+        <canvas id="myQrCanvas" class="qr-canvas"></canvas>
+        <div class="qr-code-text">${escapeHtml(myUserCode())}</div>
+        <p class="qr-note">相手に「相手のQRコードを読み取る」で読んでもらってください。</p>
+      </div>
+      <button class="btn btn-ghost" data-action="qr-close" style="width:100%; margin-top:10px;">閉じる</button>`;
+  } else if(friendAddMode === 'scan'){
+    addBody = `
+      <div class="qr-scan">
+        <video id="qrVideo" class="qr-video" muted playsinline></video>
+        <div class="qr-frame"></div>
+      </div>
+      <p id="qrStatus" class="qr-note" style="text-align:center;">準備しています…</p>
+      <button class="btn btn-ghost" data-action="qr-close" style="width:100%; margin-top:10px;">やめる</button>`;
+  } else {
+    addBody = `
+      <div class="file-actions">
+        <button class="btn btn-soft" data-action="qr-show">自分のQRコードを表示する</button>
+        <button class="btn btn-soft" data-action="qr-scan">相手のQRコードを読み取る</button>
+      </div>
+      <div class="acc-row" style="margin-top:12px;"><span class="acc-k">あなたのID</span><span class="acc-v acc-code">${escapeHtml(myUserCode())}</span></div>
+      <div class="inline-row" style="margin-top:6px;">
+        <input id="friendCode" type="text" maxlength="8" placeholder="相手のIDで申請"
+               style="padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; text-transform:uppercase; letter-spacing:.1em;">
+        <button class="btn btn-primary" data-action="friend-add" ${friendBusy?'disabled':''}>申請</button>
+      </div>`;
+  }
+
+  const rows = friendList.length ? friendList.map(f => {
+    const p = presenceLabel(friendPresence[f.uid]);
+    return `
+    <div class="friend-row">
+      <span class="friend-icon">${iconMarkup(friendIcons[f.uid])}<span class="pres-dot" style="background:${p.color};"></span></span>
+      <div class="friend-info">
+        <div class="friend-name">${escapeHtml(f.name || 'プレイヤー')}</div>
+        <div class="friend-code">${p.text}</div>
+      </div>
+      <button class="btn btn-soft friend-invite" data-action="friend-invite" data-uid="${f.uid}" data-name="${escapeHtml(f.name||'')}">招待</button>
+      <button class="btn btn-ghost friend-invite" data-action="open-other" data-uid="${f.uid}" data-name="${escapeHtml(f.name||'')}">マイページ</button>
+    </div>`;
+  }).join('')
+    : '<p style="font-size:12px; color:var(--ink-soft); margin:0; text-align:center; padding:8px 0;">まだフレンドがいません</p>';
+
+  return `
+    <div class="section-title">フレンドの追加</div>
+    <div class="card">${addBody}</div>
+
+    ${friendRequests.length ? `<div class="section-title">届いている申請（${friendRequests.length}件）</div>
+    <div class="card">${friendRequests.map(r => `
+      <div class="friend-row">
+        <div class="friend-info"><div class="friend-name">${escapeHtml(r.name)}</div><div class="friend-code">${escapeHtml(r.code)}</div></div>
+        <button class="btn btn-primary friend-invite" data-action="req-accept" data-uid="${r.uid}">承認</button>
+        <button class="btn btn-ghost friend-del" data-action="req-reject" data-uid="${r.uid}">×</button>
+      </div>`).join('')}</div>` : ''}
+
+    <div class="section-title">フレンド一覧（${friendList.length}人）</div>
+    <div class="card">${rows}</div>
   `;
 }
 
@@ -5363,7 +5683,10 @@ function viewOtherPage(){
     ${profileHeroMarkup(p.icon, p.name, p.code)}
 
     ${p.bio ? `<div class="section-title">自己紹介</div>
-    <div class="card"><p style="margin:0; font-size:13px; line-height:1.8; white-space:pre-wrap;">${escapeHtml(p.bio)}</p></div>` : ''}
+    <div class="card"><p class="bio-text">${bioToHtml(p.bio)}</p></div>` : ''}
+
+    ${p.birthday && p.birthday.month && p.birthday.day ? `<div class="section-title">誕生日</div>
+    <div class="card"><p style="margin:0; font-size:14px; font-weight:700;">${p.birthday.month}月${p.birthday.day}日</p></div>` : ''}
 
     <div class="section-title">称号</div>
     <div class="card"><p style="margin:0; font-size:13px; color:var(--ink-soft);">なし</p></div>
@@ -5726,6 +6049,13 @@ document.addEventListener('click', (e)=>{
           currentBasicMode = tabId;
           activeTab = 'basic';
           checkStellaCommand(tabId);
+        } else if(tabId === 'mp-profile' || tabId === 'mp-friends'){
+          stopQRScan();
+          friendAddMode = null;
+          currentMyPageMode = (tabId === 'mp-friends') ? 'friends' : 'profile';
+          sub.mypage = 'main';
+          otherProfile = null;
+          activeTab = 'mypage';
         } else if(tabId === 'variety' || tabId === 'story' || tabId === 'memory'){
           currentAdventureMode = tabId;
           activeTab = 'adventure';
@@ -5738,6 +6068,7 @@ document.addEventListener('click', (e)=>{
       });
       break;
     case 'go-home':
+      stopQRScan(); friendAddMode = null;
       navigate(()=>{ activeTab = 'home'; });
       break;
     case 'view-news-list':
@@ -5967,11 +6298,24 @@ document.addEventListener('click', (e)=>{
     case 'req-accept': friendRequestAccept(el.dataset.uid); break;
     case 'req-reject': friendRequestReject(el.dataset.uid); break;
     case 'open-mypage':
-      iconPickerOpen = false;
-      navigate(()=>{ activeTab='settings'; sub.settings='mypage'; });
+      navigate(()=>{ activeTab='mypage'; currentMyPageMode='profile'; sub.mypage='main'; });
       break;
-    case 'open-other': openOtherProfile(el.dataset.uid, el.dataset.name); break;
-    case 'other-close': otherProfile = null; navigate(()=>{ sub.settings='mypage'; }); break;
+    case 'open-other': stopQRScan(); friendAddMode = null; openOtherProfile(el.dataset.uid, el.dataset.name); break;
+    case 'qr-show':
+      friendAddMode = 'show'; render();
+      setTimeout(()=>{
+        const cv = document.getElementById('myQrCanvas');
+        if(cv) drawMyQR(cv).catch(err => { console.error(err); toast('QRコードを作れませんでした'); });
+      }, 30);
+      break;
+    case 'qr-scan':
+      friendAddMode = 'scan'; render();
+      setTimeout(startQRScan, 30);
+      break;
+    case 'qr-close':
+      stopQRScan(); friendAddMode = null; render();
+      break;
+    case 'other-close': otherProfile = null; navigate(()=>{ activeTab='mypage'; sub.mypage='main'; }); break;
     case 'icon-choose': {
       const inp = document.getElementById('iconFile');
       if(!inp) break;
@@ -6000,9 +6344,14 @@ document.addEventListener('click', (e)=>{
     case 'profile-save': {
       const nm = (document.getElementById('mpName')||{}).value || '';
       const bi = (document.getElementById('mpBio')||{}).value || '';
+      const bm = parseInt((document.getElementById('mpBMonth')||{}).value, 10) || 0;
+      const bd = parseInt((document.getElementById('mpBDay')||{}).value, 10) || 0;
+      const bp = !!(document.getElementById('mpBPublic')||{}).checked;
       if(bi.length > BIO_MAX){ toast('自己紹介は' + BIO_MAX + '文字までです'); break; }
+      if((bm && !bd) || (!bm && bd)){ toast('誕生日は月と日の両方を選んでください'); break; }
+      if(bm && bd && !isValidDate(bm, bd)){ toast('その日付はありません'); break; }
       profileBusy = true; render();
-      saveMyProfile({displayName: nm.trim(), bio: bi}).then(ok => {
+      saveMyProfile({displayName: nm.trim(), bio: bi, birthMonth: bm, birthDay: bd, birthPublic: bp}).then(ok => {
         profileBusy = false;
         toast(ok ? 'プロフィールを保存しました' : '保存できませんでした');
         publishStats();
