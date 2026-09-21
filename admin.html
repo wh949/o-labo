@@ -144,6 +144,18 @@ tbody tr:hover{ background:var(--leaf-soft); }
   border-radius:999px; cursor:pointer; user-select:none; }
 .tp.on{ border-color:var(--leaf); background:var(--leaf-soft); }
 .tp input{ width:16px; height:16px; margin:0; accent-color:var(--leaf); }
+
+.tp-group{ font-size:12px; font-weight:800; color:var(--ink-soft); margin:0 0 8px; }
+
+/* 称号の一覧（カード形式：狭い画面でも崩れない） */
+.title-cards{ display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px; }
+.title-card{ margin:0; display:flex; flex-direction:column; gap:8px; }
+.tc-head{ display:flex; align-items:center; gap:8px; }
+.tc-head .tag{ font-size:13px; padding:3px 10px; }
+.tc-count{ margin-left:auto; font-size:12px; color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+.tc-auto{ font-size:11px; color:var(--ink-soft); }
+.tc-desc{ margin:0; font-size:13px; line-height:1.6; }
+.tc-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:auto; }
 </style>
 </head>
 <body>
@@ -263,7 +275,7 @@ async function loadAll(){
     db.ref('admins').once('value').catch(()=>({ val:()=>({}) }))
   ]);
   users = u.val() || {};
-  titles = Object.assign({}, AUTO_TITLES, t.val() || {});
+  titles = mergeTitles(t.val() || {});
   presence = p.val() || {};
   admins = a.val() || {};
 }
@@ -392,15 +404,26 @@ function viewUser(){
 
     <div class="box">
       <h3>称号（${Object.keys(owned).filter(k=>titles[k]).length}個）</h3>
-      ${Object.keys(titles).length ? `<div class="title-picks">${
-        Object.entries(titles).sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0)).map(([id,t]) => `
+      ${(() => {
+        const revoked = (u.titlesRevoked) || {};
+        const pick = ([id,t]) => `
           <label class="tp ${owned[id]?'on':''}">
             <input type="checkbox" ${owned[id]?'checked':''} onchange="toggleTitle('${esc(id)}', this.checked)">
             ${titleTag(t)}
-          </label>`).join('')
-      }</div>
-      <p style="margin:10px 0 0; font-size:12px; color:var(--ink-soft);">押すとすぐに反映されます。</p>`
-      : '<p class="empty" style="padding:8px;">称号がまだありません。「称号」から作ってください。</p>'}
+            ${t.auto && revoked[id] && !owned[id] ? '<span style="font-size:11px; color:var(--danger);">外し中</span>' : ''}
+          </label>`;
+        const autos = sortedTitles().filter(([,t]) => t.auto);
+        const manual = sortedTitles().filter(([,t]) => !t.auto);
+        return `
+          <div class="tp-group">自動で付く称号</div>
+          <div class="title-picks">${autos.map(pick).join('')}</div>
+          <p style="margin:6px 0 14px; font-size:11.5px; color:var(--ink-soft);">
+            外すと、条件を満たしていても自動では付け直されません（「外し中」）。付け直すと解除されます。</p>
+          <div class="tp-group">手動で付ける称号</div>
+          ${manual.length ? `<div class="title-picks">${manual.map(pick).join('')}</div>`
+                          : '<p class="empty" style="padding:6px;">まだありません。「称号」から作れます。</p>'}
+          <p style="margin:10px 0 0; font-size:12px; color:var(--ink-soft);">押すとすぐに反映されます。</p>`;
+      })()}
     </div>
 
     <div class="box">
@@ -460,6 +483,24 @@ function titleTag(t){
   return `<span class="tag" style="background:${esc(c)}22; color:${esc(titleTone(c))};">${esc(t ? t.name : '')}</span>`;
 }
 
+// 自動の称号は、本体に書いた既定値の上に、管理者が変えた項目だけを重ねる
+function mergeTitles(db){
+  const out = {};
+  for(const [id,t] of Object.entries(AUTO_TITLES)){
+    out[id] = Object.assign({}, t, db[id] || {}, { auto:true, overridden: !!db[id] });
+  }
+  for(const [id,t] of Object.entries(db)){
+    if(!AUTO_TITLES[id]) out[id] = Object.assign({}, t);
+  }
+  return out;
+}
+function sortedTitles(){
+  return Object.entries(titles).sort((a,b)=>{
+    if(!!a[1].auto !== !!b[1].auto) return a[1].auto ? -1 : 1;   // 自動の称号を先に
+    return (a[1].createdAt||0)-(b[1].createdAt||0);
+  });
+}
+
 /* ---------- 利用者の操作 ---------- */
 async function saveProfile(){
   const uid = selectedUid;
@@ -475,13 +516,20 @@ async function saveProfile(){
   }catch(err){ console.error(err); toast('保存できませんでした（権限を確認してください）'); }
   busy = false; render();
 }
-async function toggleTitle(titleId, on){
-  const uid = selectedUid;
+// 称号を付ける・外す（利用者の詳細、称号の一覧のどちらからも使う）
+async function setUserTitle(uid, titleId, on){
+  const u = users[uid] || {};
+  const isAuto = !!(titles[titleId] && titles[titleId].auto);
   try{
-    if(on) await db.ref('users/'+uid+'/titles/'+titleId).set(true);
-    else   await db.ref('users/'+uid+'/titles/'+titleId).remove();
+    if(on){
+      await db.ref('users/'+uid+'/titles/'+titleId).set(true);
+      if(isAuto) await db.ref('users/'+uid+'/titlesRevoked/'+titleId).remove();
+    } else {
+      await db.ref('users/'+uid+'/titles/'+titleId).remove();
+      // 自動の称号は、外しても本人の端末が付け直してしまうので、付け直さない印を残す
+      if(isAuto) await db.ref('users/'+uid+'/titlesRevoked/'+titleId).set(true);
+    }
     // 以前の1つだけの形で持っていた場合は、新しい形へ移しておく
-    const u = users[uid] || {};
     if(u.title){
       if(u.title !== titleId || on) await db.ref('users/'+uid+'/titles/'+u.title).set(true);
       await db.ref('users/'+uid+'/title').remove();
@@ -489,9 +537,13 @@ async function toggleTitle(titleId, on){
     }
     await loadAll();
     toast(on ? '称号を付けました' : '称号を外しました');
-    render();
-  }catch(err){ console.error(err); toast('変更できませんでした（権限を確認してください）'); render(); }
+  }catch(err){
+    console.error(err);
+    toast('変更できませんでした（権限を確認してください）');
+  }
+  render();
 }
+async function toggleTitle(titleId, on){ await setUserTitle(selectedUid, titleId, on); }
 async function removeIcon(){
   if(!confirm('この利用者のアイコンを削除しますか？')) return;
   try{
@@ -564,7 +616,7 @@ function pickColor(c, fromCustom){
   }
 }
 function viewTitles(){
-  const list = Object.entries(titles).sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
+  const list = sortedTitles();
   const holders = id => Object.values(users).filter(u => titlesOf(u)[id]).length;
   const t = editTitleId ? (titles[editTitleId] || {}) : {};
   return `
@@ -572,6 +624,8 @@ function viewTitles(){
     <p class="lead">ここで作った称号を、利用者の詳細画面から付けられます。</p>
     <div class="box">
       <h3>${editTitleId ? '称号を編集' : '称号を作る'}</h3>
+      ${editTitleId && titles[editTitleId] && titles[editTitleId].auto ? `<p style="margin:0 0 8px; font-size:12px; color:var(--ink-soft);">
+        自動で付く称号です。名前・説明・色は変えられます。付く条件は変わりません。</p>` : ''}
       <label class="f" for="tName">名前（30文字まで）</label>
       <input type="text" id="tName" maxlength="30" value="${esc(t.name||'')}" oninput="const p=$('#tPreview'); if(p) p.textContent=this.value||'称号の名前';">
       <label class="f" for="tDesc">説明（120文字まで）</label>
@@ -594,22 +648,37 @@ function viewTitles(){
         ${editTitleId ? '<button class="btn" onclick="editTitleId=null; render()">やめる</button>' : ''}
       </div>
     </div>
-    <div class="box" style="padding:0;">
-      <div class="tbl-wrap"><table>
-        <thead><tr><th>称号</th><th>説明</th><th class="num">持っている人</th><th></th></tr></thead>
-        <tbody>${list.length ? list.map(([id,x]) => `
-          <tr style="cursor:default;">
-            <td>${titleTag(x)}</td>
-            <td>${esc(x.desc||'')}</td>
-            <td class="num">${holders(id)}</td>
-            <td style="white-space:nowrap;">
-              ${x.auto ? '<span class="tag admin">自動で付与</span>' : `
-              <button class="btn" onclick="editTitleId='${id}'; render()">編集</button>
-              <button class="btn ghost-danger" onclick="deleteTitle('${id}')">削除</button>`}
-            </td>
-          </tr>`).join('') : '<tr><td colspan="4" class="empty">まだ称号はありません</td></tr>'}
-        </tbody>
-      </table></div>
+    ${holdersOf && titles[holdersOf] ? (() => {
+      const hs = Object.entries(users).filter(([,u]) => titlesOf(u)[holdersOf]);
+      return `<div class="box">
+        <div class="row" style="margin-bottom:8px;">
+          <h3 class="grow" style="margin:0;">${titleTag(titles[holdersOf])} を持っている人（${hs.length}人）</h3>
+          <button class="btn" onclick="holdersOf=null; render()">閉じる</button>
+        </div>
+        ${hs.length ? hs.map(([uid,u]) => `
+          <div class="row" style="padding:6px 0; border-bottom:1px solid var(--line);">
+            <span class="grow">${esc(nameOf(u))} <span class="code" style="color:var(--ink-soft);">${esc(u.code||'')}</span></span>
+            <button class="btn" onclick="openUser('${uid}')">開く</button>
+            <button class="btn ghost-danger" onclick="removeTitleFrom('${uid}','${esc(holdersOf)}')">外す</button>
+          </div>`).join('') : '<p class="empty" style="padding:8px;">まだ誰も持っていません</p>'}
+      </div>`;
+    })() : ''}
+    <div class="title-cards">${list.length ? list.map(([id,x]) => `
+      <div class="box title-card">
+        <div class="tc-head">
+          ${titleTag(x)}
+          <span class="tc-count">${holders(id)}人</span>
+        </div>
+        ${x.auto ? `<div class="tc-auto">自動で付与${x.overridden ? '・変更あり' : ''}</div>` : ''}
+        ${x.desc ? `<p class="tc-desc">${esc(x.desc)}</p>` : ''}
+        <div class="tc-actions">
+          <button class="btn" onclick="editTitleId='${id}'; render(); window.scrollTo(0,0);">編集</button>
+          <button class="btn" onclick="showHolders('${id}'); window.scrollTo(0,0);">持っている人</button>
+          ${x.auto
+            ? (x.overridden ? `<button class="btn" onclick="resetAutoTitle('${id}')">初期設定に戻す</button>` : '')
+            : `<button class="btn ghost-danger" onclick="deleteTitle('${id}')">削除</button>`}
+        </div>
+      </div>`).join('') : '<div class="box"><p class="empty">まだ称号はありません</p></div>'}
     </div>`;
 }
 async function saveTitle(){
@@ -617,7 +686,11 @@ async function saveTitle(){
   if(!name){ toast('名前を入力してください'); return; }
   const data = { name, desc: $('#tDesc').value.trim(), color: $('#tColor').value };
   try{
-    if(editTitleId){
+    if(editTitleId && titles[editTitleId] && titles[editTitleId].auto){
+      // 自動の称号は、既定値を上書きする形で保存する
+      data.createdAt = AUTO_TITLES[editTitleId].createdAt;
+      await db.ref('titles/'+editTitleId).set(data);
+    } else if(editTitleId){
       await db.ref('titles/'+editTitleId).update(data);
     } else {
       data.createdAt = Date.now();
@@ -626,6 +699,16 @@ async function saveTitle(){
     editTitleId = null;
     await loadAll(); toast('称号を保存しました'); render();
   }catch(err){ console.error(err); toast('保存できませんでした'); }
+}
+async function resetAutoTitle(id){
+  if(!confirm(`「${titles[id].name}」を初期設定（${AUTO_TITLES[id].name}）に戻しますか？\n付いている人からは外れません。`)) return;
+  try{ await db.ref('titles/'+id).remove(); await loadAll(); toast('初期設定に戻しました'); render(); }
+  catch(err){ toast('戻せませんでした'); }
+}
+let holdersOf = null;
+function showHolders(id){ holdersOf = id; render(); }
+async function removeTitleFrom(uid, id){
+  await setUserTitle(uid, id, false);
 }
 async function deleteTitle(id){
   if(titles[id] && titles[id].auto){ toast('自動で付く称号は削除できません'); return; }
