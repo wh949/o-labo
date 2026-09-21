@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>O-LABO 管理</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<style>
+:root{
+  --leaf:#0f7a3f;        /* ロゴの緑 */
+  --leaf-soft:#e3f1e8;
+  --ink:#16201a;
+  --ink-soft:#5d6b62;
+  --line:#d6ddd8;
+  --paper:#f6f8f6;
+  --panel:#ffffff;
+  --danger:#b3261e;
+  --danger-soft:#fbe9e7;
+  --warn:#8a5a00;
+  --warn-soft:#fff4dc;
+  --radius:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ink:#e6ece8; --ink-soft:#9aa8a0; --line:#2c3831;
+    --paper:#111713; --panel:#18201b;
+    --leaf-soft:#173323; --danger-soft:#3a1715; --warn-soft:#332a14;
+  }
+}
+*{ box-sizing:border-box; }
+html,body{ margin:0; background:var(--paper); color:var(--ink);
+  font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic UI",system-ui,sans-serif; font-size:14px; line-height:1.6; }
+body{ padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0); }
+button,input,select,textarea{ font:inherit; color:inherit; }
+a{ color:var(--leaf); }
+
+/* 上部の帯：本体と取り違えないよう、管理画面だと一目で分かる色にする */
+.bar{
+  position:sticky; top:0; z-index:5;
+  display:flex; align-items:center; gap:12px;
+  padding:12px 18px; background:var(--leaf); color:#fff;
+}
+.bar h1{ font-size:16px; margin:0; font-weight:800; letter-spacing:.02em; }
+.bar .who{ margin-left:auto; font-size:12px; opacity:.9; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:45vw; }
+.bar button{ background:rgba(255,255,255,.18); border:0; color:#fff; padding:6px 12px; border-radius:8px; cursor:pointer; font-size:12px; }
+
+.layout{ display:grid; grid-template-columns:200px 1fr; min-height:calc(100vh - 52px); }
+nav.side{ border-right:1px solid var(--line); padding:14px 10px; background:var(--panel); }
+nav.side button{
+  display:block; width:100%; text-align:left; border:0; background:none;
+  padding:10px 12px; border-radius:8px; cursor:pointer; margin-bottom:2px; font-size:14px;
+}
+nav.side button.on{ background:var(--leaf-soft); color:var(--leaf); font-weight:800; }
+main{ padding:22px 26px 60px; max-width:1100px; }
+h2{ font-size:20px; margin:0 0 4px; }
+.lead{ color:var(--ink-soft); margin:0 0 18px; font-size:13px; }
+
+.box{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:14px; }
+.box h3{ font-size:14px; margin:0 0 12px; }
+.row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.grow{ flex:1; min-width:180px; }
+
+input[type=text],input[type=email],input[type=password],select,textarea{
+  width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; background:var(--panel);
+}
+textarea{ resize:vertical; min-height:70px; }
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{ outline:2px solid var(--leaf); outline-offset:2px; }
+label.f{ display:block; font-size:12px; color:var(--ink-soft); margin:10px 0 4px; }
+
+.btn{ border:1px solid var(--line); background:var(--panel); padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:700; font-size:13px; white-space:nowrap; }
+.btn.primary{ background:var(--leaf); border-color:var(--leaf); color:#fff; }
+.btn.danger{ background:var(--danger); border-color:var(--danger); color:#fff; }
+.btn.ghost-danger{ color:var(--danger); border-color:var(--danger); }
+.btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+/* 一覧表：多くの利用者を見比べるので、行を詰めて並べる */
+.tbl-wrap{ overflow-x:auto; }
+table{ width:100%; border-collapse:collapse; font-size:13px; }
+th,td{ text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
+th{ font-size:12px; color:var(--ink-soft); font-weight:700; position:sticky; top:0; background:var(--panel); }
+tbody tr{ cursor:pointer; }
+tbody tr:hover{ background:var(--leaf-soft); }
+.ic{ width:30px; height:30px; border-radius:50%; object-fit:cover; background:var(--line); display:inline-block; vertical-align:middle; }
+.code{ font-family:ui-monospace,Menlo,monospace; letter-spacing:.06em; }
+.num{ text-align:right; font-variant-numeric:tabular-nums; }
+
+.tag{ display:inline-block; font-size:11px; font-weight:800; padding:2px 8px; border-radius:999px; }
+.tag.ban{ background:var(--danger-soft); color:var(--danger); }
+.tag.guest{ background:var(--warn-soft); color:var(--warn); }
+.tag.admin{ background:var(--leaf-soft); color:var(--leaf); }
+.dot{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+
+.kv{ display:grid; grid-template-columns:140px 1fr; gap:6px 12px; font-size:13px; }
+.kv dt{ color:var(--ink-soft); }
+.kv dd{ margin:0; word-break:break-all; }
+
+.danger-zone{ border-color:var(--danger); }
+.danger-zone h3{ color:var(--danger); }
+.empty{ color:var(--ink-soft); text-align:center; padding:28px 10px; }
+.back{ background:none; border:0; color:var(--leaf); cursor:pointer; padding:0; margin-bottom:12px; font-weight:700; }
+
+.toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--ink); color:var(--paper);
+  padding:10px 16px; border-radius:10px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:20; }
+.toast.on{ opacity:1; }
+
+/* ログイン画面 */
+.gate{ max-width:380px; margin:10vh auto; padding:0 18px; }
+.gate .box{ padding:22px; }
+
+@media (max-width:760px){
+  .layout{ grid-template-columns:1fr; }
+  nav.side{ display:flex; overflow-x:auto; border-right:0; border-bottom:1px solid var(--line); padding:8px; gap:4px; }
+  nav.side button{ width:auto; white-space:nowrap; margin:0; }
+  main{ padding:16px 14px 50px; }
+  .kv{ grid-template-columns:110px 1fr; }
+  .hide-sm{ display:none; }
+  /* 狭い画面では帯を詰める */
+  .bar{ padding:10px 12px; gap:8px; }
+  .bar h1{ font-size:15px; white-space:nowrap; }
+  .bar .who{ display:none; }
+  .bar button{ padding:6px 10px; white-space:nowrap; }
+  nav.side{ align-items:center; }
+  nav.side button{ padding:8px 12px; }
+}
+.tag{ white-space:nowrap; }
+@media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+<script>
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyD3481HlMki4kgq7m3puHrLfY6Rsh7tZ8c",
+  authDomain: "o-labo-wh949.firebaseapp.com",
+  databaseURL: "https://o-labo-wh949-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "o-labo-wh949",
+  storageBucket: "o-labo-wh949.firebasestorage.app",
+  messagingSenderId: "5105208435",
+  appId: "1:5105208435:web:5e089d3752b1e603c76e06"
+};
+// 大元の管理者のID。サーバー側のルールでも同じIDで判定している
+const OWNER_CODE = '7WX9WAHE';
+
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth = firebase.auth();
+const db = firebase.database();
+
+let me = null;            // ログイン中の利用者
+let isOwner = false;      // 大元の管理者か
+let view = 'users';       // users | user | titles | rooms | admins
+let users = {};           // uid → 利用者
+let titles = {};          // 称号の一覧
+let presence = {};
+let admins = {};
+let selectedUid = null;
+let detail = null;        // 詳しく見ている利用者の追加情報
+let query = '';
+let busy = false;
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove('on'),2400); }
+function fmtDate(ms){ if(!ms) return '-'; const d=new Date(ms); return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
+function iconSrc(u){ return u && u.profile && u.profile.icon && u.profile.icon.startsWith('data:') ? u.profile.icon : ''; }
+function nameOf(u){ return (u && ((u.profile && u.profile.displayName) || u.name)) || '(名前なし)'; }
+function presenceOf(uid){
+  const p = presence[uid];
+  const fresh = p && p.at && (Date.now() - p.at < 5*60*1000);
+  const st = fresh ? p.state : 'offline';
+  return ({ online:['オンライン','#22a45d'], playing:['対局中','#f5a300'], playing_online:['対局中（オンライン）','#3b82f6'] }[st]) || ['オフライン','#b8b2a6'];
+}
+
+/* ---------- ログインと権限の確認 ---------- */
+// 画面の出し分けはここで行うが、実際の守りはサーバー側のルールが担う
+async function checkAdmin(user){
+  const ownerSnap = await db.ref('userCodes/' + OWNER_CODE).once('value');
+  if(ownerSnap.val() === user.uid){ isOwner = true; return true; }
+  try{
+    const a = await db.ref('admins/' + user.uid).once('value');
+    return a.val() === true;
+  }catch(err){ return false; }
+}
+
+auth.onAuthStateChanged(async user => {
+  me = user;
+  if(!user || user.isAnonymous){ renderGate(); return; }
+  renderGate('権限を確認しています…');
+  let ok = false;
+  try{ ok = await checkAdmin(user); }catch(err){ console.error(err); }
+  if(!ok){ renderGate('このアカウントには管理者の権限がありません。', true); return; }
+  await loadAll();
+  render();
+});
+
+function renderGate(msg, denied){
+  $('#app').innerHTML = `
+    <div class="gate">
+      <h2 style="margin-bottom:6px;">O-LABO 管理</h2>
+      <p class="lead">O-LABO と同じアカウントでログインしてください。</p>
+      <div class="box">
+        ${msg ? `<p style="margin:0 0 14px; ${denied?'color:var(--danger); font-weight:700;':''}">${esc(msg)}</p>` : ''}
+        ${me && !me.isAnonymous ? `
+          <p style="margin:0 0 12px; font-size:13px;">ログイン中：${esc(me.email || 'Google アカウント')}</p>
+          <button class="btn" style="width:100%;" onclick="auth.signOut()">別のアカウントでログイン</button>
+        ` : `
+          <button class="btn primary" style="width:100%;" onclick="loginGoogle()">Google でログイン</button>
+          <label class="f" for="em">メールアドレス</label>
+          <input type="email" id="em" autocomplete="email">
+          <label class="f" for="pw">パスワード</label>
+          <input type="password" id="pw" autocomplete="current-password">
+          <button class="btn" style="width:100%; margin-top:12px;" onclick="loginEmail()">メールでログイン</button>
+        `}
+      </div>
+      <p style="font-size:12px;"><a href="./">O-LABO に戻る</a></p>
+    </div>`;
+}
+async function loginGoogle(){
+  try{
+    const p = new firebase.auth.GoogleAuthProvider();
+    p.setCustomParameters({ prompt:'select_account' });
+    await auth.signInWithPopup(p);
+  }catch(err){
+    if(err && (err.code==='auth/popup-blocked' || err.code==='auth/operation-not-supported-in-this-environment')){
+      await auth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+    } else toast('ログインできませんでした');
+  }
+}
+async function loginEmail(){
+  const em = $('#em').value.trim(), pw = $('#pw').value;
+  if(!em || !pw){ toast('メールアドレスとパスワードを入力してください'); return; }
+  try{ await auth.signInWithEmailAndPassword(em, pw); }
+  catch(err){ toast('メールアドレスまたはパスワードが違います'); }
+}
+auth.getRedirectResult().catch(()=>{});
+
+/* ---------- データの読み込み ---------- */
+async function loadAll(){
+  const [u, t, p, a] = await Promise.all([
+    db.ref('users').once('value'),
+    db.ref('titles').once('value'),
+    db.ref('presence').once('value'),
+    db.ref('admins').once('value').catch(()=>({ val:()=>({}) }))
+  ]);
+  users = u.val() || {};
+  titles = t.val() || {};
+  presence = p.val() || {};
+  admins = a.val() || {};
+}
+
+/* ---------- 画面 ---------- */
+function render(){
+  const tabs = [
+    ['users','利用者'], ['titles','称号'], ['rooms','対局の部屋'],
+    ...(isOwner ? [['admins','管理者']] : [])
+  ];
+  $('#app').innerHTML = `
+    <div class="bar">
+      <h1>O-LABO 管理</h1>
+      <span class="who">${esc(me.email || 'Google アカウント')}${isOwner?'（大元）':''}</span>
+      <button onclick="reloadAll()">再読み込み</button>
+      <button onclick="auth.signOut()">ログアウト</button>
+    </div>
+    <div class="layout">
+      <nav class="side">${tabs.map(([k,l]) =>
+        `<button class="${(view===k || (view==='user'&&k==='users'))?'on':''}" onclick="go('${k}')">${l}</button>`).join('')}</nav>
+      <main>${
+        view==='users' ? viewUsers() :
+        view==='user'  ? viewUser()  :
+        view==='titles'? viewTitles():
+        view==='rooms' ? viewRooms() :
+        view==='admins'? viewAdmins(): ''
+      }</main>
+    </div>`;
+}
+function go(v){ view = v; selectedUid = null; detail = null; render(); if(v==='rooms') loadRooms(); }
+async function reloadAll(){ await loadAll(); if(view==='user' && selectedUid) await openUser(selectedUid, true); render(); toast('最新の情報にしました'); }
+
+/* 利用者の一覧 */
+function viewUsers(){
+  const q = query.trim().toLowerCase();
+  const list = Object.entries(users)
+    .filter(([uid,u]) => !q || nameOf(u).toLowerCase().includes(q) || String(u.code||'').toLowerCase().includes(q) || uid.toLowerCase().includes(q))
+    .sort((a,b) => ((b[1].lastSeen||0) - (a[1].lastSeen||0)));
+  const total = Object.keys(users).length;
+  const banned = Object.values(users).filter(u => u.banned).length;
+  return `
+    <h2>利用者</h2>
+    <p class="lead">登録 ${total}人 ／ 停止中 ${banned}人。行を押すと詳しく見られます。</p>
+    <div class="box">
+      <input type="text" placeholder="名前・ID で探す" value="${esc(query)}" oninput="query=this.value; render(); this.focus(); this.setSelectionRange(this.value.length,this.value.length);">
+    </div>
+    <div class="box" style="padding:0;">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th></th><th>名前</th><th>ID</th><th class="hide-sm">状態</th><th class="num hide-sm">対局</th><th class="hide-sm">最終</th><th></th></tr></thead>
+        <tbody>${list.length ? list.map(([uid,u]) => {
+          const [pl,pc] = presenceOf(uid);
+          const src = iconSrc(u);
+          return `<tr onclick="openUser('${uid}')">
+            <td>${src ? `<img class="ic" src="${src}" alt="">` : '<span class="ic"></span>'}</td>
+            <td>${esc(nameOf(u))}</td>
+            <td class="code">${esc(u.code||'-')}</td>
+            <td class="hide-sm"><span class="dot" style="background:${pc}"></span>${pl}</td>
+            <td class="num hide-sm">${(u.stats && u.stats.games) || 0}</td>
+            <td class="hide-sm">${fmtDate(u.lastSeen)}</td>
+            <td>${u.banned?'<span class="tag ban">停止中</span>':''}${u.guest?' <span class="tag guest">ゲスト</span>':''}${admins[uid]||u.code===OWNER_CODE?' <span class="tag admin">管理者</span>':''}</td>
+          </tr>`;}).join('') : `<tr><td colspan="7" class="empty">該当する利用者はいません</td></tr>`}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+
+/* 利用者の詳細 */
+async function openUser(uid, silent){
+  selectedUid = uid; view = 'user';
+  if(!silent){ detail = null; render(); }
+  const [save, priv, fr, req] = await Promise.all([
+    db.ref('saves/'+uid).once('value').catch(()=>null),
+    db.ref('private/'+uid).once('value').catch(()=>null),
+    db.ref('friends/'+uid).once('value').catch(()=>null),
+    db.ref('friendRequests/'+uid).once('value').catch(()=>null)
+  ]);
+  detail = {
+    save: save && save.val(),
+    priv: (priv && priv.val()) || {},
+    friends: (fr && fr.val()) || {},
+    requests: (req && req.val()) || {}
+  };
+  render();
+}
+function viewUser(){
+  const uid = selectedUid, u = users[uid] || {};
+  const p = u.profile || {}, st = u.stats || {};
+  const [pl,pc] = presenceOf(uid);
+  const src = iconSrc(u);
+  const d = detail;
+  const titleOpts = ['<option value="">なし</option>'].concat(
+    Object.entries(titles).map(([id,t]) => `<option value="${esc(id)}" ${u.title===id?'selected':''}>${esc(t.name)}</option>`)).join('');
+  const isAdm = admins[uid] || u.code === OWNER_CODE;
+  return `
+    <button class="back" onclick="go('users')">‹ 利用者の一覧</button>
+    <div class="row" style="margin-bottom:14px;">
+      ${src ? `<img class="ic" style="width:56px;height:56px;" src="${src}" alt="">` : '<span class="ic" style="width:56px;height:56px;"></span>'}
+      <div>
+        <h2 style="margin:0;">${esc(nameOf(u))}</h2>
+        <div class="code" style="color:var(--ink-soft); font-size:13px;">${esc(u.code||'-')} ／ ${esc(uid)}</div>
+      </div>
+    </div>
+
+    <div class="box">
+      <h3>状態</h3>
+      <dl class="kv">
+        <dt>在席</dt><dd><span class="dot" style="background:${pc}"></span>${pl}</dd>
+        <dt>登録日</dt><dd>${fmtDate(u.createdAt)}</dd>
+        <dt>最終アクセス</dt><dd>${fmtDate(u.lastSeen)}</dd>
+        <dt>種類</dt><dd>${u.guest?'ゲスト':'アカウント'}${isAdm?'（管理者）':''}</dd>
+        <dt>停止</dt><dd>${u.banned ? `<span class="tag ban">停止中</span> ${esc(u.banReason||'')}` : 'なし'}</dd>
+        <dt>誕生日</dt><dd>${d && d.priv.birthMonth ? `${d.priv.birthMonth}月${d.priv.birthDay}日（${d.priv.birthPublic?'公開':'非公開'}）` : '未設定'}</dd>
+      </dl>
+    </div>
+
+    <div class="box">
+      <h3>プロフィールの編集</h3>
+      <label class="f" for="edName">ユーザー名</label>
+      <input type="text" id="edName" maxlength="20" value="${esc(p.displayName || u.name || '')}">
+      <label class="f" for="edBio">自己紹介</label>
+      <textarea id="edBio" maxlength="300">${esc(p.bio||'')}</textarea>
+      <label class="f" for="edTitle">称号</label>
+      <select id="edTitle">${titleOpts}</select>
+      <div class="row" style="margin-top:12px;">
+        <button class="btn primary" onclick="saveProfile()" ${busy?'disabled':''}>変更を保存</button>
+        ${src ? '<button class="btn ghost-danger" onclick="removeIcon()">アイコンを削除</button>' : ''}
+      </div>
+    </div>
+
+    <div class="box">
+      <h3>戦績</h3>
+      <dl class="kv">
+        <dt>プレイヤーランク</dt><dd>${st.rank ?? '-'}</dd>
+        <dt>通算</dt><dd>${st.games ?? 0}戦 ${st.wins ?? 0}勝</dd>
+        <dt>ゆるモード解禁</dt><dd>${st.casualUnlocked ?? '-'} / ${st.casualTotal ?? '-'}</dd>
+        <dt>特訓ランク</dt><dd>${esc(st.training || '-')}</dd>
+        <dt>Stella</dt><dd>${st.stella ? '解禁済み' : '未解禁'}</dd>
+        <dt>セーブデータ</dt><dd>${d ? (d.save ? `あり（${fmtDate(d.save.updatedAt)} 更新）` : 'なし') : '読み込み中…'}</dd>
+      </dl>
+    </div>
+
+    <div class="box">
+      <h3>フレンド（${d ? Object.keys(d.friends).length : '…'}人）</h3>
+      ${d ? (Object.keys(d.friends).length ? Object.entries(d.friends).map(([fu,f]) =>
+        `<div class="row" style="padding:6px 0; border-bottom:1px solid var(--line);">
+           <span class="grow">${esc(f.name||'-')} <span class="code" style="color:var(--ink-soft);">${esc(f.code||'')}</span></span>
+           <button class="btn" onclick="openUser('${fu}')">開く</button>
+         </div>`).join('') : '<p class="empty" style="padding:8px;">フレンドはいません</p>') : '<p class="empty">読み込み中…</p>'}
+    </div>
+
+    <div class="box danger-zone">
+      <h3>取り扱い注意</h3>
+      ${u.banned ? `
+        <p style="margin:0 0 10px; font-size:13px;">停止を解除すると、オンライン対局などが再び使えるようになります。</p>
+        <button class="btn" onclick="setBan(false)">停止を解除</button>
+      ` : `
+        <p style="margin:0 0 8px; font-size:13px;">停止すると、この利用者はオンライン対局とフレンド機能を使えなくなります。</p>
+        <input type="text" id="banReason" maxlength="200" placeholder="停止の理由（本人に表示されます）">
+        <button class="btn danger" style="margin-top:10px;" onclick="setBan(true)">利用を停止する</button>
+      `}
+      <hr style="border:0; border-top:1px solid var(--line); margin:16px 0;">
+      <p style="margin:0 0 8px; font-size:13px;">プロフィール・戦績・フレンド・セーブデータをすべて消します。ログイン用のアカウント自体は残ります。元に戻せません。</p>
+      <button class="btn ghost-danger" onclick="wipeUser()">この利用者のデータを消す</button>
+    </div>`;
+}
+
+/* ---------- 利用者の操作 ---------- */
+async function saveProfile(){
+  const uid = selectedUid;
+  const name = $('#edName').value.trim();
+  const bio = $('#edBio').value;
+  const title = $('#edTitle').value;
+  if(bio.length > 300){ toast('自己紹介は300文字までです'); return; }
+  busy = true; render();
+  try{
+    await db.ref('users/'+uid+'/profile').update({ displayName: name, bio, updatedAt: Date.now() });
+    await db.ref('users/'+uid+'/name').set(name || '(名前なし)');
+    if(title) await db.ref('users/'+uid+'/title').set(title);
+    else await db.ref('users/'+uid+'/title').remove();
+    await loadAll();
+    toast('変更を保存しました');
+  }catch(err){ console.error(err); toast('保存できませんでした（権限を確認してください）'); }
+  busy = false; render();
+}
+async function removeIcon(){
+  if(!confirm('この利用者のアイコンを削除しますか？')) return;
+  try{
+    await db.ref('users/'+selectedUid+'/profile/icon').set('');
+    await loadAll(); toast('アイコンを削除しました'); render();
+  }catch(err){ toast('削除できませんでした'); }
+}
+async function setBan(on){
+  const uid = selectedUid, u = users[uid] || {};
+  if(u.code === OWNER_CODE){ toast('大元の管理者は停止できません'); return; }
+  if(on){
+    const reason = ($('#banReason') ? $('#banReason').value.trim() : '');
+    if(!confirm(`「${nameOf(u)}」の利用を停止しますか？`)) return;
+    await db.ref('users/'+uid).update({ banned:true, banReason: reason });
+    toast('利用を停止しました');
+  } else {
+    await db.ref('users/'+uid+'/banned').remove();
+    await db.ref('users/'+uid+'/banReason').remove();
+    toast('停止を解除しました');
+  }
+  await loadAll(); render();
+}
+async function wipeUser(){
+  const uid = selectedUid, u = users[uid] || {};
+  if(u.code === OWNER_CODE){ toast('大元の管理者のデータは消せません'); return; }
+  const code = u.code || '';
+  // 取り違えを防ぐため、IDを打ち込んでもらう
+  const typed = prompt(`本当に消す場合は、この利用者のID「${code}」を入力してください。`);
+  if(typed === null) return;
+  if(typed.trim().toUpperCase() !== code){ toast('IDが一致しないため中止しました'); return; }
+  try{
+    // 相手側のフレンド一覧からも自分を外す
+    const fr = await db.ref('friends/'+uid).once('value');
+    const tasks = Object.keys(fr.val()||{}).map(fu => db.ref('friends/'+fu+'/'+uid).remove().catch(()=>{}));
+    await Promise.all(tasks);
+    await Promise.all([
+      db.ref('friends/'+uid).remove(),
+      db.ref('friendRequests/'+uid).remove(),
+      db.ref('saves/'+uid).remove(),
+      db.ref('private/'+uid).remove(),
+      db.ref('presence/'+uid).remove().catch(()=>{}),
+      db.ref('invites/'+uid).remove().catch(()=>{}),
+    ]);
+    if(code) await db.ref('userCodes/'+code).remove().catch(()=>{});
+    await db.ref('users/'+uid).remove();
+    await loadAll();
+    toast('データを消しました');
+    go('users');
+  }catch(err){ console.error(err); toast('消せませんでした（権限を確認してください）'); }
+}
+
+/* ---------- 称号 ---------- */
+let editTitleId = null;
+function viewTitles(){
+  const list = Object.entries(titles).sort((a,b)=>(a[1].createdAt||0)-(b[1].createdAt||0));
+  const holders = id => Object.values(users).filter(u => u.title === id).length;
+  const t = editTitleId ? (titles[editTitleId] || {}) : {};
+  return `
+    <h2>称号</h2>
+    <p class="lead">ここで作った称号を、利用者の詳細画面から付けられます。</p>
+    <div class="box">
+      <h3>${editTitleId ? '称号を編集' : '称号を作る'}</h3>
+      <label class="f" for="tName">名前（30文字まで）</label>
+      <input type="text" id="tName" maxlength="30" value="${esc(t.name||'')}">
+      <label class="f" for="tDesc">説明（120文字まで）</label>
+      <input type="text" id="tDesc" maxlength="120" value="${esc(t.desc||'')}">
+      <label class="f" for="tColor">色</label>
+      <div class="row"><input type="color" id="tColor" value="${esc(t.color||'#0f7a3f')}" style="width:56px; height:38px; padding:2px;"></div>
+      <div class="row" style="margin-top:12px;">
+        <button class="btn primary" onclick="saveTitle()">${editTitleId?'変更を保存':'作る'}</button>
+        ${editTitleId ? '<button class="btn" onclick="editTitleId=null; render()">やめる</button>' : ''}
+      </div>
+    </div>
+    <div class="box" style="padding:0;">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>称号</th><th>説明</th><th class="num">持っている人</th><th></th></tr></thead>
+        <tbody>${list.length ? list.map(([id,x]) => `
+          <tr style="cursor:default;">
+            <td><span class="tag" style="background:${esc(x.color||'#0f7a3f')}22; color:${esc(x.color||'#0f7a3f')};">${esc(x.name)}</span></td>
+            <td>${esc(x.desc||'')}</td>
+            <td class="num">${holders(id)}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn" onclick="editTitleId='${id}'; render()">編集</button>
+              <button class="btn ghost-danger" onclick="deleteTitle('${id}')">削除</button>
+            </td>
+          </tr>`).join('') : '<tr><td colspan="4" class="empty">まだ称号はありません</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+async function saveTitle(){
+  const name = $('#tName').value.trim();
+  if(!name){ toast('名前を入力してください'); return; }
+  const data = { name, desc: $('#tDesc').value.trim(), color: $('#tColor').value };
+  try{
+    if(editTitleId){
+      await db.ref('titles/'+editTitleId).update(data);
+    } else {
+      data.createdAt = Date.now();
+      await db.ref('titles').push(data);
+    }
+    editTitleId = null;
+    await loadAll(); toast('称号を保存しました'); render();
+  }catch(err){ console.error(err); toast('保存できませんでした'); }
+}
+async function deleteTitle(id){
+  const n = Object.values(users).filter(u => u.title === id).length;
+  if(!confirm(`「${titles[id].name}」を削除しますか？${n?`\n付けている ${n}人 からも外れます。`:''}`)) return;
+  try{
+    const tasks = Object.entries(users).filter(([,u]) => u.title === id)
+      .map(([uid]) => db.ref('users/'+uid+'/title').remove());
+    await Promise.all(tasks);
+    await db.ref('titles/'+id).remove();
+    await loadAll(); toast('称号を削除しました'); render();
+  }catch(err){ toast('削除できませんでした'); }
+}
+
+/* ---------- 対局の部屋 ---------- */
+let rooms = null;
+async function loadRooms(){
+  try{
+    const [r, w] = await Promise.all([db.ref('rooms').once('value'), db.ref('waiting').once('value')]);
+    rooms = { rooms: r.val() || {}, waiting: w.val() || {} };
+  }catch(err){ rooms = { rooms:{}, waiting:{}, error:true }; }
+  render();
+}
+function viewRooms(){
+  if(!rooms) return '<h2>対局の部屋</h2><p class="empty">読み込み中…</p>';
+  const now = Date.now();
+  const list = Object.entries(rooms.rooms).sort((a,b)=>(b[1].updatedAt||b[1].createdAt||0)-(a[1].updatedAt||a[1].createdAt||0));
+  const stale = list.filter(([,r]) => (now - (r.updatedAt||r.createdAt||0)) > 3*60*60*1000 || r.status==='finished' || r.status==='abandoned');
+  const label = { waiting:'待機中', playing:'対局中', finished:'終了', abandoned:'中断' };
+  return `
+    <h2>対局の部屋</h2>
+    <p class="lead">部屋 ${list.length}件 ／ ランダムマッチの受付 ${Object.keys(rooms.waiting).length}件</p>
+    <div class="box row">
+      <span class="grow">終わった部屋や3時間以上動いていない部屋：${stale.length}件</span>
+      <button class="btn" onclick="loadRooms()">再読み込み</button>
+      <button class="btn danger" onclick="cleanRooms()" ${stale.length?'':'disabled'}>まとめて片付ける</button>
+    </div>
+    <div class="box" style="padding:0;">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>部屋</th><th>状態</th><th>先手</th><th>後手</th><th class="num hide-sm">手数</th><th class="hide-sm">最終</th><th></th></tr></thead>
+        <tbody>${list.length ? list.map(([id,r]) => `
+          <tr style="cursor:default;">
+            <td class="code">${esc(id)}</td>
+            <td>${label[r.status]||esc(r.status)}</td>
+            <td>${esc(r.host && r.host.name || '-')}</td>
+            <td>${esc(r.guest && r.guest.name || '-')}</td>
+            <td class="num hide-sm">${r.moveCount||0}</td>
+            <td class="hide-sm">${fmtDate(r.updatedAt||r.createdAt)}</td>
+            <td><button class="btn ghost-danger" onclick="deleteRoom('${esc(id)}')">閉じる</button></td>
+          </tr>`).join('') : '<tr><td colspan="7" class="empty">部屋はありません</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+async function deleteRoom(id){
+  if(!confirm(`部屋「${id}」を閉じますか？ 対局中なら中断されます。`)) return;
+  try{ await db.ref('rooms/'+id).remove(); await db.ref('waiting/'+id).remove().catch(()=>{}); toast('閉じました'); loadRooms(); }
+  catch(err){ toast('閉じられませんでした'); }
+}
+async function cleanRooms(){
+  const now = Date.now();
+  const targets = Object.entries(rooms.rooms).filter(([,r]) =>
+    (now - (r.updatedAt||r.createdAt||0)) > 3*60*60*1000 || r.status==='finished' || r.status==='abandoned').map(([id])=>id);
+  if(!confirm(`${targets.length}件の部屋を片付けますか？`)) return;
+  await Promise.all(targets.map(id => db.ref('rooms/'+id).remove().catch(()=>{})));
+  // 古い受付も片付ける
+  await Promise.all(Object.entries(rooms.waiting).filter(([,w]) => now - (w.createdAt||0) > 60000)
+    .map(([id]) => db.ref('waiting/'+id).remove().catch(()=>{})));
+  toast(`${targets.length}件を片付けました`);
+  loadRooms();
+}
+
+/* ---------- 管理者（大元の管理者だけ） ---------- */
+function viewAdmins(){
+  if(!isOwner) return '<p class="empty">大元の管理者だけが使えます。</p>';
+  const list = Object.keys(admins).filter(k => admins[k]);
+  return `
+    <h2>管理者</h2>
+    <p class="lead">管理者を増やせるのは大元の管理者だけです。追加された管理者は、管理者を増やせません。</p>
+    <div class="box">
+      <h3>管理者を追加</h3>
+      <div class="row">
+        <input type="text" id="admCode" class="grow" maxlength="8" placeholder="追加する人のID" style="text-transform:uppercase; letter-spacing:.1em;">
+        <button class="btn primary" onclick="addAdmin()">追加</button>
+      </div>
+    </div>
+    <div class="box">
+      <h3>現在の管理者</h3>
+      <div class="row" style="padding:6px 0; border-bottom:1px solid var(--line);">
+        <span class="grow">${esc(nameOf(Object.values(users).find(u=>u.code===OWNER_CODE)))} <span class="code" style="color:var(--ink-soft);">${OWNER_CODE}</span></span>
+        <span class="tag admin">大元</span>
+      </div>
+      ${list.map(uid => `
+        <div class="row" style="padding:6px 0; border-bottom:1px solid var(--line);">
+          <span class="grow">${esc(nameOf(users[uid]))} <span class="code" style="color:var(--ink-soft);">${esc((users[uid]||{}).code||uid)}</span></span>
+          <button class="btn ghost-danger" onclick="removeAdmin('${uid}')">外す</button>
+        </div>`).join('')}
+    </div>`;
+}
+async function addAdmin(){
+  const code = $('#admCode').value.trim().toUpperCase();
+  if(!code) return;
+  const snap = await db.ref('userCodes/'+code).once('value');
+  const uid = snap.val();
+  if(!uid){ toast('そのIDの利用者が見つかりません'); return; }
+  if(code === OWNER_CODE){ toast('大元の管理者はすでに管理者です'); return; }
+  if(!confirm(`「${nameOf(users[uid])}」を管理者にしますか？\n利用者の情報をすべて見られるようになります。`)) return;
+  try{ await db.ref('admins/'+uid).set(true); await loadAll(); toast('管理者に追加しました'); render(); }
+  catch(err){ toast('追加できませんでした'); }
+}
+async function removeAdmin(uid){
+  if(!confirm(`「${nameOf(users[uid])}」を管理者から外しますか？`)) return;
+  try{ await db.ref('admins/'+uid).remove(); await loadAll(); toast('外しました'); render(); }
+  catch(err){ toast('外せませんでした'); }
+}
+</script>
+</body>
+</html>
