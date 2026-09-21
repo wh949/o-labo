@@ -3022,6 +3022,7 @@ const AUTO_TITLES = {
 // 称号の一覧（管理者ページで作ったもの＋自動で付くもの）
 let titleCatalog = Object.assign({}, AUTO_TITLES);
 let myTitleIds = [];
+let myTitlesRevoked = {};   // 管理者が外した自動の称号（付け直さない）
 let myBanned = false, myBanReason = '';
 async function loadTitlesAndStatus(){
   if(!fbDb || !fbUid) return;
@@ -3030,9 +3031,13 @@ async function loadTitlesAndStatus(){
       fbDb.ref('titles').once('value'),
       fbDb.ref('users/' + fbUid).once('value')
     ]);
-    titleCatalog = Object.assign({}, AUTO_TITLES, t.val() || {});
+    const dbTitles = t.val() || {};
+    titleCatalog = {};
+    for(const [id,def] of Object.entries(AUTO_TITLES)) titleCatalog[id] = Object.assign({}, def, dbTitles[id] || {});
+    for(const [id,v] of Object.entries(dbTitles)) if(!AUTO_TITLES[id]) titleCatalog[id] = v;
     const u = me.val() || {};
     myTitleIds = titleIdsOf(u);
+    myTitlesRevoked = u.titlesRevoked || {};
     myBanned = !!u.banned;
     myBanReason = u.banReason || '';
   }catch(err){ console.warn('称号の読み込みに失敗:', err); }
@@ -3066,6 +3071,8 @@ async function checkAutoTitles(){
   if(m.allPerfect) want = 'auto_casual_master_true';
   else if(m.allWon) want = 'auto_casual_master';
   if(!want) return;
+  // 管理者が外した称号は、条件を満たしていても付け直さない
+  if(myTitlesRevoked[want]) return;
   if(myTitleIds.includes(want) && !(want === 'auto_casual_master_true' && myTitleIds.includes('auto_casual_master'))) return;
 
   masteryChecking = true;
