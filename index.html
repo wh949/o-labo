@@ -762,6 +762,27 @@ html[data-theme="dark"] {
 .board.event .stone::before, .board.event .stone::after{ display:none !important; }
 .board.event .stone.black{ background-image:var(--ev-black) !important; background-color:transparent !important; }
 .board.event .stone.white{ background-image:var(--ev-white) !important; background-color:transparent !important; }
+
+/* お知らせの一覧（押すと詳細へ） */
+.news-row{ display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  padding:13px 14px; border:0; border-bottom:1px solid var(--line-soft); background:none; cursor:pointer; color:inherit; font:inherit; }
+.news-row:last-of-type{ border-bottom:0; }
+.news-row:active{ background:var(--paper-deep); }
+.news-row-main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.news-row-badges:empty{ display:none; }
+.news-row-title{ font-weight:700; font-size:13.5px; color:var(--ink); line-height:1.5; word-break:break-word; }
+.news-row-date{ font-size:11px; color:var(--ink-soft); }
+.news-row-go{ flex:0 0 auto; font-size:20px; color:var(--ink-soft); line-height:1; }
+.news-badge{ display:inline-block; color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; margin-right:6px; }
+.news-badge.pin{ background:#e8408f; }
+.news-badge.new{ background:#ff9500; }
+/* 詳細の本文 */
+.news-detail{ font-size:14px; line-height:1.85; word-break:break-word; }
+.news-detail h1,.news-detail h2,.news-detail h3{ margin:1.1em 0 .4em; line-height:1.4; }
+.news-detail h1:first-child,.news-detail h2:first-child,.news-detail h3:first-child{ margin-top:0; }
+.news-detail p{ margin:0 0 .8em; }
+.news-detail a{ color:var(--jade-deep); }
+.news-detail img{ max-width:100%; height:auto; border-radius:8px; }
 </style>
 </head>
 <body>
@@ -1568,7 +1589,7 @@ function renderHanko(){
 
 function viewFor(tab){
   if(tab==='home') return viewHome();
-  if(tab==='news') return viewNewsListSync();
+  if(tab==='news') return newsDetailFile ? viewNewsDetail() : viewNewsListSync();
   if(tab==='basic'){
     if(currentBasicMode==='battle') return viewBattle();
     if(currentBasicMode==='training') return viewTraining();
@@ -1659,6 +1680,36 @@ function parseNewsFilename(filename){
   );
   return { isPinned, dateStr, newsDate };
 }
+// GitHub Pages は md を自動で HTML に変換して配信することがある。
+// その場合は、変換される前の元のファイルを取りに行く
+const NEWS_RAW_URL = 'https://raw.githubusercontent.com/wh949/o-labo/main/db/news';
+function looksLikeHtml(text){
+  const t = String(text || '').trimStart().slice(0, 200).toLowerCase();
+  return t.startsWith('<!doctype') || t.startsWith('<html') || t.includes('<head>');
+}
+async function fetchNewsFile(filename){
+  const done = content => Object.assign({ filename, content }, parseNewsFilename(filename));
+  try{
+    const res = await fetchWithTimeout(`${NEWS_BASE_URL}/${filename}`, 5000);
+    if(res.ok){
+      const text = await res.text();
+      if(!looksLikeHtml(text)) return done(text);
+      console.warn('お知らせが HTML で返ってきたため、元のファイルを取り直します:', filename);
+    }
+  }catch(err){
+    if(err && err.name === 'TypeError') newsNetworkError = true;
+  }
+  // 保険：変換される前の元のファイル
+  try{
+    const res2 = await fetchWithTimeout(`${NEWS_RAW_URL}/${filename}`, 5000);
+    if(!res2.ok) return null;
+    const text2 = await res2.text();
+    return looksLikeHtml(text2) ? null : done(text2);
+  }catch(err){
+    return null;
+  }
+}
+
 async function fetchNewsList(){
   newsNetworkError = false;
   try{
@@ -1682,18 +1733,13 @@ async function fetchNewsList(){
       }
     }
 
-    const results = await Promise.all(fileList.map(filename =>
-      fetchWithTimeout(`${NEWS_BASE_URL}/${filename}`, 5000)
-        .then(async res => {
-          if(!res.ok) return null;
-          const content = await res.text();
-          return Object.assign({ filename, content }, parseNewsFilename(filename));
-        })
-        .catch(err => {
-          if(err && err.name === 'TypeError') newsNetworkError = true;
-          return null;
-        })
-    ));
+    // 名前の書き方がゆれても読めるようにそろえる（拡張子の付け忘れ・空白・重複）
+    fileList = [...new Set(fileList
+      .map(f => String(f || '').trim())
+      .filter(Boolean)
+      .map(f => /\.md$/i.test(f) ? f : f + '.md'))];
+
+    const results = await Promise.all(fileList.map(filename => fetchNewsFile(filename)));
 
     const newsItems = results.filter(Boolean);
     newsItems.sort((a, b) => {
@@ -1728,7 +1774,10 @@ let newsCache = null, newsFetchedAt = 0, newsLoading = false;
 const NEWS_TTL = 5 * 60 * 1000;
 
 function homeNewsMarkup(items){
-  const regularNews = (items || []).filter(n => !n.isPinned).slice(0, 2);
+  // ピン留めはすべて上に出し、その下に最新のお知らせを2件出す
+  const pinned = (items || []).filter(n => n.isPinned);
+  const latest = (items || []).filter(n => !n.isPinned).slice(0, 2);
+  const regularNews = pinned.concat(latest);
   if(!regularNews.length){
     return `
       <div class="section-title">お知らせ</div>
@@ -1736,14 +1785,7 @@ function homeNewsMarkup(items){
         <p style="text-align:center; color:var(--ink-soft); margin:0;">${newsNetworkError ? 'お知らせを読み込めませんでした' : 'お知らせはまだありません'}</p>
       </div>`;
   }
-  const rows = regularNews.map(news => `
-      <div style="padding:12px; border-bottom:1px solid var(--line-soft);">
-        <div style="font-weight:700; font-size:13px; color:var(--ink); margin-bottom:4px;">
-          ${markdownToHtmlInline(news.content.split('\n')[0].replace(/^#+\s*/, ''))}
-          ${isNewBadge(news.newsDate) ? '<span style="display:inline-block; background:#ff9500; color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; margin-left:8px;">NEW</span>' : ''}
-        </div>
-        <div style="font-size:11px; color:var(--ink-soft);">${formatNewsDate(news.dateStr)}</div>
-      </div>`).join('');
+  const rows = regularNews.map(newsRowMarkup).join('');
   return `
       <div class="section-title">お知らせ</div>
       <div class="card" style="padding:0; overflow:hidden;">
@@ -1786,6 +1828,60 @@ function markdownToHtmlInline(text){
   return html;
 }
 
+// お知らせの見出し（本文の1行目）
+function newsTitleOf(news){
+  return markdownToHtmlInline(String(news.content||'').split('\n')[0].replace(/^#+\s*/, ''));
+}
+// 見出しを除いた本文（詳細では見出しを別に大きく出すため）
+function newsBodyOf(news){
+  const lines = String(news.content||'').split('\n');
+  if(/^#+\s*/.test(lines[0] || '')) lines.shift();
+  return lines.join('\n').replace(/^\s+/, '');
+}
+function newsBadges(news){
+  return (news.isPinned ? '<span class="news-badge pin">PIN</span>' : '')
+       + (isNewBadge(news.newsDate) ? '<span class="news-badge new">NEW</span>' : '');
+}
+// 一覧の1行（押すと詳細へ）
+function newsRowMarkup(news){
+  return `
+    <button class="news-row" data-action="open-news" data-file="${escapeHtml(news.filename)}">
+      <span class="news-row-main">
+        <span class="news-row-badges">${newsBadges(news)}</span>
+        <span class="news-row-title">${newsTitleOf(news)}</span>
+        <span class="news-row-date">${formatNewsDate(news.dateStr)}</span>
+      </span>
+      <span class="news-row-go" aria-hidden="true">›</span>
+    </button>`;
+}
+
+// 1件の詳細
+let newsDetailFile = null;
+let newsBackTo = 'home';   // 詳細から戻る先（home か list）
+function viewNewsDetail(){
+  const news = (newsCache || []).find(n => n.filename === newsDetailFile);
+  const back = newsBackTo === 'list'
+    ? '<button class="btn btn-ghost" data-action="view-news-list" style="width:100%;">お知らせの一覧に戻る</button>'
+    : '<button class="btn btn-ghost" data-action="go-home" style="width:100%;">ホームに戻る</button>';
+  if(!news){
+    return `
+      <div class="card"><p style="text-align:center; color:var(--ink-soft); margin:0;">お知らせが見つかりませんでした</p></div>
+      <div style="padding:16px 0;">${back}</div>`;
+  }
+  return `
+    <div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);">
+      <div class="hero-eyebrow">NEWS</div>
+      <div style="margin:0 0 6px;">${newsBadges(news)}</div>
+      <h2 style="margin:0;">${newsTitleOf(news)}</h2>
+      <p style="margin:6px 0 0;">${formatNewsDate(news.dateStr)}</p>
+    </div>
+    <div class="card news-detail">${markdownToHtml(newsBodyOf(news))}</div>
+    <div style="padding:4px 0 16px; display:flex; flex-direction:column; gap:8px;">
+      ${newsBackTo === 'list' ? '' : '<button class="btn btn-soft" data-action="view-news-list" style="width:100%;">すべてのお知らせを見る</button>'}
+      ${back}
+    </div>`;
+}
+
 async function viewNewsList(){
   const newsItems = await fetchNewsList();
   
@@ -1802,21 +1898,9 @@ async function viewNewsList(){
     `;
   }
   
-  const newsHtml = newsItems.map(news => `
-    <div style="padding:16px; border-bottom:1px solid var(--line-soft);">
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-        ${news.isPinned ? '<span style="display:inline-block; background:#ff1493; color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px;">PIN</span>' : ''}
-        ${isNewBadge(news.newsDate) ? '<span style="display:inline-block; background:#ff9500; color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px;">NEW</span>' : ''}
-      </div>
-      <h3 style="margin:8px 0 4px; font-weight:700; font-size:14px; color:var(--ink);">
-        ${markdownToHtmlInline(news.content.split('\n')[0].replace(/^#+\s*/, ''))}
-      </h3>
-      <div style="font-size:11px; color:var(--ink-soft); margin-bottom:12px;">${formatNewsDate(news.dateStr)}</div>
-      <div style="font-size:12px; color:var(--ink); line-height:1.6;">
-        ${markdownToHtml(news.content)}
-      </div>
-    </div>
-  `).join('');
+  // 一覧から開く詳細でも同じ内容を使えるよう、手元にも控える
+  newsCache = newsItems; newsFetchedAt = Date.now();
+  const newsHtml = newsItems.map(newsRowMarkup).join('');
   
   return `
     <div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);">
@@ -6443,10 +6527,17 @@ document.addEventListener('click', (e)=>{
       });
       break;
     case 'go-home':
-      stopQRScan(); friendAddMode = null;
+      stopQRScan(); friendAddMode = null; newsDetailFile = null;
       navigate(()=>{ activeTab = 'home'; });
       break;
+    case 'open-news':
+      // ホームから開いたか、一覧から開いたかで戻り先を変える
+      newsBackTo = (activeTab === 'news' && !newsDetailFile) ? 'list' : 'home';
+      newsDetailFile = el.dataset.file;
+      navigate(()=>{ activeTab = 'news'; });
+      break;
     case 'view-news-list':
+      newsDetailFile = null;
       // 先に「読み込み中」を描画してから、取得完了後に再描画する
       cachedNewsListHtml = '';
       navigate(()=>{ activeTab = 'news'; });
