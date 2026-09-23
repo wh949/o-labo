@@ -136,7 +136,12 @@ main{flex:1; padding:6px 16px 100px; overflow-x:hidden;}
   background:none; border:none; color:var(--ink-soft); padding:6px 2px; border-radius:12px;
   font-size:10.5px; letter-spacing:.02em; transition:color .15s, background .15s, transform .15s;
 }
-.tab-btn .tab-icon{width:22px; height:22px; display:block;}
+.tab-btn .tab-icon{
+  /* 幅は中身にまかせ、中心を揃える。
+     「⚫⚪」のように横に広いアイコンでも、真ん中が文字と同じ軸に来る */
+  height:22px; display:flex; align-items:center; justify-content:center;
+  white-space:nowrap; line-height:1;
+}
 .tab-btn.active{color:var(--jade-deep); background:var(--jade-mist);}
 .tab-btn:active{transform:scale(.94);}
 
@@ -783,6 +788,72 @@ html[data-theme="dark"] {
 .news-detail p{ margin:0 0 .8em; }
 .news-detail a{ color:var(--jade-deep); }
 .news-detail img{ max-width:100%; height:auto; border-radius:8px; }
+
+.tab-btn .tab-icon{ font-size:15px; }
+@media (min-width: 1024px) and (min-aspect-ratio: 1.2) and (min-height: 500px){
+  .tab-btn .tab-icon{ font-size:18px; }
+}
+
+/* カフェ */
+.cafe-tabs{ display:flex; gap:6px; margin:0 0 10px; }
+.cafe-tabs.sub{ margin-bottom:14px; }
+.cafe-tab{
+  flex:1; min-width:0; padding:10px 6px; border:1px solid var(--line); background:var(--panel);
+  border-radius:10px; font-weight:800; font-size:13px; letter-spacing:.04em; color:var(--ink-soft);
+  cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.cafe-tab.on{ background:#9E6B48; border-color:#9E6B48; color:#fff; }
+.cafe-tabs.sub .cafe-tab{ padding:8px 6px; font-size:12px; }
+.cafe-tabs.sub .cafe-tab.on{ background:#6F4A2E; border-color:#6F4A2E; }
+.cafe-body{ padding:12px; }
+.cafe-note{ font-size:11.5px; color:var(--ink-soft); text-align:center; margin:10px 0 0; }
+
+/* MUSIC：曲の一覧 */
+.cafe-list{ display:flex; flex-direction:column; }
+.cafe-track{
+  display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  padding:11px 6px; border:0; border-bottom:1px solid var(--line-soft); background:none;
+  color:inherit; font:inherit; cursor:pointer;
+}
+.cafe-track:last-child{ border-bottom:0; }
+.cafe-track:active{ background:var(--paper-deep); }
+.ct-num{ width:20px; text-align:right; font-size:12px; color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+.ct-play{ width:26px; height:26px; flex:0 0 auto; border-radius:50%; background:#9E6B48; color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:10px; padding-left:2px; }
+.ct-title{ flex:1; min-width:0; font-size:13.5px; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ct-time{ font-size:11.5px; color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+
+/* PHOTO：額縁 */
+.cafe-frames{ display:grid; grid-template-columns:repeat(auto-fill, minmax(130px,1fr)); gap:12px; }
+.cafe-frame{ margin:0; }
+.cf-mat{
+  background:#f3efe6; padding:10px; border-radius:4px;
+  border:6px solid #8a5f3c;
+  box-shadow:0 3px 10px rgba(0,0,0,.28), inset 0 0 0 1px rgba(0,0,0,.12);
+}
+.cf-art{
+  aspect-ratio:1/1; background:#c9c9c9; color:#222;
+  display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:700; letter-spacing:.02em;
+}
+.cf-cap{ margin-top:6px; text-align:center; font-size:11px; color:var(--ink-soft); }
+
+/* MOVIE：動画の一覧 */
+.cafe-movies{ display:flex; flex-direction:column; gap:12px; }
+.cafe-movie{
+  display:flex; gap:10px; align-items:flex-start; width:100%; text-align:left;
+  border:0; background:none; padding:0; color:inherit; font:inherit; cursor:pointer;
+}
+.cm-thumb{
+  position:relative; flex:0 0 132px; aspect-ratio:16/9; border-radius:8px; background:#c9c9c9;
+  display:flex; align-items:center; justify-content:center; overflow:hidden;
+}
+.cm-thumb-text{ font-size:11px; font-weight:700; color:#222; }
+.cm-dur{ position:absolute; right:5px; bottom:5px; background:rgba(0,0,0,.75); color:#fff;
+  font-size:10px; padding:1px 4px; border-radius:3px; font-variant-numeric:tabular-nums; }
+.cm-meta{ flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; padding-top:2px; }
+.cm-title{ font-size:13.5px; font-weight:700; color:var(--ink-soft); line-height:1.45; }
+.cm-sub{ font-size:11.5px; color:var(--ink-soft); }
 </style>
 </head>
 <body>
@@ -1568,7 +1639,7 @@ function renderTabs(){
     else isActive = (activeTab === t.id);
     
     return `<button class="tab-btn ${isActive?'active':''}" data-action="${t.id === 'home-sub' ? 'go-home' : 'tab'}" data-tab="${t.id}">
-      <span class="tab-icon" aria-hidden="true" style="font-size:15px; line-height:22px;">${t.icon}</span>
+      <span class="tab-icon" aria-hidden="true">${t.icon}</span>
       <span>${t.label}</span>
     </button>`;
   }).join('');
@@ -2128,17 +2199,86 @@ function viewStory(){
   `;
 }
 
+/* ============================================================
+   カフェ（開店準備中）
+   v.2.5.0 で「O-LABO」の中身が動くようになる予定。
+   置き場所：db/audio/bgm/o-labo/（MUSIC）、db/img/o-labo/（PHOTO）
+   ============================================================ */
+// v.2.5.0 で使う置き場所
+const CAFE_PATHS = {
+  olabo: { music: 'db/audio/bgm/o-labo', photo: 'db/img/o-labo' },
+  story: { music: 'db/audio/bgm/story',  photo: 'db/img/story', movie: 'db/movie/story' }
+};
+function cafeAssetUrl(tab, sub, file){
+  const base = (CAFE_PATHS[tab] || {})[sub];
+  return base ? base + '/' + file : null;
+}
+const CAFE_TABS = {
+  olabo: { label:'O-LABO', subs:['music','photo'] },
+  story: { label:'STORY',  subs:['music','photo','movie'] }
+};
+const CAFE_SUB_LABEL = { music:'MUSIC', photo:'PHOTO', movie:'MOVIE' };
+let cafeOpened = false;      // 「覗いてみる」を押したか
+let cafeTab = 'olabo';
+let cafeSub = 'music';
+const CAFE_PLACEHOLDER_COUNT = 6;
+
+function cafeMusicList(){
+  return `<div class="cafe-list">${Array.from({length:CAFE_PLACEHOLDER_COUNT}, (_,i) => `
+    <button class="cafe-track" data-action="cafe-play" data-i="${i}">
+      <span class="ct-num">${i+1}</span>
+      <span class="ct-play" aria-hidden="true">▶</span>
+      <span class="ct-title">Coming Soon</span>
+      <span class="ct-time">--:--</span>
+    </button>`).join('')}</div>`;
+}
+function cafePhotoGrid(){
+  return `<div class="cafe-frames">${Array.from({length:CAFE_PLACEHOLDER_COUNT}, () => `
+    <figure class="cafe-frame">
+      <div class="cf-mat"><div class="cf-art">Coming Soon</div></div>
+      <figcaption class="cf-cap">Coming Soon</figcaption>
+    </figure>`).join('')}</div>`;
+}
+function cafeMovieList(){
+  return `<div class="cafe-movies">${Array.from({length:CAFE_PLACEHOLDER_COUNT}, () => `
+    <button class="cafe-movie" data-action="cafe-play-movie">
+      <span class="cm-thumb"><span class="cm-thumb-text">Coming Soon</span><span class="cm-dur">--:--</span></span>
+      <span class="cm-meta">
+        <span class="cm-title">Coming Soon</span>
+        <span class="cm-sub">O-LABO</span>
+      </span>
+    </button>`).join('')}</div>`;
+}
+
 function viewMemory(){
-  return `
+  const hero = `
     <div class="hero" style="background:linear-gradient(150deg, #A9764F, #6F4A2E 78%);">
       <div class="hero-eyebrow">CAFE</div>
       <h2>カフェ</h2>
       <p>対局のあとにひと息つく場所です。店内に流れる曲を聴いたり、飾られたイラストを眺めながら、ゆっくりお過ごしください。</p>
-    </div>
-    <div style="background:#9E6B48 !important; border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-1); padding:16px; margin-bottom:12px;">
-      <p style="color:#fff; text-align:center; margin:0;">まだ準備中です。開店までもう少しお待ちください。</p>
-    </div>
-  `;
+    </div>`;
+
+  if(!cafeOpened){
+    return hero + `
+      <div class="card" style="background:#9E6B48 !important; text-align:center;">
+        <p style="color:#fff; margin:0 0 12px; font-weight:700;">開店準備中です。覗いてみますか？</p>
+        <button class="btn" data-action="cafe-open" style="width:100%; background:#fff; color:#6F4A2E; font-weight:800;">覗いてみる</button>
+      </div>`;
+  }
+
+  const subs = CAFE_TABS[cafeTab].subs;
+  if(!subs.includes(cafeSub)) cafeSub = subs[0];
+  const body = cafeSub === 'music' ? cafeMusicList()
+             : cafeSub === 'photo' ? cafePhotoGrid()
+             : cafeMovieList();
+
+  return hero + `
+    <div class="cafe-tabs">${Object.entries(CAFE_TABS).map(([k,v]) => `
+      <button class="cafe-tab ${cafeTab===k?'on':''}" data-action="cafe-tab" data-k="${k}">${v.label}</button>`).join('')}</div>
+    <div class="cafe-tabs sub">${subs.map(k => `
+      <button class="cafe-tab ${cafeSub===k?'on':''}" data-action="cafe-sub" data-k="${k}">${CAFE_SUB_LABEL[k]}</button>`).join('')}</div>
+    <div class="card cafe-body">${body}</div>
+    <p class="cafe-note">v.2.5.0 で「O-LABO」の中身が公開されます。</p>`;
 }
 function viewBattle(){
   if(game && game.mode==='battle' && sub.battle==='play') return renderBoardScreen();
@@ -6529,6 +6669,17 @@ document.addEventListener('click', (e)=>{
     case 'go-home':
       stopQRScan(); friendAddMode = null; newsDetailFile = null;
       navigate(()=>{ activeTab = 'home'; });
+      break;
+    case 'cafe-open': cafeOpened = true; render(); break;
+    case 'cafe-tab':
+      cafeTab = el.dataset.k;
+      if(!CAFE_TABS[cafeTab].subs.includes(cafeSub)) cafeSub = CAFE_TABS[cafeTab].subs[0];
+      render();
+      break;
+    case 'cafe-sub': cafeSub = el.dataset.k; render(); break;
+    case 'cafe-play':
+    case 'cafe-play-movie':
+      toast('まだ準備中です');
       break;
     case 'open-news':
       // ホームから開いたか、一覧から開いたかで戻り先を変える
