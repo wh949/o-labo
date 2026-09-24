@@ -322,8 +322,11 @@ body.gfx-light .board:not(.illust){background:var(--jade);}
 .pass-note{text-align:center; font-size:12px; color:var(--ink-soft); margin:10px 0; padding:8px; background:var(--jade-mist); border-radius:10px;}
 
 /* library */
-.lib-tabs{display:flex; gap:6px; margin-bottom:14px; background:var(--paper-deep); padding:4px; border-radius:12px;}
-.lib-tab{flex:1; padding:8px 4px; border:none; background:transparent; border-radius:9px; font-size:12px; color:var(--ink-soft);}
+.lib-tabs{display:flex; gap:4px; margin-bottom:14px; background:var(--paper-deep); padding:4px; border-radius:12px;}
+/* 5つ並べても折り返さないよう、文字の長さに応じて幅を配分する */
+.lib-tab{flex:1 1 auto; min-width:0; padding:8px 6px; border:none; background:transparent; border-radius:9px;
+  font-size:12px; color:var(--ink-soft); white-space:nowrap; letter-spacing:-.01em;}
+@media (max-width:360px){ .lib-tab{ font-size:11px; padding:8px 4px; } }
 .lib-tab.active{background:var(--panel); color:var(--jade-deep); font-weight:700; box-shadow:var(--shadow-1);}
 .hist-item{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-md); padding:13px 15px; margin-bottom:10px; box-shadow:var(--shadow-1);}
 .hist-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
@@ -1313,7 +1316,8 @@ function allHistories(){
     state.battleHistory,
     state.training && state.training.history,
     state.casual && state.casual.history,
-    state.variety && state.variety.history
+    state.variety && state.variety.history,
+    state.online && state.online.history
   ].filter(Array.isArray);
 }
 
@@ -4893,11 +4897,17 @@ function onlineAttachRoom(id){
     const movedOn = (room.moveCount || 0) !== (game.moveCount || 0) || firstTime;
     if(movedOn) onlineState.lastChangeAt = Date.now();
 
+    const prevMoves = game.moveCount || 0;
     game.board = strToBoard(room.board);
     game.current = room.turn || 1;
     game.passStreak = room.passStreak || 0;
     game.moveCount = room.moveCount || 0;
     game.over = (room.status === 'finished');
+    // 手が進んだら、その時点の盤面をリプレイ用に控える
+    if(game.moveCount > prevMoves){
+      game.boardStates = game.boardStates || [];
+      game.boardStates.push(game.board.map(row => row.slice()));
+    }
 
     // 手番が自分に回ってきて置けない場合、自動でパスする
     if(room.status === 'playing' && !game.over){
@@ -5185,9 +5195,19 @@ function onlineFinish(room){
   }
   state.online.history = state.online.history || [];
   state.online.history.unshift({
-    timestamp: Date.now(), myScore: mine, aiScore: theirs,
-    result, oppName: onlineState.oppName, difficulty: 'オンライン'
+    timestamp: Date.now(),
+    myScore: mine, aiScore: theirs, result,
+    oppName: onlineState.oppName || '相手',
+    oppUid: onlineState.oppUid || '',
+    myColor: onlineState.myColor,
+    matchType: onlineState.mode || 'random',          // random / code / invite
+    abandoned: !!(room && room.abandonedBy),
+    moves: game.moveCount || 0,
+    durationSec: Math.max(0, Math.floor((Date.now() - (game.startedAt || Date.now())) / 1000)),
+    boardStates: Array.isArray(game.boardStates) ? game.boardStates.slice() : []
   });
+  // 容量の上限にあわせて古いものから削る（ほかのモードと同じ扱い）
+  trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
   saveState();
   game.lastResult = {result, myScore:mine, aiScore:theirs};
 }
@@ -6184,15 +6204,19 @@ function fmtDuration(sec){
 /* ============================================================
    9. LIBRARY
    ============================================================ */
+function historyListFor(scope){
+  if(scope==='battle')   return state.battleHistory || [];
+  if(scope==='training') return (state.training && state.training.history) || [];
+  if(scope==='casual')   return (state.casual && state.casual.history) || [];
+  if(scope==='online')   return (state.online && state.online.history) || [];
+  if(scope==='variety')  return (state.variety && state.variety.history) || [];
+  return [];
+}
 function viewLibrary(){
   if(sub.library==='replay') return renderReplayScreen();
-  const tabs = [['battle','対戦'],['training','特訓'],['casual','ゆる'],['variety','バラエティ'],['story','ストーリー']];
-  let list;
-  if(libTab==='battle') list = state.battleHistory;
-  else if(libTab==='training') list = state.training.history;
-  else if(libTab==='casual') list = state.casual.history;
-  else if(libTab==='variety') list = state.variety.history || [];
-  else list = state.story.history || [];
+  const tabs = [['battle','対戦'],['training','特訓'],['casual','ゆる'],['online','オンライン'],['variety','バラエティ']];
+  if(!tabs.some(t => t[0] === libTab)) libTab = 'battle';   // 以前の「ストーリー」を開いていた場合
+  const list = historyListFor(libTab);
 
   const items = list.map((e,i)=>renderHistItem(e,i)).join('');
   return `
@@ -6218,6 +6242,26 @@ function renderHistItem(e,i){
       <button class="btn btn-soft" data-action="watch-replay" data-scope="battle" data-idx="${i}">一手一手を再生する</button>
     </div>`;
   }
+  if(libTab==='online'){
+    const how = e.matchType==='code' ? '合言葉' : e.matchType==='invite' ? 'フレンド' : 'ランダム';
+    const res = e.result==='win'?'勝ち':e.result==='lose'?'負け':'分け';
+    const hasReplay = Array.isArray(e.boardStates) && e.boardStates.length > 0;
+    return `<div class="hist-item">
+      <div class="hist-top"><span class="hist-title">vs ${escapeHtml(e.oppName||'相手')}</span><span class="hist-date">${fmtDate(e.timestamp)}</span></div>
+      <div class="hist-meta">
+        <span><b>${e.myScore}</b> - <b>${e.aiScore}</b></span>
+        ${e.durationSec!=null ? `<span>${fmtDuration(e.durationSec)}</span>` : ''}
+        ${e.moves!=null ? `<span>${e.moves}手</span>` : ''}
+        <span>${how}</span>
+        <span>${e.myColor===2?'後手（白）':'先手（黒）'}</span>
+        <span class="result-pill ${e.result==='win'?'win':(e.result==='lose'?'lose':'draw')}">${res}${e.abandoned?'（放棄）':''}</span>
+      </div>
+      <div class="file-actions">
+        ${hasReplay ? `<button class="btn btn-soft" data-action="watch-replay" data-scope="online" data-idx="${i}">一手一手を再生する</button>` : ''}
+        ${e.oppUid && isSignedIn() ? `<button class="btn btn-ghost" data-action="open-other" data-uid="${escapeHtml(e.oppUid)}" data-name="${escapeHtml(e.oppName||'')}">相手のマイページ</button>` : ''}
+      </div>
+    </div>`;
+  }
   if(libTab==='training'){
     return `<div class="hist-item">
       <div class="hist-top"><span class="hist-title">特訓局（ランク ${e.rankAtTime}）</span><span class="hist-date">${fmtDate(e.timestamp)}</span></div>
@@ -6231,15 +6275,19 @@ function renderHistItem(e,i){
       <button class="btn btn-soft" data-action="watch-replay" data-scope="training" data-idx="${i}">一手一手を再生する</button>
     </div>`;
   }
+  // ゆるモードとバラエティは同じ形で並べる（見出しとリプレイの対象だけ変える）
+  const title = libTab==='variety'
+    ? `バラエティ（${escapeHtml(((VARIETY_RULES.find(r => r.id === e.presetName)) || {}).name || e.presetName || 'カスタム')}）`
+    : `ゆる対局（${escapeHtml(e.difficulty||'')}）`;
   return `<div class="hist-item">
-    <div class="hist-top"><span class="hist-title">ゆる対局（${e.difficulty}）</span><span class="hist-date">${fmtDate(e.timestamp)}</span></div>
+    <div class="hist-top"><span class="hist-title">${title}</span><span class="hist-date">${fmtDate(e.timestamp)}</span></div>
     <div class="hist-meta">
       <span><b>${e.myScore}</b> - <b>${e.aiScore}</b></span>
       <span>${fmtDuration(e.durationSec)}</span>
       <span>${e.moves}手</span>
       <span class="result-pill ${e.result==='win'?'win':(e.result==='lose'?'lose':'draw')}">${e.result==='win'?'勝ち':e.result==='lose'?'負け':'分け'}</span>
     </div>
-    <button class="btn btn-soft" data-action="watch-replay" data-scope="casual" data-idx="${i}">一手一手を再生する</button>
+    <button class="btn btn-soft" data-action="watch-replay" data-scope="${libTab==='variety'?'variety':'casual'}" data-idx="${i}">一手一手を再生する</button>
   </div>`;
 }
 function fmtDate(ts){
@@ -6249,8 +6297,7 @@ function fmtDate(ts){
 
 let replayState=null;
 function openReplay(scope, idx){
-  const list = scope==='battle'?state.battleHistory : scope==='training'?state.training.history : state.casual.history;
-  const entry = list[idx];
+  const entry = historyListFor(scope)[idx];
   if(!entry) return;
   if(!Array.isArray(entry.boardStates) || entry.boardStates.length===0){
     toast('古い対局のため、リプレイは残っていません');
