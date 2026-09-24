@@ -854,6 +854,70 @@ html[data-theme="dark"] {
 .cm-meta{ flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; padding-top:2px; }
 .cm-title{ font-size:13.5px; font-weight:700; color:var(--ink-soft); line-height:1.45; }
 .cm-sub{ font-size:11.5px; color:var(--ink-soft); }
+
+/* ============================================================
+   行事テーマ：誕生日
+   ホーム・ベーシック・アドベンチャーにいるあいだ、一日中この配色になる。
+   db に画像を置かなくても、この CSS だけで完結する。
+   ============================================================ */
+body.event-theme[data-event="birthday"]{
+  /* パステルカラーに寄せて上書きする。ダークモードでも明るいトーンを保つ
+     （お祝いの配色を優先し、行事テーマ中はライト基調で統一する） */
+  --paper:#fff3fa;
+  --paper-deep:#ffe3f2;
+  --panel:#fffafd;
+  --ink:#4a2e46;
+  --ink-soft:#8a6b8c;
+  --line:rgba(196,120,190,.16);
+  --line-soft:rgba(196,120,190,.10);
+  --jade-deep:#e0508f;
+  --jade:#f178ab;
+  --jade-light:#ffa8cf;
+  --jade-mist:#ffe6f2;
+  --sky:#7fa8ff;
+  --sky-soft:#e8effe;
+  --gold:#ffc94d;
+  --gold-soft:#fff1d0;
+  --urushi:#8f6fe0;
+  --urushi-light:#b49bff;
+  background:
+    radial-gradient(circle at 12% 8%, #ffe1f0 0%, transparent 42%),
+    radial-gradient(circle at 88% 4%, #e4ecff 0%, transparent 40%),
+    radial-gradient(circle at 50% 100%, #fff6da 0%, transparent 55%),
+    var(--paper);
+}
+body.event-theme[data-event="birthday"] .card,
+body.event-theme[data-event="birthday"] .box{
+  box-shadow:0 2px 0 rgba(196,120,190,.10), 0 10px 22px -12px rgba(196,120,190,.30);
+}
+/* 下部タブと設定バーも、行事テーマ中はうっすら色づかせる */
+body.event-theme[data-event="birthday"] .bottom-tabs,
+body.event-theme[data-event="birthday"] .topbar{
+  background:linear-gradient(180deg, #fff8fc, var(--paper));
+}
+body.event-theme[data-event="birthday"] .tab-btn.active{
+  color:var(--jade-deep);
+}
+
+/* hero の帯に、ふんわりした紙吹雪を CSS だけで降らせる */
+.event-confetti{
+  position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:0;
+}
+.event-confetti::before, .event-confetti::after{
+  content:"🎉 🎈 ✨ 🎂 🎊 🎈 ✨ 🎉 🎈 🎊 ✨ 🎂 🎉 🎈 ✨ 🎊";
+  position:absolute; left:-6%; right:-6%; top:-38px;
+  font-size:15px; line-height:2.6; letter-spacing:26px; white-space:pre-wrap;
+  opacity:.34; filter:saturate(.85);
+  animation:eventConfettiFall 9s linear infinite;
+}
+.event-confetti::after{ animation-delay:-4.5s; top:-70px; font-size:12px; opacity:.22; }
+@keyframes eventConfettiFall{
+  from{ transform:translateY(-10%) rotate(0deg); }
+  to{ transform:translateY(340%) rotate(12deg); }
+}
+@media (prefers-reduced-motion: reduce){
+  .event-confetti::before, .event-confetti::after{ animation:none; opacity:.16; }
+}
 </style>
 </head>
 <body>
@@ -1579,6 +1643,11 @@ const AUDIO_FILES = {
   bgm: [
     'menu', 'casual_easy', 'casual_hard', 'training', 'variety', 'stella'
   ],
+  // 行事の日（ホーム・ベーシック・アドベンチャーにいるとき）に流れる曲。
+  // db/audio/bgm/event/<id>.mp3 に置く。用意されていない行事は通常の menu が流れる
+  bgmEvent: [
+    'birthday', 'aprilfools', 'easter', 'othelloday', 'halloween', 'christmas', 'newyear'
+  ],
   se: [
     'tap', 'place', 'flip', 'pass', 'win', 'lose', 'unlock', 'modal_open'
   ]
@@ -1611,6 +1680,7 @@ function render(){
   document.body.classList.toggle('anim-flip', state.settings.animFlip);
   document.body.classList.toggle('furigana-on', state.settings.furigana);
   applyTheme(state.settings.theme);
+  applyEventTheme();
   renderTabs();
   renderHanko();
   const root=document.getElementById('view-root');
@@ -2034,10 +2104,12 @@ function viewHome(){
   const totalWins = state.totalWins || 0;
   const winRate = getWinRate();
   
+  const bday = currentPageEvent();
   return `
     <div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--sky) 75%);">
-      <div class="hero-eyebrow">HOME</div>
-      <h2 style="margin-bottom:4px;">${escapeHtml(state.username)}</h2>
+      ${bday ? '<div class="event-confetti" aria-hidden="true"></div>' : ''}
+      <div class="hero-eyebrow">${bday ? 'HAPPY BIRTHDAY' : 'HOME'}</div>
+      <h2 style="margin-bottom:4px;">${bday ? '🎂 ' : ''}${escapeHtml(state.username)}${bday ? ' さん、お誕生日おめでとう！' : ''}</h2>
       <p style="margin:0; font-size:13px; color:var(--ink-soft);">ランク: ${rankLabel(state.training.rankIndex, state.training.xNumber)}</p>
     </div>
     
@@ -2558,8 +2630,8 @@ function setupAudioUnlock(){
         audioState.unlocked = true;
         ['pointerdown','touchend','click','keydown'].forEach(ev =>
           document.removeEventListener(ev, unlock, true));
-        // 開いた時点で鳴らすはずだった曲を流す
-        if(audioState.desiredBGM) playBGM(audioState.desiredBGM, true);
+        // 開いた時点で鳴らすはずだった曲を流す（行事の曲がまだ無ければ通常の曲へ）
+        if(audioState.desiredBGM) updateBGM();
       }
     }catch(err){ console.warn('音声の有効化に失敗:', err); }
   };
@@ -2576,12 +2648,19 @@ function bgmForCurrentScreen(){
   if(game && game.mode === 'training') return 'training';
   if(game && game.mode === 'variety') return 'variety';
   if(useStellaSkin()) return 'stella';
+  // 対局していないとき（ホーム・ベーシック・アドベンチャーなど）は、
+  // その日の行事の曲があれば優先する。曲がまだ用意されていない日・行事は
+  // 通常の menu にそのままフォールバックする（下の updateBGM 側で処理）。
+  const ev = currentPageEvent();
+  if(ev) return 'event/' + ev.id;
   return 'menu';
 }
 function updateBGM(){
   const want = bgmForCurrentScreen();
   if(audioState.desiredBGM === want && audioState.currentBGM === want) return;
-  playBGM(want, true);
+  // 行事の曲を鳴らそうとして音源がまだ無い場合は、通常の menu に自動で切り替える
+  const isEventBgm = want.startsWith('event/');
+  playBGM(want, true, isEventBgm ? 'menu' : null);
 }
 
 // 設定から実際の音量（0〜1）を取り出す
@@ -2603,8 +2682,10 @@ function applyBgmVolume(){
   }
 }
 
-// BGMを流す。ファイルは必要になった時点で読み込む
-async function playBGM(bgmName, fadeIn=true){
+// BGMを流す。ファイルは必要になった時点で読み込む。
+// fallback を渡しておくと、bgmName の音源がまだ無い場合にそちらを鳴らす
+// （行事の曲が未用意のときに通常の曲へ自動で切り替えるため）
+async function playBGM(bgmName, fadeIn=true, fallback=null){
   if(!bgmName) return;
   audioState.desiredBGM = bgmName;          // 鳴らしたい曲を覚えておく
   if(state.settings.bgmEnabled === false) return;
@@ -2615,7 +2696,11 @@ async function playBGM(bgmName, fadeIn=true){
   if(audioState.currentBGM === bgmName && audioState.bgmNode) return;   // 同じ曲なら続ける
 
   const buffer = await loadAudioFile('bgm', bgmName);
-  if(!buffer) return;
+  if(!buffer){
+    // 指定の曲がまだ用意されていない場合、代わりの曲があればそちらを鳴らす
+    if(fallback && audioState.desiredBGM === bgmName) return playBGM(fallback, fadeIn);
+    return;
+  }
   if(audioState.desiredBGM !== bgmName) return;   // 読み込み中に別の曲へ切り替わった
 
   stopBGM(true);
@@ -3236,6 +3321,20 @@ function isMyBirthday(){
   if(!myProfile.birthMonth || !myProfile.birthDay) return false;
   const t = new Date();
   return (t.getMonth()+1) === myProfile.birthMonth && t.getDate() === myProfile.birthDay;
+}
+
+// ホーム・ベーシック・アドベンチャーの見た目を、行事にあわせて切り替える。
+// 対局中の盤面（renderBoardScreen 側）はここでは変えない。見やすさを優先するため。
+const EVENT_THEME_TABS = ['home', 'basic', 'adventure'];
+function currentPageEvent(){
+  if(state.settings.eventSkins === false) return null;
+  if(!EVENT_THEME_TABS.includes(activeTab)) return null;
+  return activeEvent();   // 今は誕生日のみが match を返す
+}
+function applyEventTheme(){
+  const ev = currentPageEvent();
+  document.body.classList.toggle('event-theme', !!ev);
+  document.body.setAttribute('data-event', ev ? ev.id : '');
 }
 
 // 自動で付く称号（条件を満たすと本人の端末が付与する）
@@ -6340,7 +6439,7 @@ function viewSettings(){
     </div>
     <div class="card">
       <div class="toggle-row">
-        <div class="trow-text"><b>行事の見た目</b><span>誕生日やクリスマスなどの日に、盤と石が特別な見た目になります</span></div>
+        <div class="trow-text"><b>行事の見た目</b><span>誕生日やクリスマスなどの日に、画面全体が特別な見た目になります</span></div>
         <label class="switch"><input type="checkbox" ${s.eventSkins!==false?'checked':''} data-action="toggle-event-skins"><span class="toggle-track"></span></label>
       </div>
       <div class="toggle-row">
