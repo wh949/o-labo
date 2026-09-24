@@ -918,6 +918,60 @@ body.event-theme[data-event="birthday"] .tab-btn.active{
 @media (prefers-reduced-motion: reduce){
   .event-confetti::before, .event-confetti::after{ animation:none; opacity:.16; }
 }
+
+/* 対局中は上部のロゴとランクを隠して、盤面を広く見せる */
+body.in-game .topbar{ display:none; }
+body.in-game main{ padding-top:max(10px, env(safe-area-inset-top, 0px)); }
+
+/* オンラインの絵文字リアクション */
+.score-chip{ position:relative; }
+.react-bubble{
+  position:absolute; left:6px; top:calc(100% + 9px); z-index:6;
+  min-width:44px; height:44px; padding:0 8px; border-radius:14px;
+  background:#fff; border:2.5px solid #1b1a17;
+  display:flex; align-items:center; justify-content:center;
+  font-size:26px; line-height:1; box-shadow:0 4px 12px rgba(0,0,0,.22);
+  pointer-events:none;
+}
+/* 上向きのしっぽ（石のマークを指す） */
+.react-bubble::before, .react-bubble::after{
+  content:""; position:absolute; left:12px; width:0; height:0; border-style:solid;
+}
+.react-bubble::before{ top:-11px; border-width:0 8px 11px 8px; border-color:transparent transparent #1b1a17 transparent; }
+.react-bubble::after{ top:-7.5px; left:14.5px; border-width:0 5.5px 8px 5.5px; border-color:transparent transparent #fff transparent; }
+.react-bubble.pop{ animation:reactPop .32s cubic-bezier(.2,1.5,.4,1); }
+@keyframes reactPop{ from{ transform:scale(.4); opacity:0; } to{ transform:scale(1); opacity:1; } }
+
+.react-row{ display:flex; justify-content:flex-end; margin-top:10px; }
+.react-btn{
+  width:52px; height:52px; padding:0; border:0; background:none; cursor:pointer;
+  filter:drop-shadow(0 3px 6px rgba(0,0,0,.18)); transition:transform .12s;
+}
+.react-btn svg{ width:100%; height:100%; display:block; }
+.react-btn:active{ transform:scale(.92); }
+.react-btn.on{ transform:scale(1.06); }
+
+.react-palette{
+  position:fixed; z-index:9000; max-width:calc(100vw - 16px);
+  background:var(--panel); border:1px solid var(--line); border-radius:18px;
+  box-shadow:0 10px 30px rgba(0,0,0,.22); padding:6px;
+  animation:reactPop .2s ease;
+}
+.rp-row{ display:flex; gap:2px; overflow-x:auto; scrollbar-width:none; }
+.rp-row::-webkit-scrollbar{ display:none; }
+.rp-emoji, .rp-plus{
+  flex:0 0 auto; width:44px; height:44px; border:0; border-radius:12px; background:none;
+  font-size:26px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center;
+}
+.rp-emoji:active{ background:var(--paper-deep); transform:scale(.9); }
+.rp-plus{ font-size:22px; font-weight:700; color:var(--ink-soft); background:var(--paper-deep); margin-left:4px; }
+.rp-input{ display:flex; gap:6px; align-items:center; padding:2px; }
+.rp-input input{
+  width:150px; padding:9px 10px; border:1px solid var(--line); border-radius:10px;
+  background:var(--panel); color:var(--ink); font-size:20px;
+}
+.rp-send{ border:0; background:var(--jade-deep); color:#fff; font-weight:800; padding:10px 14px; border-radius:10px; cursor:pointer; }
+.rp-close{ border:0; background:none; color:var(--ink-soft); font-size:18px; padding:8px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -1208,6 +1262,7 @@ const DEFAULT_STATE = {
     stellaCheckedV2:false,  // 旧方式の解禁を一度だけ解除するための印
     casualSkin:'default',   // 'default' | 'stella'
     eventSkins:true,        // 行事の見た目を使うか
+    reactionEmojis:['👍','😆','😎','🎉','👏'],   // 絵文字パレット（左ほど最近使った）
     battle:{
       p1:'プレイヤー1', p2:'プレイヤー2', flipMode:'auto',
       hintPrefsByName:{}
@@ -1633,6 +1688,7 @@ let audioWarned = false;
 let audioState = {
   currentBGM: null,    // いま鳴っている曲
   desiredBGM: null,    // 本来鳴らしたい曲（音を入れ直したときに使う）
+  desiredKey: null,    // 候補の組み合わせ（行事版→通常版）
   bgmNode: null,
   bgmGain: null,
   unlocked: false      // スマホで音が出せる状態になったか
@@ -1643,8 +1699,9 @@ const AUDIO_FILES = {
   bgm: [
     'menu', 'casual_easy', 'casual_hard', 'training', 'variety', 'stella'
   ],
-  // 行事の日（ホーム・ベーシック・アドベンチャーにいるとき）に流れる曲。
-  // db/audio/bgm/event/<id>.mp3 に置く。用意されていない行事は通常の menu が流れる
+  // 行事ごとのフォルダ。中には上の bgm と同じ名前で行事版の曲を置く
+  //   db/audio/bgm/event/<行事>/menu.mp3 など
+  // 置かれていない曲は、通常の曲がそのまま流れる
   bgmEvent: [
     'birthday', 'aprilfools', 'easter', 'othelloday', 'halloween', 'christmas', 'newyear'
   ],
@@ -1681,6 +1738,7 @@ function render(){
   document.body.classList.toggle('furigana-on', state.settings.furigana);
   applyTheme(state.settings.theme);
   applyEventTheme();
+  document.body.classList.toggle('in-game', isPlayingBoard());
   renderTabs();
   renderHanko();
   const root=document.getElementById('view-root');
@@ -1692,6 +1750,11 @@ function render(){
 
   // ホーム画面ではお知らせを表示する（取得は数分に1回だけ）
   if(activeTab === 'home') showHomeNews();
+  // 絵文字のパレット：対局を離れたら閉じ、開いていればボタンの位置に合わせる
+  if(reactionPaletteOpen){
+    if(!game || game.mode !== 'online' || game.over) closeReactionPalette();
+    else positionReactionPalette();
+  }
 }
 function renderTabs(){
   let tabs;
@@ -2648,19 +2711,22 @@ function bgmForCurrentScreen(){
   if(game && game.mode === 'training') return 'training';
   if(game && game.mode === 'variety') return 'variety';
   if(useStellaSkin()) return 'stella';
-  // 対局していないとき（ホーム・ベーシック・アドベンチャーなど）は、
-  // その日の行事の曲があれば優先する。曲がまだ用意されていない日・行事は
-  // 通常の menu にそのままフォールバックする（下の updateBGM 側で処理）。
-  const ev = currentPageEvent();
-  if(ev) return 'event/' + ev.id;
   return 'menu';
 }
+// 行事の日は、場面ごとの曲を行事のフォルダから探す。
+//   db/audio/bgm/event/<行事>/<場面の曲名>.mp3
+// 例：誕生日のホーム → event/birthday/menu、ゆるモード → event/birthday/casual_easy
+// 行事版が置かれていない場面は、通常の曲がそのまま流れる
+function bgmCandidates(){
+  const base = bgmForCurrentScreen();
+  const ev = currentPageEvent();
+  return ev ? ['event/' + ev.id + '/' + base, base] : [base];
+}
 function updateBGM(){
-  const want = bgmForCurrentScreen();
-  if(audioState.desiredBGM === want && audioState.currentBGM === want) return;
-  // 行事の曲を鳴らそうとして音源がまだ無い場合は、通常の menu に自動で切り替える
-  const isEventBgm = want.startsWith('event/');
-  playBGM(want, true, isEventBgm ? 'menu' : null);
+  const list = bgmCandidates();
+  const key = list.join('|');
+  if(audioState.desiredKey === key && audioState.currentBGM && list.includes(audioState.currentBGM)) return;
+  playBGM(list, true);
 }
 
 // 設定から実際の音量（0〜1）を取り出す
@@ -2683,25 +2749,29 @@ function applyBgmVolume(){
 }
 
 // BGMを流す。ファイルは必要になった時点で読み込む。
-// fallback を渡しておくと、bgmName の音源がまだ無い場合にそちらを鳴らす
-// （行事の曲が未用意のときに通常の曲へ自動で切り替えるため）
-async function playBGM(bgmName, fadeIn=true, fallback=null){
-  if(!bgmName) return;
-  audioState.desiredBGM = bgmName;          // 鳴らしたい曲を覚えておく
+// 曲名を配列で渡すと、先頭から順に探して最初に見つかった曲を鳴らす
+// （行事版が無ければ通常の曲、というように段階的に探すため）
+async function playBGM(names, fadeIn=true){
+  const list = (Array.isArray(names) ? names : [names]).filter(Boolean);
+  if(!list.length) return;
+  const key = list.join('|');
+  audioState.desiredKey = key;              // 鳴らしたい曲を覚えておく
+  audioState.desiredBGM = list[list.length-1];
   if(state.settings.bgmEnabled === false) return;
 
   const ctx = await initAudioContext();
   if(!ctx) return;
   if(ctx.state === 'suspended') return;     // まだ操作されていない（後で鳴らす）
-  if(audioState.currentBGM === bgmName && audioState.bgmNode) return;   // 同じ曲なら続ける
 
-  const buffer = await loadAudioFile('bgm', bgmName);
-  if(!buffer){
-    // 指定の曲がまだ用意されていない場合、代わりの曲があればそちらを鳴らす
-    if(fallback && audioState.desiredBGM === bgmName) return playBGM(fallback, fadeIn);
-    return;
+  // 先頭から順に探し、最初に見つかった曲を使う
+  let bgmName = null, buffer = null;
+  for(const name of list){
+    buffer = await loadAudioFile('bgm', name);
+    if(audioState.desiredKey !== key) return;   // 読み込み中に別の場面へ切り替わった
+    if(buffer){ bgmName = name; break; }
   }
-  if(audioState.desiredBGM !== bgmName) return;   // 読み込み中に別の曲へ切り替わった
+  if(!buffer) return;
+  if(audioState.currentBGM === bgmName && audioState.bgmNode) return;   // 同じ曲なら続ける
 
   stopBGM(true);
   try{
@@ -3321,6 +3391,22 @@ function isMyBirthday(){
   if(!myProfile.birthMonth || !myProfile.birthDay) return false;
   const t = new Date();
   return (t.getMonth()+1) === myProfile.birthMonth && t.getDate() === myProfile.birthDay;
+}
+
+// いま対局中の盤面を表示しているか（どのモードでも）。
+// 対局が終わったら false になり、上部の帯が戻る
+function isPlayingBoard(){
+  if(!game || game.over) return false;
+  if(activeTab === 'basic'){
+    const m = currentBasicMode;
+    if(m === 'online') return game.mode === 'online' && sub.online === 'play';
+    if(m === 'casual' && stellaChallengeActive) return game.mode === 'casual';
+    return game.mode === m && sub[m] === 'play';
+  }
+  if(activeTab === 'adventure'){
+    return currentAdventureMode === 'variety' && game.mode === 'variety' && sub.variety === 'play';
+  }
+  return false;
 }
 
 // ホーム・ベーシック・アドベンチャーの見た目を、行事にあわせて切り替える。
@@ -4545,8 +4631,187 @@ async function onlineRandomMatch(myName){
 }
 
 // 部屋の変化を受け取り、盤面に反映する
+
+/* ============================================================
+   オンライン対局の絵文字リアクション
+   rooms/<部屋>/reactions/<色> = { e: 絵文字, at: 送った時刻 }
+   ============================================================ */
+const REACTION_DEFAULTS = ['👍','😆','😎','🎉','👏'];
+const REACTION_MAX = 10;          // パレットに並べる最大数
+const REACTION_SHOW_MS = 5000;    // 相手の画面に出ている時間
+const REACTION_COOLDOWN = 1200;   // 連打で相手の画面を埋めないための間隔
+
+let reactionShow = {};            // 色 → { e, until, startedAt }
+let reactionSeen = {};            // 色 → 最後に見た at
+let reactionInit = false;         // 部屋に入った直後の古いリアクションは出さない
+let reactionLastSent = 0;
+let reactionPaletteOpen = false;
+let reactionInputOpen = false;
+
+function reactionList(){
+  const l = state.settings.reactionEmojis;
+  return Array.isArray(l) && l.length ? l : REACTION_DEFAULTS.slice();
+}
+// 使った絵文字を一番左へ（よく使うものほど左に来る）
+function reactionTouch(e){
+  const l = reactionList().filter(x => x !== e);
+  l.unshift(e);
+  state.settings.reactionEmojis = l.slice(0, REACTION_MAX);
+  saveState();
+}
+
+// 絵文字1つだけかを確かめる（文字や数字が混ざったものは弾く）
+function isSingleEmoji(str){
+  const s = String(str || '').trim();
+  if(!s || s.length > 32) return false;
+  let parts;
+  if(typeof Intl !== 'undefined' && Intl.Segmenter){
+    parts = [...new Intl.Segmenter('ja', { granularity:'grapheme' }).segment(s)].map(x => x.segment);
+    if(parts.length !== 1) return false;
+  }
+  // キーキャップ（1️⃣ など）は数字を含むので別に扱う
+  if(/^[0-9#*]\uFE0F?\u20E3$/u.test(s)) return true;
+  if(/[\p{L}\p{N}\p{P}\s]/u.test(s.replace(/[\u200D\uFE0F\u20E3]/g, ''))) {
+    // 旗（地域指示記号）は文字扱いされることがあるので例外にする
+    if(!/^(\p{Regional_Indicator}{2})$/u.test(s)) return false;
+  }
+  return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(s);
+}
+
+async function sendReaction(e){
+  if(!game || game.mode !== 'online' || !onlineRoomRef) return;
+  if(!isSingleEmoji(e)){ toast('絵文字を1つだけ入力してください'); return; }
+  const now = Date.now();
+  if(now - reactionLastSent < REACTION_COOLDOWN){ toast('少し待ってから送ってください'); return; }
+  reactionLastSent = now;
+  const c = String(onlineState.myColor);
+  reactionSeen[c] = now;                 // 自分の送信は監視側で二重に出さない
+  showReaction(c, e);
+  reactionTouch(e);
+  closeReactionPalette();
+  try{
+    await onlineRoomRef.child('reactions/' + c).set({ e, at: now });
+  }catch(err){
+    console.warn('リアクションを送れませんでした:', err);
+    toast('送れませんでした');
+  }
+}
+
+function showReaction(color, e){
+  reactionShow[color] = { e, until: Date.now() + REACTION_SHOW_MS, startedAt: Date.now() };
+  requestRender();
+  setTimeout(requestRender, REACTION_SHOW_MS + 60);
+}
+
+// 部屋の更新を受け取ったときに呼ぶ
+function onRoomReactions(room){
+  const r = (room && room.reactions) || {};
+  if(!reactionInit){
+    // 入室時点ですでにあるものは古いので出さない
+    for(const c of Object.keys(r)) reactionSeen[c] = r[c] && r[c].at;
+    reactionInit = true;
+    return;
+  }
+  for(const c of Object.keys(r)){
+    const x = r[c];
+    if(!x || !x.at || x.at === reactionSeen[c]) continue;
+    reactionSeen[c] = x.at;
+    if(isSingleEmoji(x.e)) showReaction(c, x.e);
+  }
+}
+function resetReactions(){
+  reactionShow = {}; reactionSeen = {}; reactionInit = false;
+  closeReactionPalette();
+}
+
+// スコアの札の下に出す吹き出し
+function reactionBubbleMarkup(color){
+  const r = reactionShow[String(color)];
+  if(!r || r.until <= Date.now()) return '';
+  const fresh = Date.now() - r.startedAt < 350;
+  return `<span class="react-bubble ${fresh ? 'pop' : ''}" aria-live="polite">${escapeHtml(r.e)}</span>`;
+}
+
+// 盤の下に出すボタン
+function reactionButtonMarkup(){
+  if(!game || game.mode !== 'online' || game.over) return '';
+  return `
+    <div class="react-row">
+      <button class="react-btn ${reactionPaletteOpen ? 'on' : ''}" data-action="react-toggle" aria-label="絵文字を送る" id="reactBtn">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <path d="M24 5C13.5 5 5 13.1 5 23.2c0 10 8.5 18.2 19 18.2 2.4 0 4.7-.4 6.8-1.2l8.4 3.6c.9.4 1.8-.5 1.4-1.4l-2.7-6.4C41 32.8 43 28.2 43 23.2 43 13.1 34.5 5 24 5z"
+                fill="#fff" stroke="#b9b9b9" stroke-width="2.4" stroke-linejoin="round"/>
+          <circle cx="24" cy="23" r="9.2" fill="none" stroke="#b9b9b9" stroke-width="2.2"/>
+          <circle cx="20.6" cy="20.4" r="1.4" fill="#b9b9b9"/>
+          <circle cx="27.4" cy="20.4" r="1.4" fill="#b9b9b9"/>
+          <path d="M19.6 25.2c1.1 1.9 2.6 2.8 4.4 2.8s3.3-.9 4.4-2.8" fill="none" stroke="#b9b9b9" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>`;
+}
+
+/* ---------- パレット（盤面とは別の層に出す） ---------- */
+function openReactionPalette(){
+  reactionPaletteOpen = true;
+  reactionInputOpen = false;
+  drawReactionPalette();
+  requestRender();
+}
+function closeReactionPalette(){
+  reactionPaletteOpen = false;
+  reactionInputOpen = false;
+  const el = document.getElementById('reactPalette');
+  if(el) el.remove();
+}
+function drawReactionPalette(){
+  let el = document.getElementById('reactPalette');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'reactPalette';
+    el.className = 'react-palette';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = reactionInputOpen ? `
+      <div class="rp-input">
+        <input id="reactInput" type="text" maxlength="16" placeholder="絵文字を1つ" autocomplete="off" enterkeyhint="send">
+        <button class="rp-send" data-action="react-send-custom">送る</button>
+        <button class="rp-close" data-action="react-input-cancel" aria-label="やめる">×</button>
+      </div>`
+    : `<div class="rp-row">
+        ${reactionList().map(e => `<button class="rp-emoji" data-action="react-send" data-e="${escapeHtml(e)}">${escapeHtml(e)}</button>`).join('')}
+        <button class="rp-plus" data-action="react-plus" aria-label="好きな絵文字を送る">＋</button>
+      </div>`;
+  positionReactionPalette();
+  if(reactionInputOpen){
+    const inp = document.getElementById('reactInput');
+    if(inp){
+      inp.focus();
+      inp.addEventListener('keydown', ev => { if(ev.key === 'Enter'){ ev.preventDefault(); sendReaction(inp.value.trim()); } });
+    }
+  }
+}
+// ボタンの真上に出す
+function positionReactionPalette(){
+  const el = document.getElementById('reactPalette');
+  const btn = document.getElementById('reactBtn');
+  if(!el) return;
+  if(!btn){ closeReactionPalette(); return; }
+  const r = btn.getBoundingClientRect();
+  el.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+  el.style.bottom = Math.max(8, window.innerHeight - r.top + 8) + 'px';
+}
+// パレットの外を押したら閉じる
+document.addEventListener('pointerdown', ev => {
+  if(!reactionPaletteOpen) return;
+  if(ev.target.closest && (ev.target.closest('#reactPalette') || ev.target.closest('#reactBtn'))) return;
+  closeReactionPalette();
+  requestRender();
+}, true);
+window.addEventListener('resize', positionReactionPalette);
+
 function onlineAttachRoom(id){
   onlineDetachRoomOnly();
+  resetReactions();
   onlineRoomRef = fbDb.ref('rooms/'+id);
   onlineState.phase = 'waiting';
   // navigate() は少し遅れて実行されるため、ここで直接切り替える。
@@ -4556,6 +4821,7 @@ function onlineAttachRoom(id){
 
   onlineRoomUnsub = onlineRoomRef.on('value', snap => {
     const room = snap.val();
+    onRoomReactions(room);
     if(!room){
       if(onlineState.phase === 'playing'){
         onlineState.message = '相手が退出しました';
@@ -5470,8 +5736,8 @@ function renderBoardScreen(){
         ${timer}
       </div>
       <div class="score-strip">
-        <div class="score-chip ${black>=white?'leading':''} ${g.mode==='online'&&onlineState.myColor===1?'is-me':''}"><span class="sc-stone" style="background:#111;"></span><span class="sc-name">${escapeHtml(leftName)}</span><span class="sc-num">${black}</span></div>
-        <div class="score-chip ${white>black?'leading':''} ${g.mode==='online'&&onlineState.myColor===2?'is-me':''}"><span class="sc-stone" style="background:#eee; box-shadow:inset 0 0 0 1px #ccc;"></span><span class="sc-name">${escapeHtml(rightName)}</span><span class="sc-num">${white}</span></div>
+        <div class="score-chip ${black>=white?'leading':''} ${g.mode==='online'&&onlineState.myColor===1?'is-me':''}"><span class="sc-stone" style="background:#111;"></span><span class="sc-name">${escapeHtml(leftName)}</span><span class="sc-num">${black}</span>${g.mode==='online'?reactionBubbleMarkup(1):''}</div>
+        <div class="score-chip ${white>black?'leading':''} ${g.mode==='online'&&onlineState.myColor===2?'is-me':''}"><span class="sc-stone" style="background:#eee; box-shadow:inset 0 0 0 1px #ccc;"></span><span class="sc-name">${escapeHtml(rightName)}</span><span class="sc-num">${white}</span>${g.mode==='online'?reactionBubbleMarkup(2):''}</div>
       </div>
       <div class="board ${boardStyleClass()}" id="boardEl"${eventBoardStyle()}>${cells.join('')}</div>
       ${varietyEventMarkup}
@@ -5479,6 +5745,7 @@ function renderBoardScreen(){
       ${statusNote}
     </div>
     ${showPassBtn?`<div style="margin-top:10px;"><button class="btn btn-soft" data-action="player-pass">このターンをパスする</button></div>`:''}
+    ${reactionButtonMarkup()}
     <div class="btn-row" style="margin-top:14px;">
       ${g.mode==='online' ? '' : `<button class="btn btn-ghost" data-action="give-up">${ruby('投了','とうりょう',1)}してもどる</button>`}
       ${g.over?'<button class="btn btn-primary" data-action="see-result">結果を見る</button>':''}
@@ -6530,7 +6797,7 @@ function viewSettings(){
       <button class="btn btn-danger" data-action="delete-cache">キャッシュデータを${ruby('削除','さくじょ',2)}</button>
     </div>
     <div style="text-align:center; margin-top:20px; padding:10px; font-size:10px; color:var(--ink-soft);">
-      <span>ver. 2.4.3</span>
+      <span>ver. 2.4.4</span>
     </div>
     <input type="file" id="importFile" accept=".txt" style="display:none;">
   `;
@@ -6769,6 +7036,18 @@ document.addEventListener('click', (e)=>{
       stopQRScan(); friendAddMode = null; newsDetailFile = null;
       navigate(()=>{ activeTab = 'home'; });
       break;
+    case 'react-toggle':
+      if(reactionPaletteOpen){ closeReactionPalette(); render(); }
+      else openReactionPalette();
+      break;
+    case 'react-send': sendReaction(el.dataset.e); render(); break;
+    case 'react-plus': reactionInputOpen = true; drawReactionPalette(); break;
+    case 'react-input-cancel': reactionInputOpen = false; drawReactionPalette(); break;
+    case 'react-send-custom': {
+      const v = (document.getElementById('reactInput')||{}).value || '';
+      sendReaction(v.trim()); render();
+      break;
+    }
     case 'cafe-open': cafeOpened = true; render(); break;
     case 'cafe-tab':
       cafeTab = el.dataset.k;
@@ -6935,7 +7214,7 @@ document.addEventListener('click', (e)=>{
     case 'toggle-bgm':
       state.settings.bgmEnabled = !(state.settings.bgmEnabled !== false);
       saveState();
-      if(state.settings.bgmEnabled) playBGM(bgmForCurrentScreen(), true);
+      if(state.settings.bgmEnabled){ audioState.desiredKey = null; updateBGM(); }
       else stopBGM(true);
       render();
       break;
