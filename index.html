@@ -926,22 +926,25 @@ body.event-theme[data-event="birthday"] .tab-btn.active{
 body.in-game .topbar{ display:none; }
 body.in-game main{ padding-top:max(10px, env(safe-area-inset-top, 0px)); }
 
-/* オンラインの絵文字リアクション */
+/* オンラインの絵文字リアクション（同時に最大3個まで横並び） */
 .score-chip{ position:relative; }
-.react-bubble{
+.react-bubble-group{
   position:absolute; left:6px; top:calc(100% + 9px); z-index:6;
-  min-width:44px; height:44px; padding:0 8px; border-radius:14px;
+  display:flex; gap:5px; pointer-events:none;
+}
+.react-bubble{
+  min-width:40px; height:40px; padding:0 6px; border-radius:13px;
   background:#fff; border:2.5px solid #1b1a17;
   display:flex; align-items:center; justify-content:center;
-  font-size:26px; line-height:1; box-shadow:0 4px 12px rgba(0,0,0,.22);
-  pointer-events:none;
+  font-size:22px; line-height:1; box-shadow:0 4px 12px rgba(0,0,0,.22);
+  position:relative; flex:0 0 auto;
 }
-/* 上向きのしっぽ（石のマークを指す） */
-.react-bubble::before, .react-bubble::after{
-  content:""; position:absolute; left:12px; width:0; height:0; border-style:solid;
+/* 上向きのしっぽ（一番左のバブルだけ、石のマークを指す） */
+.react-bubble:first-child::before, .react-bubble:first-child::after{
+  content:""; position:absolute; left:10px; width:0; height:0; border-style:solid;
 }
-.react-bubble::before{ top:-11px; border-width:0 8px 11px 8px; border-color:transparent transparent #1b1a17 transparent; }
-.react-bubble::after{ top:-7.5px; left:14.5px; border-width:0 5.5px 8px 5.5px; border-color:transparent transparent #fff transparent; }
+.react-bubble:first-child::before{ top:-11px; border-width:0 8px 11px 8px; border-color:transparent transparent #1b1a17 transparent; }
+.react-bubble:first-child::after{ top:-7.5px; left:12.5px; border-width:0 5.5px 8px 5.5px; border-color:transparent transparent #fff transparent; }
 .react-bubble.pop{ animation:reactPop .32s cubic-bezier(.2,1.5,.4,1); }
 @keyframes reactPop{ from{ transform:scale(.4); opacity:0; } to{ transform:scale(1); opacity:1; } }
 
@@ -975,6 +978,14 @@ body.in-game main{ padding-top:max(10px, env(safe-area-inset-top, 0px)); }
 }
 .rp-send{ border:0; background:var(--jade-deep); color:#fff; font-weight:800; padding:10px 14px; border-radius:10px; cursor:pointer; }
 .rp-close{ border:0; background:none; color:var(--ink-soft); font-size:18px; padding:8px; cursor:pointer; }
+
+/* お知らせなどの文中に書いた @ユーザーID を、名前に変えて強調表示する */
+.mention{
+  display:inline; font-weight:800; color:var(--jade-deep);
+  background:var(--jade-mist); border-radius:6px; padding:1px 5px; margin:0 1px;
+  cursor:pointer; white-space:nowrap;
+}
+.mention:active{ opacity:.72; }
 </style>
 </head>
 <body>
@@ -1015,9 +1026,9 @@ const BASIC_TABS = [
 ];
 
 const ADVENTURE_TABS = [
-  {id:'variety', label:'バラエティ', icon:'🎲'},
   {id:'story', label:'ストーリー', icon:'📖'},
   {id:'memory', label:'カフェ', icon:'☕️'},
+  {id:'variety', label:'工事中', icon:'🚧'},   // バラエティモードはv.2.5.0で廃止、工事中の案内に差し替え
   {id:'home-sub', label:'ホーム', icon:'🏠'},
 ];
 // マイページを開いているときの下部メニュー（今後項目を足していく前提）
@@ -1580,7 +1591,7 @@ function aiChooseMove(board, aiPlayer, depth, rnd, boost, greedy){
    ============================================================ */
 let activeTab='home';
 let currentBasicMode='battle';  // battle | training | casual | online
-let currentAdventureMode='variety';  // variety | story | memory
+let currentAdventureMode='story';  // story | memory | variety（工事中）
 let stellaCommandSequence = [];   // コマンド検出用（切り替えた時刻も持つ）
 let stellaChallengePending = false;  // コマンド成立、挑戦待ち
 let stellaChallengeActive  = false;  // 挑戦の対局中
@@ -1698,17 +1709,8 @@ let audioState = {
   unlocked: false      // スマホで音が出せる状態になったか
 };
 
-// オーディオファイル一覧（ゲーム内で使用するもの）
+// オーディオファイル一覧（効果音のみ。BGMは下の「BGMゾーン」方式で動的に検出する）
 const AUDIO_FILES = {
-  bgm: [
-    'menu', 'casual_easy', 'casual_hard', 'training', 'variety', 'stella'
-  ],
-  // 行事ごとのフォルダ。中には上の bgm と同じ名前で行事版の曲を置く
-  //   db/audio/bgm/event/<行事>/menu.mp3 など
-  // 置かれていない曲は、通常の曲がそのまま流れる
-  bgmEvent: [
-    'birthday', 'aprilfools', 'easter', 'othelloday', 'halloween', 'christmas', 'newyear'
-  ],
   se: [
     'tap', 'place', 'flip', 'pass', 'win', 'lose', 'unlock', 'modal_open'
   ]
@@ -2030,10 +2032,47 @@ function markdownToHtmlInline(text){
   // インライン用の簡易マークダウン変換
   let html = text;
   html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  html = renderMentions(html);
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
   html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" style="color:var(--jade);">$1</a>');
   return html;
+}
+
+/* ---------- @ユーザーID の強調表示 ---------- */
+// O-LABO 内の文章（お知らせなど）に @7WX9WAHE のように書くと、
+// そのユーザーの名前に変換して強調表示する。押すとマイページへ飛べる。
+const MENTION_RE = /(^|[^\w@])@([A-Za-z0-9]{6,12})\b/g;
+let mentionCache = {};   // ID（大文字）→ undefined(未着手) | 'loading' | false(存在しない) | {uid,name}
+async function resolveMention(code){
+  if(mentionCache[code] !== undefined) return;
+  mentionCache[code] = 'loading';
+  try{
+    if(!fbDb && !(await ensureFirebase())){ mentionCache[code] = false; requestRender(); return; }
+    const snap = await fbDb.ref('userCodes/' + code).once('value');
+    const uid = snap.val();
+    if(!uid){ mentionCache[code] = false; requestRender(); return; }
+    const usnap = await fbDb.ref('users/' + uid).once('value');
+    const u = usnap.val() || {};
+    const name = (u.profile && u.profile.displayName) || u.name || 'プレイヤー';
+    mentionCache[code] = { uid, name };
+  }catch(err){
+    mentionCache[code] = false;   // 取得に失敗した場合は、そのIDのまま表示しておく
+  }
+  requestRender();
+}
+// 渡された（エスケープ済みの）HTML文字列の中の @ID を、分かっているものだけ名前に置き換える。
+// まだ調べていないIDは、ここで裏取りを始めておく（結果が来たら再描画で反映される）
+function renderMentions(html){
+  return html.replace(MENTION_RE, (whole, pre, code) => {
+    const key = code.toUpperCase();
+    const cached = mentionCache[key];
+    if(cached === undefined) resolveMention(key);
+    if(cached && cached.uid){
+      return `${pre}<span class="mention" data-action="open-other" data-uid="${escapeHtml(cached.uid)}" data-name="${escapeHtml(cached.name)}">@${escapeHtml(cached.name)}</span>`;
+    }
+    return whole;   // 未解決・存在しない場合は元の文字のまま
+  });
 }
 
 // お知らせの見出し（本文の1行目）
@@ -2127,6 +2166,7 @@ function markdownToHtml(md){
   
   // エスケープ
   html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  html = renderMentions(html);
   
   // 太字 (**text**)
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -2196,7 +2236,7 @@ function viewHome(){
       </button>
       <button class="btn" style="background:linear-gradient(155deg, var(--urushi-light), var(--urushi)); color:#fff; font-size:12px; padding:30px 10px; height:auto; line-height:1.3; flex-direction:column; white-space:normal; min-height:100px; display:flex; align-items:center; justify-content:center;" data-action="go-adventure">
         <div style="font-weight:700;">アドベンチャー</div>
-        <div style="font-size:10px; font-weight:400; opacity:0.9; margin-top:4px;">バラエティ・ストーリー</div>
+        <div style="font-size:10px; font-weight:400; opacity:0.9; margin-top:4px;">ストーリー・カフェ</div>
       </button>
     </div>
     
@@ -2232,32 +2272,19 @@ function viewHome(){
   `;
 }
 
+// バラエティモードは v.2.5.0 で廃止。工事中の案内だけを表示する。
+// （過去に遊んだ記録はライブラリにそのまま残る）
 function viewVariety(){
-  if(game && game.mode==='variety' && sub.variety==='play') return renderBoardScreen();
-  if(sub.variety==='result') return renderResultScreen();
-  if(sub.variety==='custom') return viewVarietyCustom();
-  
-  const presetItems = VARIETY_PRESETS.map(p=>`
-    <button class="btn btn-ghost" style="text-align:left; margin-bottom:8px;" data-action="variety-pick" data-preset-id="${p.id}">
-      <div style="font-weight:700; font-size:14px;">${p.name}</div>
-      ${p.id !== 'custom' ? `<div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">難易度: AIレベル${p.depth}</div>` : ''}
-    </button>
-  `).join('');
-  
   return `
-    <div class="hero" style="background:linear-gradient(150deg, #e74c3c, #c0392b 75%);">
-      <div class="hero-eyebrow">VARIETY MODE</div>
-      <h2>バラエティモード</h2>
-      <p>オセロの様々なルール変動版を楽しめます。ランダムイベントやワープなど、予期しない展開を楽しみましょう。</p>
+    <div class="hero" style="background:linear-gradient(150deg, #b98a4a, #8a6329 78%);">
+      <div class="hero-eyebrow">WORK IN PROGRESS</div>
+      <h2>工事中</h2>
     </div>
-    
-    <div class="section-title">ルールプリセット</div>
-    <div class="card" style="background:var(--panel); padding:16px; border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-1);">
-      ${presetItems}
-    </div>
-    
-    <div class="card" style="text-align:center; padding:16px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-1);">
-      <button class="btn btn-soft" data-action="variety-custom" style="width:100%;">カスタムルールを作成</button>
+    <div class="card" style="text-align:center; padding:20px 16px;">
+      <div style="font-size:40px; margin-bottom:10px;">🚧</div>
+      <p style="margin:0; font-size:14px; line-height:1.8; color:var(--ink);">
+        バラエティモードはv.2.5.0から廃止となりました。<br>現在工事中です。
+      </p>
     </div>
   `;
 }
@@ -2697,8 +2724,8 @@ function setupAudioUnlock(){
         audioState.unlocked = true;
         ['pointerdown','touchend','click','keydown'].forEach(ev =>
           document.removeEventListener(ev, unlock, true));
-        // 開いた時点で鳴らすはずだった曲を流す（行事の曲がまだ無ければ通常の曲へ）
-        if(audioState.desiredBGM) updateBGM();
+        // 開いた時点で鳴らすはずだった曲を流す（操作が許可されるまで鳴らせなかったため）
+        updateBGM(true);
       }
     }catch(err){ console.warn('音声の有効化に失敗:', err); }
   };
@@ -2706,31 +2733,82 @@ function setupAudioUnlock(){
     document.addEventListener(ev, unlock, true));
 }
 
-// 画面に応じたBGMを決める
-function bgmForCurrentScreen(){
-  if(game && game.mode === 'casual'){
-    const boost = (game.opts && game.opts.boost) || 0;
-    return boost >= 2 ? 'casual_hard' : 'casual_easy';
+/* ------------------------------------------------------------
+   BGM：対局中かどうかの2ゾーン方式
+     db/audio/bgm/home/ro(数字).mp3      … 対局していないとき
+     db/audio/bgm/battling/vs(数字).mp3  … 対局中
+     db/audio/bgm/event/<行事>/home/ , /battling/ … 行事の日はこちらを優先
+   フォルダの中身は、まず list.json（今後の対応）を探し、無ければ
+   ro1, ro2, ... のように連番のファイルを見つかるだけ検出する。
+   曲を変えるのは「ホームを開いた」「対局が始まった」「対局が終わった」の
+   3つのタイミングだけ（＝ゾーンが切り替わった瞬間）で、その中ではランダムに
+   1曲を選んでそのままループ再生する。
+   ------------------------------------------------------------ */
+let bgmZone = null;              // 'home' | 'battling' | null（起動直後は未定）
+const AUDIO_PROBE_MAX = 24;      // 1フォルダあたり探す上限（list.json が無い場合）
+let audioIndexCache = {};        // フォルダ名 → ['ro1','ro2',...]（拡張子なし・存在するものだけ）
+
+// フォルダ内の曲名一覧を得る。list.json があればそれを使い、無ければ連番を探す
+async function scanBgmFolder(folder, prefix){
+  if(audioIndexCache[folder] !== undefined) return audioIndexCache[folder];
+  let names = [];
+  try{
+    const res = await fetch(`${AUDIO_BASE_URL}/bgm/${folder}/list.json`);
+    if(res.ok){
+      const j = await res.json();
+      // 将来はループ範囲つきの形式にも対応できるよう、名前だけ緩く取り出す
+      if(Array.isArray(j)){
+        names = j.map(x => String(typeof x === 'string' ? x : (x && x.file) || '').replace(/\.mp3$/i, '')).filter(Boolean);
+      }
+    }
+  }catch(err){ /* list.json はまだ無くてよい */ }
+  if(!names.length){
+    const checks = [];
+    for(let i=1;i<=AUDIO_PROBE_MAX;i++){
+      checks.push(
+        fetch(`${AUDIO_BASE_URL}/bgm/${folder}/${prefix}${i}.mp3`, { method:'HEAD' })
+          .then(r => r.ok ? (prefix+i) : null)
+          .catch(() => null)
+      );
+    }
+    names = (await Promise.all(checks)).filter(Boolean);
   }
-  if(game && game.mode === 'training') return 'training';
-  if(game && game.mode === 'variety') return 'variety';
-  if(useStellaSkin()) return 'stella';
-  return 'menu';
+  audioIndexCache[folder] = names;
+  return names;
 }
-// 行事の日は、場面ごとの曲を行事のフォルダから探す。
-//   db/audio/bgm/event/<行事>/<場面の曲名>.mp3
-// 例：誕生日のホーム → event/birthday/menu、ゆるモード → event/birthday/casual_easy
-// 行事版が置かれていない場面は、通常の曲がそのまま流れる
-function bgmCandidates(){
-  const base = bgmForCurrentScreen();
-  const ev = currentPageEvent();
-  return ev ? ['event/' + ev.id + '/' + base, base] : [base];
+
+// いまのゾーンで流す曲の候補（行事版があれば先に、通常版をその次に）を1つずつ選ぶ
+async function pickZoneBgm(zone){
+  const prefix = zone === 'home' ? 'ro' : 'vs';
+  const normalNames = await scanBgmFolder(zone, prefix);
+  const ev = (state.settings.eventSkins !== false) ? activeEvent() : null;
+
+  const candidates = [];
+  if(ev){
+    const evFolder = `event/${ev.id}/${zone}`;
+    const evNames = await scanBgmFolder(evFolder, prefix);
+    if(evNames.length){
+      candidates.push(evFolder + '/' + evNames[Math.floor(Math.random() * evNames.length)]);
+    }
+  }
+  if(normalNames.length){
+    candidates.push(zone + '/' + normalNames[Math.floor(Math.random() * normalNames.length)]);
+  }
+  return candidates;
 }
-function updateBGM(){
-  const list = bgmCandidates();
-  const key = list.join('|');
-  if(audioState.desiredKey === key && audioState.currentBGM && list.includes(audioState.currentBGM)) return;
-  playBGM(list, true);
+async function playZoneBGM(zone){
+  const candidates = await pickZoneBgm(zone);
+  if(!candidates.length) return;   // まだ音源が置かれていない
+  // 前の曲はフェードアウトし、次の曲はフェードインなしでそのまま鳴らす
+  playBGM(candidates, false);
+}
+// ゾーンが切り替わったときだけ曲を選び直す。force を渡すと、
+// ゾーンが同じでも改めて鳴らす（音声の許可が下りた直後などに使う）
+function updateBGM(force){
+  const zone = isPlayingBoard() ? 'battling' : 'home';
+  if(!force && zone === bgmZone) return;
+  bgmZone = zone;
+  playZoneBGM(zone);
 }
 
 // 設定から実際の音量（0〜1）を取り出す
@@ -3408,6 +3486,7 @@ function isPlayingBoard(){
     return game.mode === m && sub[m] === 'play';
   }
   if(activeTab === 'adventure'){
+    // バラエティモードは v.2.5.0 で廃止（工事中）のため、ここに来ることはない
     return currentAdventureMode === 'variety' && game.mode === 'variety' && sub.variety === 'play';
   }
   return false;
@@ -4643,12 +4722,11 @@ async function onlineRandomMatch(myName){
 const REACTION_DEFAULTS = ['👍','😆','😎','🎉','👏'];
 const REACTION_MAX = 10;          // パレットに並べる最大数
 const REACTION_SHOW_MS = 5000;    // 相手の画面に出ている時間
-const REACTION_COOLDOWN = 1200;   // 連打で相手の画面を埋めないための間隔
+const REACTION_MAX_SHOW = 3;      // 同時に画面へ表示できる最大数（それを超えたら古い順に消す）
 
-let reactionShow = {};            // 色 → { e, until, startedAt }
+let reactionShow = {};            // 色 → [{ e, until, startedAt, key }, ...]（最大 REACTION_MAX_SHOW 件）
 let reactionSeen = {};            // 色 → 最後に見た at
 let reactionInit = false;         // 部屋に入った直後の古いリアクションは出さない
-let reactionLastSent = 0;
 let reactionPaletteOpen = false;
 let reactionInputOpen = false;
 
@@ -4682,17 +4760,15 @@ function isSingleEmoji(str){
   return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(s);
 }
 
+// クールタイムは設けない。連打すれば連打しただけ相手に届く（画面には最大3つまで同時表示）
 async function sendReaction(e){
   if(!game || game.mode !== 'online' || !onlineRoomRef) return;
   if(!isSingleEmoji(e)){ toast('絵文字を1つだけ入力してください'); return; }
   const now = Date.now();
-  if(now - reactionLastSent < REACTION_COOLDOWN){ toast('少し待ってから送ってください'); return; }
-  reactionLastSent = now;
   const c = String(onlineState.myColor);
   reactionSeen[c] = now;                 // 自分の送信は監視側で二重に出さない
   showReaction(c, e);
   reactionTouch(e);
-  closeReactionPalette();
   try{
     await onlineRoomRef.child('reactions/' + c).set({ e, at: now });
   }catch(err){
@@ -4701,10 +4777,22 @@ async function sendReaction(e){
   }
 }
 
+// 画面に絵文字を1つ追加する。同時に出せるのは REACTION_MAX_SHOW 個までで、
+// それを超えたら一番古いものから消える（新しいものは必ず表示される）
 function showReaction(color, e){
-  reactionShow[color] = { e, until: Date.now() + REACTION_SHOW_MS, startedAt: Date.now() };
+  const list = reactionShow[color] = reactionShow[color] || [];
+  const item = { e, until: Date.now() + REACTION_SHOW_MS, startedAt: Date.now(), key: Math.random() };
+  list.push(item);
+  while(list.length > REACTION_MAX_SHOW) list.shift();
   requestRender();
-  setTimeout(requestRender, REACTION_SHOW_MS + 60);
+  setTimeout(() => {
+    const l = reactionShow[color];
+    if(l){
+      const idx = l.indexOf(item);
+      if(idx >= 0) l.splice(idx, 1);
+    }
+    requestRender();
+  }, REACTION_SHOW_MS + 60);
 }
 
 // 部屋の更新を受け取ったときに呼ぶ
@@ -4728,12 +4816,14 @@ function resetReactions(){
   closeReactionPalette();
 }
 
-// スコアの札の下に出す吹き出し
+// スコアの札の下に出す吹き出し（同時に最大 REACTION_MAX_SHOW 個まで横に並ぶ）
 function reactionBubbleMarkup(color){
-  const r = reactionShow[String(color)];
-  if(!r || r.until <= Date.now()) return '';
-  const fresh = Date.now() - r.startedAt < 350;
-  return `<span class="react-bubble ${fresh ? 'pop' : ''}" aria-live="polite">${escapeHtml(r.e)}</span>`;
+  const list = (reactionShow[String(color)] || []).filter(r => r.until > Date.now());
+  if(!list.length) return '';
+  return `<span class="react-bubble-group">${list.map(r => {
+    const fresh = Date.now() - r.startedAt < 350;
+    return `<span class="react-bubble ${fresh ? 'pop' : ''}" aria-live="polite">${escapeHtml(r.e)}</span>`;
+  }).join('')}</span>`;
 }
 
 // 盤の下に出すボタン
@@ -7139,7 +7229,7 @@ document.addEventListener('click', (e)=>{
       navigate(()=>{ activeTab = 'basic'; currentBasicMode = 'battle'; });
       break;
     case 'go-adventure':
-      navigate(()=>{ activeTab = 'adventure'; currentAdventureMode = 'variety'; });
+      navigate(()=>{ activeTab = 'adventure'; currentAdventureMode = 'story'; });
       break;
     case 'battle-flip':
       state.settings.battle.flipMode = el.dataset.v; saveState(); render(); break;
@@ -7261,7 +7351,7 @@ document.addEventListener('click', (e)=>{
     case 'toggle-bgm':
       state.settings.bgmEnabled = !(state.settings.bgmEnabled !== false);
       saveState();
-      if(state.settings.bgmEnabled){ audioState.desiredKey = null; updateBGM(); }
+      if(state.settings.bgmEnabled) updateBGM(true);
       else stopBGM(true);
       render();
       break;
@@ -7324,7 +7414,9 @@ document.addEventListener('click', (e)=>{
     case 'account-logout': accountLogout(); break;
     case 'toggle-event-skins':
       state.settings.eventSkins = !(state.settings.eventSkins !== false);
-      saveState(); render();
+      saveState();
+      bgmZone = null; updateBGM();   // BGM にも即座に反映する
+      render();
       break;
     case 'cloud-save-now':
       cloudSaveNow().then(ok => toast(ok ? 'クラウドに保存しました' : '保存できませんでした'));
@@ -7529,7 +7621,7 @@ setupAudioUnlock();
 // アカウント状態と招待を受け取れるよう、開いた時点で接続する
 if(firebaseConfigured()) ensureFirebase();
 // 開いた時点でBGMを鳴らす（スマホでは最初の操作の直後に鳴り出す）
-updateBGM();
+updateBGM(true);
 </script>
 </body>
 </html>
