@@ -1712,9 +1712,16 @@ let audioState = {
 // オーディオファイル一覧（効果音のみ。BGMは下の「BGMゾーン」方式で動的に検出する）
 const AUDIO_FILES = {
   se: [
-    'tap', 'place', 'flip', 'pass', 'win', 'lose', 'unlock', 'modal_open'
+    'flip1', 'flip2', 'flip3', 'flip4', 'flip5', 'flip6',   // 石を置く・ひっくり返す音（ランダムに1つ）
+    'pass',           // パスしたとき
+    'online_emoji'    // オンラインで絵文字を送る・受け取ったとき
   ]
 };
+// 石を置く・ひっくり返すたびに、6種類の中からランダムに1つ選ぶ
+const FLIP_SE_COUNT = 6;
+function randomFlipSeName(){
+  return 'flip' + (1 + Math.floor(Math.random() * FLIP_SE_COUNT));
+}
 const sub={ battle:'home', training:'home', casual:'home', online:'lobby', library:'list', settings:'home', mypage:'main' };
 let libTab='battle';
 let game=null; // active game session object
@@ -3271,9 +3278,20 @@ function progressScore(st){
 }
 
 // 保存する形に整える（容量を抑えるため履歴を削る）
+// 端末ごとに変えたい設定。クラウドには保存せず、この端末の localStorage にだけ残す
+// （同じアカウントでも、端末によって音量を変えたい場合があるため）
+const DEVICE_ONLY_SETTINGS = ['bgmEnabled', 'bgmVolume', 'seEnabled', 'seVolume'];
+function stripDeviceOnlySettings(settingsObj){
+  if(!settingsObj) return settingsObj;
+  const copy = Object.assign({}, settingsObj);
+  for(const k of DEVICE_ONLY_SETTINGS) delete copy[k];
+  return copy;
+}
+
 function makeCloudPayload(){
   trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
   const copy = JSON.parse(JSON.stringify(state));
+  copy.settings = stripDeviceOnlySettings(copy.settings);
   return { data: copy, progress: progressScore(copy), updatedAt: Date.now() };
 }
 
@@ -3305,8 +3323,11 @@ async function syncAfterLogin(){
     const cloudScore = cloud ? (cloud.progress ?? progressScore(cloud.data)) : -1;
 
     if(cloud && cloud.data && cloudScore > localScore){
-      // クラウドのほうが進んでいる
+      // クラウドのほうが進んでいる。ただし音量など端末ごとの設定はこの端末の値を保つ
+      const myDeviceSettings = {};
+      for(const k of DEVICE_ONLY_SETTINGS) myDeviceSettings[k] = state.settings[k];
       state = deepMerge(structuredClone(DEFAULT_STATE), cloud.data);
+      Object.assign(state.settings, myDeviceSettings);
       trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
       saveState();
       toast('クラウドの記録を読み込みました');
@@ -4780,6 +4801,7 @@ async function sendReaction(e){
 // 画面に絵文字を1つ追加する。同時に出せるのは REACTION_MAX_SHOW 個までで、
 // それを超えたら一番古いものから消える（新しいものは必ず表示される）
 function showReaction(color, e){
+  playSE('online_emoji');   // 送るとき・送られてきたとき、どちらもここを通る
   const list = reactionShow[color] = reactionShow[color] || [];
   const item = { e, until: Date.now() + REACTION_SHOW_MS, startedAt: Date.now(), key: Math.random() };
   list.push(item);
@@ -4997,6 +5019,7 @@ function onlineAttachRoom(id){
     if(game.moveCount > prevMoves){
       game.boardStates = game.boardStates || [];
       game.boardStates.push(game.board.map(row => row.slice()));
+      playSE(randomFlipSeName());   // 自分・相手どちらの手でも、盤面が動いたら鳴らす
     }
 
     // 手番が自分に回ってきて置けない場合、自動でパスする
@@ -5886,6 +5909,7 @@ function onCellClick(r,c){
     g.pendingFlips.done.push([r,c]);
     g.board[r][c]=g.pendingFlips.player;
     g.animFlips=[[r,c]]; g.animPlaced=null;
+    playSE(randomFlipSeName());
     if(g.pendingFlips.done.length===g.pendingFlips.flips.length){
       g.pendingFlips=null;
       finishPly(g);
@@ -5969,6 +5993,7 @@ function tryHumanMove(g,r,c){
   }
   
   if(manual && flips.length){
+    playSE(randomFlipSeName());   // 石を置いた音（この後は1マスずつタップするたびに鳴る）
     g.pendingFlips={row:finalRow,col:finalCol,player:g.current,flips,done:[]};
     g.animFlips=null;
     render(); startLiveTimer();
@@ -5976,6 +6001,7 @@ function tryHumanMove(g,r,c){
   }
   g.animFlips=flips;
   flips.forEach(([fr,fc])=>{ g.board[fr][fc]=g.current; });
+  playSE(randomFlipSeName());
   finishPly(g);
 }
 function finishPly(g){
@@ -6097,6 +6123,7 @@ function maybeTriggerAI(g){
           g.animFlips=mv.flips;
           g.boardStates.push(g.board.map(row=>row.slice()));
           g.passStreak=0;
+          playSE(randomFlipSeName());
           const humanMoves = validMoves(g.board,1);
           const aiMoves2 = validMoves(g.board,2);
           if(humanMoves.length>0){ g.current=1; }
@@ -6883,6 +6910,7 @@ function viewSettings(){
     </div>
 
     <div class="section-title">音声</div>
+    <p style="margin:0 0 8px; font-size:11px; color:var(--ink-soft);">この端末だけの設定です。アカウントでログインしていても、ほかの端末には反映されません。</p>
     <div class="card">
       <div class="toggle-row">
         <div class="trow-text"><b>BGM</b><span>背景音楽を再生します</span></div>
@@ -7133,7 +7161,7 @@ function audioSaveSoon(){
 // 効果音の音量は、手を離したときに一度だけ試聴させる
 document.addEventListener('change', (e)=>{
   const el = e.target;
-  if(el && el.dataset && el.dataset.action === 'set-se-volume') playSE('tap');
+  if(el && el.dataset && el.dataset.action === 'set-se-volume') playSE('pass');
 }, true);
 
 document.addEventListener('click', (e)=>{
@@ -7249,6 +7277,7 @@ document.addEventListener('click', (e)=>{
     case 'cell': onCellClick(parseInt(el.dataset.r), parseInt(el.dataset.c)); break;
     case 'player-pass':
       if(game && !game.over && !game.thinking){
+        playSE('pass');
         game.passStreak++;
         game.animPlaced = null;
         game.animFlips = null;
@@ -7358,7 +7387,7 @@ document.addEventListener('click', (e)=>{
     case 'toggle-se':
       state.settings.seEnabled = !(state.settings.seEnabled !== false);
       saveState();
-      if(state.settings.seEnabled) playSE('tap');
+      if(state.settings.seEnabled) playSE('pass');
       render();
       break;
     case 'online-join-code': {
