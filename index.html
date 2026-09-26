@@ -1722,6 +1722,14 @@ const FLIP_SE_COUNT = 6;
 function randomFlipSeName(){
   return 'flip' + (1 + Math.floor(Math.random() * FLIP_SE_COUNT));
 }
+// 石を置いた音を1回鳴らし、そのあとひっくり返る石それぞれの音を、
+// アニメーションの時間差（75ms刻み）と同じタイミングでカタカタと鳴らす
+function playFlipSequence(flips){
+  playSE(randomFlipSeName());
+  (flips || []).forEach((_, idx) => {
+    setTimeout(() => playSE(randomFlipSeName()), (idx + 1) * 75);
+  });
+}
 const sub={ battle:'home', training:'home', casual:'home', online:'lobby', library:'list', settings:'home', mypage:'main' };
 let libTab='battle';
 let game=null; // active game session object
@@ -5010,6 +5018,7 @@ function onlineAttachRoom(id){
     if(movedOn) onlineState.lastChangeAt = Date.now();
 
     const prevMoves = game.moveCount || 0;
+    const prevBoard = game.board;   // 差分（置いた・ひっくり返ったマス）を調べるために保持しておく
     game.board = strToBoard(room.board);
     game.current = room.turn || 1;
     game.passStreak = room.passStreak || 0;
@@ -5019,7 +5028,22 @@ function onlineAttachRoom(id){
     if(game.moveCount > prevMoves){
       game.boardStates = game.boardStates || [];
       game.boardStates.push(game.board.map(row => row.slice()));
-      playSE(randomFlipSeName());   // 自分・相手どちらの手でも、盤面が動いたら鳴らす
+
+      // 置いたマスと、ひっくり返ったマスを前回の盤面との差分から求め、
+      // 自分・相手どちらの手でも、アニメーションと「置く音＋カタカタ」を鳴らす
+      const lm = room.lastMove;
+      if(lm && prevBoard && !firstTime){
+        const flippedCells = [];
+        for(let rr=0; rr<8; rr++) for(let cc=0; cc<8; cc++){
+          if(rr===lm.row && cc===lm.col) continue;
+          if(prevBoard[rr][cc] !== game.board[rr][cc]) flippedCells.push([rr,cc]);
+        }
+        game.animPlaced = { row: lm.row, col: lm.col };
+        game.animFlips = flippedCells;
+        playFlipSequence(flippedCells);
+      } else {
+        playSE(randomFlipSeName());   // 差分が分からない場合は、最低限1回だけ鳴らす
+      }
     }
 
     // 手番が自分に回ってきて置けない場合、自動でパスする
@@ -5911,8 +5935,9 @@ function onCellClick(r,c){
     g.animFlips=[[r,c]]; g.animPlaced=null;
     playSE(randomFlipSeName());
     if(g.pendingFlips.done.length===g.pendingFlips.flips.length){
+      const flipCount = g.pendingFlips.flips.length;
       g.pendingFlips=null;
-      finishPly(g);
+      finishPly(g, flipCount);
     } else {
       render(); startLiveTimer();
     }
@@ -6001,10 +6026,10 @@ function tryHumanMove(g,r,c){
   }
   g.animFlips=flips;
   flips.forEach(([fr,fc])=>{ g.board[fr][fc]=g.current; });
-  playSE(randomFlipSeName());
-  finishPly(g);
+  playFlipSequence(flips);
+  finishPly(g, flips.length);
 }
-function finishPly(g){
+function finishPly(g, flipCount){
   g.boardStates.push(g.board.map(row=>row.slice()));
   
   // バラエティモード: ランダムイベント処理
@@ -6053,7 +6078,11 @@ function finishPly(g){
     return;
   }
   render(); startLiveTimer();
-  maybeTriggerAI(g);
+  // 人間の手のフリップアニメーションが実際に画面へ描画される時間を確保してから、
+  // AIの手番に進む（間を置かずに続けて render() すると、アニメーションが
+  // 一度も画面に反映されないまま次の描画で上書きされてしまうため）
+  const delay = state.settings.animFlip ? Math.min(900, 90 + (flipCount||0) * 75) : 30;
+  setTimeout(() => maybeTriggerAI(g), delay);
 }
 function maybeTriggerAI(g){
   try{
@@ -6123,7 +6152,7 @@ function maybeTriggerAI(g){
           g.animFlips=mv.flips;
           g.boardStates.push(g.board.map(row=>row.slice()));
           g.passStreak=0;
-          playSE(randomFlipSeName());
+          playFlipSequence(mv.flips);
           const humanMoves = validMoves(g.board,1);
           const aiMoves2 = validMoves(g.board,2);
           if(humanMoves.length>0){ g.current=1; }
@@ -6962,7 +6991,7 @@ function viewSettings(){
       <button class="btn btn-danger" data-action="delete-cache">キャッシュデータを${ruby('削除','さくじょ',2)}</button>
     </div>
     <div style="text-align:center; margin-top:20px; padding:10px; font-size:10px; color:var(--ink-soft);">
-      <span>ver. 2.4.4</span>
+      <span>ver. 2.5.0</span>
     </div>
     <input type="file" id="importFile" accept=".txt" style="display:none;">
   `;
