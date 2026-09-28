@@ -367,6 +367,20 @@ function viewUser(){
   const src = iconSrc(u);
   const d = detail;
   const owned = titlesOf(u);
+  // 解禁の状況は、公開している戦績には含めない（ネタバレ防止）ため、管理者はセーブデータから読む
+  const sv = d && d.save && d.save.data;
+  const unlMap = sv && sv.casual && sv.casual.unlocked;
+  const unlockInfo = {
+    casual: unlMap ? `${Object.values(unlMap).filter(Boolean).length} / ${Object.keys(unlMap).length}` : '-（セーブデータなし）',
+    stella: sv && sv.settings ? (sv.settings.stellaUnlocked ? '解禁済み' : '未解禁') : '-（セーブデータなし）',
+    flip: sv ? (sv.flipside && sv.flipside.unlocked ? '解禁済み' : '未解禁') : '-（セーブデータなし）',
+    flipMode: (() => {
+      if(!sv) return '-（セーブデータなし）';
+      if(!(sv.flipside && sv.flipside.unlocked)) return '-（FlipSide 未解禁）';
+      const m = sv.flipside.flip && sv.flipside.flip.unlocked;
+      return m ? `${Object.values(m).filter(Boolean).length} / ${Object.keys(m).length}` : '-';
+    })()
+  };
   const isAdm = admins[uid] || u.code === OWNER_CODE;
   return `
     <button class="back" onclick="go('users')">‹ 利用者の一覧</button>
@@ -431,9 +445,11 @@ function viewUser(){
       <dl class="kv">
         <dt>プレイヤーランク</dt><dd>${st.rank ?? '-'}</dd>
         <dt>通算</dt><dd>${st.games ?? 0}戦 ${st.wins ?? 0}勝</dd>
-        <dt>ゆるモード解禁</dt><dd>${st.casualUnlocked ?? '-'} / ${st.casualTotal ?? '-'}</dd>
+        <dt>ゆるモード解禁</dt><dd>${unlockInfo.casual}</dd>
         <dt>特訓ランク</dt><dd>${esc(st.training || '-')}</dd>
-        <dt>Stella</dt><dd>${st.stella ? '解禁済み' : '未解禁'}</dd>
+        <dt>Stella</dt><dd>${unlockInfo.stella}</dd>
+        <dt>FlipSide</dt><dd>${unlockInfo.flip}</dd>
+        <dt>Flipモード解禁</dt><dd>${unlockInfo.flipMode}</dd>
         <dt>セーブデータ</dt><dd>${d ? (d.save ? `あり（${fmtDate(d.save.updatedAt)} 更新）` : 'なし') : '読み込み中…'}</dd>
       </dl>
     </div>
