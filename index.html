@@ -1144,6 +1144,11 @@ body.flipside .cell{
 body.flipside .cell::before{ box-shadow:none !important; }
 body.flipside .cell.hint::after{ background:rgba(160,175,255,.55) !important; box-shadow:0 0 8px rgba(120,140,255,.6) !important; }
 body.flipside .turn-banner, body.flipside .score-chip{ background:linear-gradient(180deg, rgba(20,24,64,.85), rgba(12,15,38,.92)); }
+/* FlipSide の中だけ、黒白どちらの石にもうっすら白い光彩をかけて、暗い盤面でも見やすくする */
+body.flipside .stone.black{ box-shadow:0 2px 3px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.05), 0 0 7px 3px rgba(255,255,255,.25) !important; }
+body.flipside .stone.white{ box-shadow:0 2px 3px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.06), 0 0 7px 3px rgba(255,255,255,.25) !important; }
+body.flipside .board.illust .stone.black{ box-shadow:inset 0 0 0 3px #000, 0 3px 0 rgba(0,0,0,.3), 0 0 7px 3px rgba(255,255,255,.25) !important; }
+body.flipside .board.illust .stone.white{ box-shadow:inset 0 0 0 3px #2f2f33, 0 3px 0 rgba(0,0,0,.15), 0 0 7px 3px rgba(255,255,255,.25) !important; }
 </style>
 </head>
 <body>
@@ -2752,7 +2757,7 @@ function viewFlipGate(){
     ${flipHero('FLIP SIDE', '裏側', 'ここから先は、表からは見えない場所。')}
     <div class="card fs-card">
       <p class="fs-text">扉の前に、番人が立っている。<br>通るには、その番人に勝たなければならない。</p>
-      <p class="fs-note">番人の強さは、ゆるモードの「超英雄」と同じです。この戦いでは、パスも投了もできません。負けても、何度でも挑めます。</p>
+      <p class="fs-note">番人の強さは、ゆるモードの「超英雄」と同じです。この戦いでは、パスも投了も、次に置ける場所のヒントもありません。あなたが先手です。負けても、何度でも挑めます。</p>
       <button class="btn fs-btn" data-action="flip-gate-start" style="width:100%;">挑む</button>
     </div>`;
 }
@@ -2776,13 +2781,7 @@ function viewFlip(){
     </button>`;
   }).join('');
   return `
-    ${flipHero('FLIP MODE', 'Flip', `相手より${FLIP_CLEAR_MARGIN}個以上多く石を取って勝つと、次の相手が現れます。パスも、投了もできません。`)}
-    <div class="card fs-card">
-      <div class="toggle-row">
-        <div class="trow-text"><b>次に置ける場所を表示</b><span>ゆるモードと共通の設定です</span></div>
-        <label class="switch"><input type="checkbox" ${state.casual.showHints ? 'checked' : ''} data-action="toggle-casual-hint"><span class="toggle-track"></span></label>
-      </div>
-    </div>
+    ${flipHero('FLIP MODE', 'Flip', `相手より${FLIP_CLEAR_MARGIN}個以上多く石を取って勝つと、次の相手が現れます。次に置ける場所のヒントはなく、先手・後手はランダムです。パスも、投了もできません。`)}
     <div class="section-title">相手をえらぶ</div>
     <div class="diff-list">${rows}</div>`;
 }
@@ -2849,25 +2848,23 @@ function startFlipGate(){
   navigate(() => {
     game = makeGameSession('casual', {
       aiDepth:d.depth, aiRnd:d.rnd, aiGreedy:d.greedy||0, boost:d.boost||0,
-      diffId:'flip_gate', diffName:'番人', showHints:state.casual.showHints,
+      diffId:'flip_gate', diffName:'番人', showHints:false,
       playerStarts:true, isFlipGate:true
     });
     sub.flipside = 'play';
   }, () => { startLiveTimer(); if(game) maybeTriggerAI(game); });
 }
+// Flip モードは、先手・後手を選べない（常にランダム）
 function startFlip(flipId){
   const d = FLIP_DIFFS.find(x => x.id === flipId);
   if(!d || !state.flipside.flip.unlocked[d.id]) return;
-  if((state.casual.startMode || 'choice') === 'random'){ doStartFlip(d, Math.random() < 0.5); return; }
-  // 先手・後手のシートは、確定したときに pendingSheetData を見て対局を始める（isFlip で Flip を始める）
-  pendingSheetData = { diffId: d.id, difficulty: d, isFlip: true };
-  showCasualStartChoice(null);
+  doStartFlip(d, Math.random() < 0.5);
 }
 function doStartFlip(d, playerStarts){
   navigate(() => {
     game = makeGameSession('casual', {
       aiDepth:d.depth, aiRnd:d.rnd, aiGreedy:d.greedy||0, boost:d.boost||0,
-      diffId:'flip_' + d.id, diffName:d.name, showHints:state.casual.showHints,
+      diffId:'flip_' + d.id, diffName:d.name, showHints:false,
       playerStarts, isFlip:true, flipId:d.id
     });
     sub.flipside = 'play';
