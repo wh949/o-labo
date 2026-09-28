@@ -1007,6 +1007,143 @@ body.in-game main{ padding-top:max(10px, env(safe-area-inset-top, 0px)); }
   cursor:pointer; white-space:nowrap;
 }
 .mention:active{ opacity:.72; }
+
+/* ============================================================
+   O-LABO -FlipSide-：黒・青・紫のダークな見た目
+   端末のテーマ設定にかかわらず、FlipSide にいる間は必ずこの配色になる
+   ============================================================ */
+body.flipside{
+  --ink:#e8ebff; --ink-soft:#9aa3da;
+  --paper:#06070f; --paper-deep:#0c0f24; --panel:#0f1330;
+  --line:rgba(122,136,255,.20); --line-soft:rgba(122,136,255,.10);
+  --jade-deep:#9a86ff; --jade:#4560ff; --jade-light:#7b5cff;   /* 文字・ボタンの主色（暗い背景で読める明るさの紫〜青） */
+  --jade-mist:#141a45;
+  --sky:#3b7bff; --sky-soft:#101c4c;
+  --gold:#b79bff; --gold-soft:#2c2260;
+  --urushi:#9b3dff; --urushi-light:#c07bff;
+  --shadow-1:0 2px 0 rgba(0,0,0,.45), 0 10px 26px -12px rgba(90,100,255,.38);
+  --shadow-2:0 8px 0 rgba(20,14,70,.7), 0 18px 38px -14px rgba(130,90,255,.55);
+  color-scheme:dark;
+  color:var(--ink);
+  background:
+    radial-gradient(circle at 12% 6%, rgba(122,80,255,.26) 0%, transparent 44%),
+    radial-gradient(circle at 90% 2%, rgba(50,120,255,.22) 0%, transparent 42%),
+    radial-gradient(circle at 50% 100%, rgba(80,40,160,.22) 0%, transparent 55%),
+    var(--paper);
+}
+body.flipside .topbar{ background:linear-gradient(180deg, rgba(14,16,42,.96), rgba(6,7,15,.9)); border-bottom:1px solid var(--line); }
+body.flipside .bottom-tabs{ background:rgba(8,10,28,.94); border-top:1px solid var(--line); }
+body.flipside .tab-btn{ color:var(--ink-soft); }
+body.flipside .tab-btn.active{ color:#b8a6ff; background:rgba(122,92,255,.16); }
+/* 盤は濃い紫〜青（文字に使う色とは別に指定する） */
+body.flipside .board{ background:linear-gradient(155deg, #7b5cff, #4560ff 55%, #3a24a8); }
+body.flipside rt{ color:#b8c0ff; }
+body.flipside .cell{ background:rgba(2,3,20,.34); }
+body.flipside .cell::before{ box-shadow:inset 0 0 0 1px rgba(150,160,255,.14); }
+body.flipside .cell.hint::after{ background:rgba(170,150,255,.5); box-shadow:0 0 0 1px rgba(200,190,255,.25); }
+body.flipside .diff-item{ background:var(--panel); color:var(--ink); }
+body.flipside .toast{ background:#1a1d4a; color:#e8ebff; }
+
+.hero.fs-hero{
+  background:linear-gradient(150deg, #241266, #0a1140 62%, #04050d) !important;
+  box-shadow:var(--shadow-2); color:#e8ebff;
+}
+.hero.fs-hero::before, .hero.fs-hero::after{ opacity:.22; }
+.hero.fs-hero .hero-eyebrow{ color:#8fa0ff; letter-spacing:.24em; }
+.hero.fs-hero h2{ text-shadow:0 0 22px rgba(130,110,255,.55); }
+.hero.fs-hero p{ color:#c7cdf5; }
+
+.fs-card{
+  border:1px solid rgba(122,136,255,.22);
+  background:linear-gradient(180deg, rgba(20,24,64,.9), rgba(12,15,40,.95));
+}
+.fs-text{ margin:0 0 12px; line-height:1.9; font-size:14px; color:var(--ink); }
+.fs-note{ margin:0 0 14px; font-size:12px; line-height:1.7; color:var(--ink-soft); }
+.btn.fs-btn{
+  background:linear-gradient(135deg,#6a4dff,#3b6bff); color:#fff; border:0;
+  box-shadow:0 0 22px -4px rgba(110,90,255,.7); font-weight:800;
+}
+.btn.fs-ghost{ background:transparent; color:#b8a6ff; border:1px solid rgba(150,130,255,.5); }
+.fs-score{ display:flex; justify-content:center; align-items:baseline; gap:14px; font-size:44px; margin:6px 0 2px; }
+.fs-score b{ font-family:var(--font-title); }
+.fs-score span{ color:var(--ink-soft); font-size:26px; }
+.fs-margin{ font-size:13px; color:#a9b6ff; margin-bottom:10px; letter-spacing:.06em; }
+.fs-actions{ display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+.fs-actions .btn{ width:100%; }
+
+/* ============================================================
+   O-LABO -FlipSide-：黒・青・紫のダークな見た目
+   端末のライト／ダーク設定にかかわらず、FlipSide にいる間は必ずこの配色になる
+   ============================================================ */
+body.flipside{
+  --ink:#e6e9ff; --ink-soft:#98a1d8;
+  --paper:#06070e; --paper-deep:#0c0f22; --panel:#0f1329;
+  --line:rgba(122,136,255,.20); --line-soft:rgba(122,136,255,.10);
+  --jade-deep:#8b6bff; --jade:#6f7dff; --jade-light:#48a2ff; --jade-mist:#141a3d;
+  --sky:#3b7bff; --sky-soft:#101c47;
+  --gold:#b79bff; --gold-soft:#2b2158;
+  --urushi:#9b3dff; --urushi-light:#c07bff;
+  --shadow-1:0 2px 0 rgba(0,0,0,.45), 0 10px 24px -12px rgba(80,90,255,.38);
+  --shadow-2:0 8px 0 rgba(20,14,70,.6), 0 18px 36px -14px rgba(120,80,255,.55);
+  color-scheme:dark;
+  background:
+    radial-gradient(900px 560px at 14% -6%, rgba(120,70,255,.26), transparent 62%),
+    radial-gradient(900px 560px at 92% 0%, rgba(50,120,255,.22), transparent 60%),
+    radial-gradient(700px 500px at 50% 108%, rgba(90,40,200,.20), transparent 65%),
+    var(--paper);
+}
+body.flipside .bottom-tabs{
+  background:rgba(7,8,22,.94) !important; border-top:1px solid rgba(122,136,255,.26) !important;
+}
+body.flipside .tab-btn{ color:var(--ink-soft); }
+body.flipside .tab-btn.active{ color:#cfc2ff; background:rgba(139,107,255,.18); }
+body.flipside .hanko-seal{ background:#1a1450; color:#cfc2ff; box-shadow:0 0 0 2px rgba(139,107,255,.5); }
+
+/* 見出し・カード・ボタン */
+.fs-hero{
+  background:linear-gradient(150deg, #2a1a78 0%, #0f1f6b 52%, #05060f 100%) !important;
+  color:#f0f0ff; box-shadow:0 0 0 1px rgba(139,107,255,.35), 0 18px 36px -14px rgba(100,70,255,.6);
+}
+.fs-hero .hero-eyebrow{ color:#a99cff; letter-spacing:.32em; }
+.fs-hero h2{ text-shadow:0 0 18px rgba(139,107,255,.65); }
+.fs-hero p{ color:#c9ccf5; }
+.fs-card{ background:linear-gradient(180deg, rgba(20,24,64,.85), rgba(12,15,38,.92)); border:1px solid rgba(122,136,255,.28); }
+.fs-text{ margin:0 0 12px; font-size:13.5px; line-height:1.9; color:var(--ink); }
+.fs-note{ margin:0 0 14px; font-size:11.5px; line-height:1.7; color:var(--ink-soft); }
+.fs-btn{
+  display:block; width:100%; padding:13px 16px; border:0; border-radius:12px; cursor:pointer;
+  font-weight:800; font-size:15px; letter-spacing:.06em; color:#fff;
+  background:linear-gradient(135deg, #7b5cff, #3d7bff);
+  box-shadow:0 0 18px rgba(110,90,255,.45), 0 6px 0 rgba(20,14,80,.7);
+}
+.fs-btn:active{ transform:translateY(2px); box-shadow:0 0 12px rgba(110,90,255,.4), 0 3px 0 rgba(20,14,80,.7); }
+.fs-ghost{
+  display:block; width:100%; padding:12px 16px; border-radius:12px; cursor:pointer; margin-top:10px;
+  font-weight:700; font-size:14px; color:#cfc2ff; background:transparent; border:1px solid rgba(139,107,255,.5);
+}
+.fs-actions{ margin-top:6px; }
+.fs-score{ display:flex; justify-content:center; align-items:baseline; gap:14px; margin:6px 0 2px; }
+.fs-score b{ font-size:44px; font-family:var(--font-title); color:#e6e9ff; text-shadow:0 0 16px rgba(120,110,255,.6); }
+.fs-score span{ font-size:24px; color:var(--ink-soft); }
+.fs-margin{ font-size:13px; color:#a99cff; margin-bottom:12px; letter-spacing:.08em; }
+
+/* 難易度の一覧 */
+body.flipside .diff-item{ background:linear-gradient(180deg, rgba(20,24,64,.85), rgba(12,15,38,.92)); }
+body.flipside .diff-item.locked{ opacity:.7; }
+body.flipside .diff-name{ color:var(--ink); }
+
+/* 盤面：暗い紺と紫 */
+body.flipside .board{
+  background:linear-gradient(155deg, #1a1650 0%, #0a0d2c 55%, #1c0f44 100%) !important;
+  box-shadow:0 0 0 2px rgba(120,110,255,.38), 0 18px 40px -16px rgba(90,70,255,.6) !important;
+}
+body.flipside .cell{
+  background:rgba(96,110,255,.08) !important;
+  box-shadow:inset 0 0 0 1px rgba(140,150,255,.22) !important;
+}
+body.flipside .cell::before{ box-shadow:none !important; }
+body.flipside .cell.hint::after{ background:rgba(160,175,255,.55) !important; box-shadow:0 0 8px rgba(120,140,255,.6) !important; }
+body.flipside .turn-banner, body.flipside .score-chip{ background:linear-gradient(180deg, rgba(20,24,64,.85), rgba(12,15,38,.92)); }
 </style>
 </head>
 <body>
@@ -1236,6 +1373,107 @@ function calibrateDifficulties(){
 }
 calibrateDifficulties();
 
+/* ============================================================
+   O-LABO -FlipSide-（隠し要素）
+   ============================================================ */
+const FLIP_CLEAR_MARGIN = 10;   // 次の相手の解禁に必要な、石の数の差
+// Flip の相手の強さ（係数）。すべて、ゆるモードの最強（8.5）より強い。ここを変えれば調整できる
+const FLIP_BOOST_FROM = 9.6;    // いちばん弱い相手（Where am I?）
+const FLIP_BOOST_TO = 11.7;     // いちばん強い相手（脅威）
+const FLIP_DIFFS = [
+  {id:'where_am_i', name:'Where am I?', nameRuby:'ウェアアムアイ？', nameRubyLevel:2},
+  {id:'kotowari', name:'理', nameRuby:'ことわり', nameRubyLevel:0},
+  {id:'omote', name:'表', nameRuby:'おもて', nameRubyLevel:1},
+  {id:'ura', name:'裏', nameRuby:'うら', nameRubyLevel:1},
+  {id:'im_here', name:'I’m here', nameRuby:'アイムヒア', nameRubyLevel:3},
+  {id:'hyouri', name:'表裏一体の理を表す', nameRuby:'ひょうりいったいのことわりをあらわす', nameRubyLevel:2},
+  {id:'dots', name:'…'},
+  {id:'odosu_1', name:'脅', nameRuby:'おどす', nameRubyLevel:0},
+  {id:'odosu_2', name:'威', nameRuby:'おどす', nameRubyLevel:0},
+  {id:'kyoui', name:'脅威', nameRuby:'きょうい', nameRubyLevel:1},
+];
+// でたらめ・悪手は無し。読みの深さと係数を、弱い順に等間隔で上げていく
+function calibrateFlipDiffs(){
+  const n = Math.max(1, FLIP_DIFFS.length - 1);
+  FLIP_DIFFS.forEach((d, i) => {
+    d.rnd = 0; d.greedy = 0; d.depth = 12;
+    d.boost = Math.round((FLIP_BOOST_FROM + (FLIP_BOOST_TO - FLIP_BOOST_FROM) * (i / n)) * 100) / 100;
+  });
+}
+calibrateFlipDiffs();
+
+let currentFlipMode = 'flip';   // flip | library
+const FLIP_TABS = [
+  {id:'fs-flip', label:'Flip', icon:'🌑'},
+  {id:'fs-library', label:'ライブラリ', icon:'📚'},
+  {id:'home-sub', label:'O-LABOに戻る', icon:'🚪'},
+];
+const FLIPGATE_TABS = [ {id:'home-sub', label:'O-LABOに戻る', icon:'🚪'} ];
+// アドベンチャーの下部メニュー。FlipSide を解禁すると「工事中」が「FlipSide」に変わる
+function adventureTabs(){
+  const third = (state.flipside && state.flipside.unlocked)
+    ? {id:'flipside', label:'FlipSide', icon:'🌑'}
+    : {id:'variety', label:'工事中', icon:'🚧'};
+  return [
+    {id:'story', label:'ストーリー', icon:'📖'},
+    {id:'memory', label:'カフェ', icon:'☕️'},
+    third,
+    {id:'home-sub', label:'ホーム', icon:'🏠'},
+  ];
+}
+
+// 解禁の前提条件：ゆるモードの全難易度を解放している（勝利は不問）／特訓ランクがA+以上
+function casualAllUnlocked(){
+  return CASUAL_DIFFS.every(d => !d.locked || (state.casual.unlocked && state.casual.unlocked[d.id]));
+}
+function trainingRankAPlusOrAbove(){
+  return !!(state.training && state.training.rankIndex >= RANK_LADDER.indexOf('A+'));
+}
+function flipsideEligible(){ return casualAllUnlocked() && trainingRankAPlusOrAbove(); }
+
+// 解禁コマンド：アドベンチャーで カフェ→ストーリー→工事中→ストーリー と進み、
+// そのあと「工事中」を5回押す。ホームに戻ると最初から。時間制限はない
+const FS_PRELUDE = ['memory', 'story', 'variety', 'story'];
+const FS_GLITCH = [
+  {
+    "eyebrow": "W?RK I? PRO?RE?S",
+    "title": "工事中",
+    "body": "バラ繧ｨティ繝｢ー繝峨?v.2.5.0縺九ｉ廃止と縺りま翫∪縺。◆莠倶ｸｭ縺です。"
+  },
+  {
+    "eyebrow": "W??K ?? PRO??E?S",
+    "title": "蟾･事中",
+    "body": "繝舌Λ繧ｨ繝?ぅ繝｢繝ｼ繝峨?v.2.5.0縺九ｉ蟒?ｭ｢縺ｨ縺ｪ繧翫∪縺励◆縲ら樟蝨ｨ蟾･莠倶ｸｭ縺ｧ縺吶?"
+  },
+  {
+    "eyebrow": "W??? ?? PRO????S",
+    "title": "蟾･莠倶中",
+    "body": "繝舌Λ繧ｨ繝?ぅ繝｢繝ｼ繝峨?v.2.5.0縺九ｉ蟒?ｭ｢縺ｨ縺ｪ繧翫∪縺励◆縲ら樟蝨ｨ蟾･莠倶ｸｭ縺ｧ縺吶?"
+  },
+  {
+    "eyebrow": "???? ?? PRO?????",
+    "title": "蟾･莠倶ｸｭ",
+    "body": "繝舌Λ繧ｨ繝?ぅ繝｢繝ｼ繝峨?v.2.5.0縺九ｉ蟒?ｭ｢縺ｨ縺ｪ繧翫∪縺励◆縲ら樟蝨ｨ蟾･莠倶ｸｭ縺ｧ縺吶?"
+  }
+];
+let fsSeq = [];        // アドベンチャーの中で選んだタブの履歴
+let fsArmed = false;   // 手順（カフェ→ストーリー→工事中→ストーリー）が完成したか
+let fsTaps = 0;        // 手順の完成後に「工事中」を押した回数
+function resetFlipsideCommand(){ fsSeq = []; fsArmed = false; fsTaps = 0; }
+function trackFlipsideCommand(tabId){
+  // 前提を満たしていない・すでに解禁済みなら、何も起きない
+  if((state.flipside && state.flipside.unlocked) || !flipsideEligible()){ resetFlipsideCommand(); return; }
+  if(fsArmed){
+    if(tabId === 'variety'){ fsTaps++; return; }
+    resetFlipsideCommand();          // 途中で別のタブを押したら、最初からやり直し
+  }
+  fsSeq.push(tabId);
+  if(fsSeq.length > 8) fsSeq.shift();
+  const need = FS_PRELUDE.length;
+  const tail = fsSeq.slice(-need);
+  if(tail.length === need && tail.every((t, i) => t === FS_PRELUDE[i])){ fsArmed = true; fsTaps = 0; }
+}
+
 const VARIETY_RULES = [
   {id:'random', name:'ランダム', desc:'毎ターンランダムイベントが発生'},
   {id:'lucky_unlucky', name:'ラッキー/アンラッキー', desc:'特定のマスに効果がある'},
@@ -1305,6 +1543,7 @@ const DEFAULT_STATE = {
   },
   training:{ rankIndex:0, xNumber:0, history:[], winCount:0, startMode:'choice' },
   casual:{ unlocked:{ultra_easy:true,easy:true,normal:true,hard:true,ultra_hard:true,oni:false,ultra_oni:false,kami:false,ultra_kami:false,infinity:false,super_infinity:false,alpha:false,beta:false,gamma:false,super_alpha:false,super_beta:false,super_gamma:false,transcendent:false,zero:false,maru:false,equal:false,not_equal:false,approx:false,chou_transcendent:false,chou_zero:false,chou_maru:false,chou_equal:false,chou_not_equal:false,chou_approx:false,chou:false,null:false,z:false,reverse_a:false,you:false,no_cap:false,sup:false,verse:false,re_no_cap:false,re_sup:false,re_verse:false,exe:false,othello:false,othello_exe:false,exclamation:false,question:false,nijinoten:false,yagyoue:false,kunojiten_ue:false,kunojiten_shita:false,kunojiten:false,kunojiten_daku:false,kunojiten_handaku:false,ka:false,jun:false,nuta:false,tai:false,tou:false,taito:false,maou:false,eiyuu:false,chou_exe:false,chou_othello:false,chou_othello_exe:false,chou_exclamation:false,chou_question:false,chou_nijinoten:false,chou_yagyoue:false,chou_kunojiten_ue:false,chou_kunojiten_shita:false,chou_kunojiten:false,chou_kunojiten_daku:false,chou_kunojiten_handaku:false,chou_ka:false,chou_jun:false,chou_nuta:false,chou_tai:false,chou_tou:false,chou_taito:false,chou_maou:false,chou_eiyuu:false,modoru:false,otosu:false,a_kyuji:false,period:false,comma:false,chou_modoru:false,chou_otosu:false,chou_a_kyuji:false,chou_period:false,chou_comma:false,chou3_transcendent:false,modori_modoru:false,chou2_oni:false,chou2_kami:false,chou2_infinity:false,sakanoboru:false,nozomi:false,nozomu:false,yuru:false,olabo:false}, results:{}, history:[], showHints:true, startMode:'choice' },
+  flipside:{ unlocked:false, flip:{ unlocked:{where_am_i:true, kotowari:false, omote:false, ura:false, im_here:false, hyouri:false, dots:false, odosu_1:false, odosu_2:false, kyoui:false}, results:{}, history:[] } },
   battleHistory: [],
   online:{ lastName:'', history:[] },
   variety:{ history:[], customRules:{random:false, lucky_unlucky:false, warp:false, timer:false} },
@@ -1349,7 +1588,8 @@ function allHistories(){
     state.training && state.training.history,
     state.casual && state.casual.history,
     state.variety && state.variety.history,
-    state.online && state.online.history
+    state.online && state.online.history,
+    state.flipside && state.flipside.flip && state.flipside.flip.history
   ].filter(Array.isArray);
 }
 
@@ -1517,40 +1757,181 @@ function evaluate(board, aiPlayer){
     return pos*0.8 + corner*35 + mobility*5 + frontier*2 + stability*8 + discDiff*14;
   }
 }
+
+// ---- FlipSide 用の高速版（結果は従来と同じ。ゆるモードでは使わない）----
+const DR = DIRS.map(d => d[0]), DC = DIRS.map(d => d[1]);
+// 置ける場所の数だけを数える（石の反転リストは作らない）
+function countMoves(board, player){
+  const opp = player === 1 ? 2 : 1;
+  let cnt = 0;
+  for(let r = 0; r < 8; r++) for(let c = 0; c < 8; c++){
+    if(board[r][c] !== 0) continue;
+    for(let k = 0; k < 8; k++){
+      const dr = DR[k], dc = DC[k];
+      let rr = r + dr, cc = c + dc, n = 0;
+      while(rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && board[rr][cc] === opp){ rr += dr; cc += dc; n++; }
+      if(n && rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && board[rr][cc] === player){ cnt++; break; }
+    }
+  }
+  return cnt;
+}
+// validMoves と同じ手を、同じ順番・同じ反転の並びで返す（配列の作り直しを減らした版）
+function validMovesFast(board, player){
+  const opp = player === 1 ? 2 : 1;
+  const moves = [];
+  for(let r = 0; r < 8; r++) for(let c = 0; c < 8; c++){
+    if(board[r][c] !== 0) continue;
+    let all = null;
+    for(let k = 0; k < 8; k++){
+      const dr = DR[k], dc = DC[k];
+      let rr = r + dr, cc = c + dc, n = 0;
+      while(rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && board[rr][cc] === opp){ rr += dr; cc += dc; n++; }
+      if(n && rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && board[rr][cc] === player){
+        if(!all) all = [];
+        let fr = r + dr, fc = c + dc;
+        for(let t = 0; t < n; t++){ all.push([fr, fc]); fr += dr; fc += dc; }
+      }
+    }
+    if(all) moves.push({row:r, col:c, flips:all});
+  }
+  return moves;
+}
+function evaluateFast(board, aiPlayer){
+  const opp = aiPlayer===1?2:1;
+  const myN = countDiscs(board, aiPlayer);
+  const opN = countDiscs(board, opp);
+  const total = myN + opN;
+
+  // 終局：石差がすべて
+  if(total >= 64) return (myN-opN) * 1000;
+
+  // ゲームフェーズ（序盤/中盤/終盤）で重み付けを変える
+  const phase = total < 20 ? 'early' : (total < 52 ? 'mid' : 'late');
+
+  // 1. 位置評価
+  let pos = 0;
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    if(board[r][c]===aiPlayer) pos += WEIGHTS[r][c];
+    else if(board[r][c]===opp) pos -= WEIGHTS[r][c];
+  }
+
+  // 2. コーナー
+  let corner = 0;
+  for(const [r,c] of CORNERS){
+    if(board[r][c]===aiPlayer) corner += 25;
+    else if(board[r][c]===opp) corner -= 25;
+  }
+
+  // 3. 着手可能数（モビリティ）
+  const myMob = countMoves(board, aiPlayer);
+  const opMob = countMoves(board, opp);
+  let mobility = 0;
+  if(myMob + opMob !== 0) mobility = 100*(myMob-opMob)/(myMob+opMob);
+  // 相手を完全に詰ませたら大きなボーナス
+  if(opMob === 0 && myMob > 0) mobility += 150;
+  if(myMob === 0 && opMob > 0) mobility -= 150;
+
+  // 4. フロンティア（空きマスに接した石は少ない方が良い）
+  const myFr = frontierCount(board, aiPlayer);
+  const opFr = frontierCount(board, opp);
+  let frontier = 0;
+  if(myFr + opFr !== 0) frontier = 100*(opFr-myFr)/(myFr+opFr);
+
+  // 5. 確定石
+  const stability = (stableCount(board, aiPlayer) - stableCount(board, opp)) * 12;
+
+  // 6. 石差（終盤ほど重要）
+  let discDiff = 0;
+  if(myN + opN !== 0) discDiff = 100*(myN-opN)/(myN+opN);
+
+  if(phase === 'early'){
+    return pos*1.0 + corner*30 + mobility*12 + frontier*8 + stability*3 + discDiff*(-1);
+  } else if(phase === 'mid'){
+    return pos*1.2 + corner*32 + mobility*10 + frontier*6 + stability*5 + discDiff*1;
+  } else {
+    return pos*0.8 + corner*35 + mobility*5 + frontier*2 + stability*8 + discDiff*14;
+  }
+}
 // 手の並べ替え（良さそうな手から探索してαβ枝刈りの効率を上げる）
 function orderMoves(moves){
   return moves.slice().sort((a,b)=> WEIGHTS[b.row][b.col] - WEIGHTS[a.row][a.col]);
 }
 // 難易度ごとの思考力。boost が上がるほど加速度的に強くなる
+const CASUAL_MAX_BOOST = 8.5;   // ゆるモードの最強（O-LABO）の強さの係数
 function aiStrengthProfile(depth, boost){
   const b = boost || 0;
   if(!b){
     return { maxDepth: depth, timeMs: 150, exactEmpties: Math.min(10, depth + 4) };
   }
-  return {
+  // ゆるモード（係数8.5まで）は従来のまま：思考は最長1.8秒、終盤は30マスまで読み切る。
+  // それを超える FlipSide の相手だけ、この2つの上限を広げて、ゆる最強より強くする
+  const beyond = b > CASUAL_MAX_BOOST;
+  const prof = {
     maxDepth: Math.min(60, Math.round(4 + b * 1.7 + b * b * 0.35)),
-    timeMs: Math.min(1800, Math.round(26 * b * b)),
-    exactEmpties: Math.min(30, Math.round(6 + b * 1.5 + b * b * 0.28))
+    timeMs: Math.min(beyond ? 3600 : 1800, Math.round(26 * b * b)),
+    exactEmpties: Math.min(beyond ? 34 : 30, Math.round(6 + b * 1.5 + b * b * 0.28))
   };
+  // FlipSide の相手だけ、同じ局面を二度読まない仕組み（置換表）で同じ時間でも深く読む。
+  // ゆるモードには一切使わない（従来どおりの探索のまま）
+  if(beyond) prof.tt = true;
+  return prof;
+}
+// ---- FlipSide 用：置換表のための盤面ハッシュ（Zobrist）----
+const ZOB_A = [], ZOB_B = [];
+(function(){
+  let x = 2463534242;                       // 乱数の種は固定（毎回同じ表になる）
+  const next = () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return x >>> 0; };
+  for(let i = 0; i < 64; i++){ ZOB_A.push([0, next(), next()]); ZOB_B.push([0, next(), next()]); }
+})();
+function boardKey(board, cur){
+  let a = cur === 2 ? 0x9e3779b9 : 0, b = cur === 2 ? 0x85ebca6b : 0;
+  for(let r = 0; r < 8; r++){
+    const row = board[r];
+    for(let c = 0; c < 8; c++){
+      const v = row[c];
+      if(v){ const z = r * 8 + c; a ^= ZOB_A[z][v]; b ^= ZOB_B[z][v]; }
+    }
+  }
+  return (a >>> 0) * 2097152 + ((b >>> 0) >>> 11);   // 53ビットに収める
 }
 function minimax(board, depth, alpha, beta, maximizing, aiPlayer, curPlayer, ctx, pvMove){
+  const fast = !!(ctx && ctx.tt);
+  const ev = fast ? evaluateFast : evaluate;
   if(ctx){
     ctx.n++;
     if((ctx.n & 511) === 0 && Date.now() > ctx.deadline) ctx.timedOut = true;
-    if(ctx.timedOut) return {score: evaluate(board, aiPlayer)};
+    if(ctx.timedOut) return {score: ev(board, aiPlayer)};
   }
-  const moves = validMoves(board, curPlayer);
+  const moves = fast ? validMovesFast(board, curPlayer) : validMoves(board, curPlayer);
   if(moves.length === 0){
-    const oppMoves = validMoves(board, curPlayer===1?2:1);
-    if(oppMoves.length === 0) return {score: evaluate(board, aiPlayer)};
+    const oppMoves = fast ? validMovesFast(board, curPlayer===1?2:1) : validMoves(board, curPlayer===1?2:1);
+    if(oppMoves.length === 0) return {score: ev(board, aiPlayer)};
     const r = minimax(board, depth-1, alpha, beta, !maximizing, aiPlayer, curPlayer===1?2:1, ctx);
     return {score: r.score};
   }
-  if(depth <= 0) return {score: evaluate(board, aiPlayer)};
+  if(depth <= 0) return {score: ev(board, aiPlayer)};
+
+  // 置換表（FlipSide の相手だけ。ctx.tt が無ければ何もしない＝従来の探索そのまま）
+  const tt = ctx && ctx.tt;
+  let key = 0, ttMove = null;
+  const alpha0 = alpha, beta0 = beta;
+  if(tt){
+    key = boardKey(board, curPlayer);
+    const e = tt.get(key);
+    if(e){
+      ttMove = e.m;
+      if(e.d >= depth){
+        if(e.f === 0) return {score: e.s, move: e.m};                 // 正確な値
+        if(e.f === 1 && e.s >= beta) return {score: e.s, move: e.m};  // 下限がすでに窓を超えている
+        if(e.f === 2 && e.s <= alpha) return {score: e.s, move: e.m}; // 上限がすでに窓に届かない
+      }
+    }
+  }
 
   let ordered = orderMoves(moves);
-  if(pvMove){
-    const i = ordered.findIndex(m => m.row===pvMove.row && m.col===pvMove.col);
+  const firstMove = pvMove || ttMove;
+  if(firstMove){
+    const i = ordered.findIndex(m => m.row===firstMove.row && m.col===firstMove.col);
     if(i > 0) ordered.unshift(ordered.splice(i,1)[0]);
   }
 
@@ -1568,6 +1949,11 @@ function minimax(board, depth, alpha, beta, maximizing, aiPlayer, curPlayer, ctx
     }
     if(beta <= alpha) break;
     if(ctx && ctx.timedOut) break;
+  }
+  // 時間切れで途中になった結果は、正しくないので保存しない
+  if(tt && !ctx.timedOut){
+    if(tt.size > 500000) tt.clear();
+    tt.set(key, { d: depth, s: best, f: best <= alpha0 ? 2 : (best >= beta0 ? 1 : 0), m: bestMove });
   }
   return {score: best, move: bestMove};
 }
@@ -1596,6 +1982,7 @@ function aiChooseMove(board, aiPlayer, depth, rnd, boost, greedy){
   maxDepth = Math.max(1, Math.min(maxDepth, empties));
 
   const ctx = { deadline: Date.now() + prof.timeMs, timedOut: false, n: 0 };
+  if(prof.tt) ctx.tt = new Map();
   let best = orderMoves(moves)[0];
 
   // 反復深化：浅い読みから順に深めていき、時間が尽きた時点で打ち切る
@@ -1699,6 +2086,7 @@ function preloadEventSkin(ev, style){
 // いま盤に使う行事スキン（無ければ null）
 function currentEventSkin(){
   if(state.settings.eventSkins === false) return null;
+  if(isFlipGame()) return null;
   if(useStellaSkin()) return null;             // Stella は自分で選んだ見た目なので優先する
   const ev = activeEvent();
   if(!ev) return null;
@@ -1735,11 +2123,19 @@ const AUDIO_FILES = {
   se: [
     'flip1', 'flip2', 'flip3', 'flip4', 'flip5', 'flip6',   // 石を置く・ひっくり返す音（ランダムに1つ）
     'pass',           // パスしたとき
-    'online_emoji'    // オンラインで絵文字を送る・受け取ったとき
+    'online_emoji',   // オンラインで絵文字を送る・受け取ったとき
+    'decision'        // 選択・決定したとき全般（メニュー、モード選択、設定の切り替えなど）
   ]
 };
 // 石を置く・ひっくり返すたびに、6種類の中からランダムに1つ選ぶ
 const FLIP_SE_COUNT = 6;
+// 「決定」の音を鳴らさない操作（それぞれ専用の音がある操作や、細かい操作が続くもの）
+const NO_DECISION_SE = new Set([
+  'cell', 'player-pass',
+  'react-toggle', 'react-send', 'react-plus', 'react-input-cancel', 'react-send-custom',
+  'replay-first', 'replay-last', 'replay-prev', 'replay-next', 'replay-play', 'replay-seek',
+  'set-bgm-volume', 'set-se-volume', 'cafe-play', 'cafe-play-movie'
+]);
 function randomFlipSeName(){
   return 'flip' + (1 + Math.floor(Math.random() * FLIP_SE_COUNT));
 }
@@ -1760,7 +2156,7 @@ function flipAnimTotalMs(flipCount){
   const flipEnd = flipCount > 0 ? (flipCount - 1) * FLIP_STEP_MS + FLIP_DUR_MS : 0;
   return Math.max(DROP_DUR_MS, flipEnd) + 40;   // 気持ち余裕を持たせる
 }
-const sub={ battle:'home', training:'home', casual:'home', online:'lobby', library:'list', settings:'home', mypage:'main' };
+const sub={ battle:'home', training:'home', casual:'home', online:'lobby', library:'list', settings:'home', mypage:'main', flipside:'home' };
 let libTab='battle';
 let game=null; // active game session object
 
@@ -1789,6 +2185,7 @@ function render(){
   document.body.classList.toggle('furigana-on', state.settings.furigana);
   applyTheme(state.settings.theme);
   applyEventTheme();
+  applyFlipsideTheme();
   document.body.classList.toggle('in-game', isPlayingBoard());
   renderTabs();
   renderHanko();
@@ -1810,7 +2207,8 @@ function render(){
 function renderTabs(){
   let tabs;
   if(activeTab === 'basic') tabs = BASIC_TABS;
-  else if(activeTab === 'adventure') tabs = ADVENTURE_TABS;
+  else if(activeTab === 'adventure') tabs = adventureTabs();
+  else if(activeTab === 'flipside') tabs = (state.flipside && state.flipside.unlocked) ? FLIP_TABS : FLIPGATE_TABS;
   else if(activeTab === 'mypage') tabs = MYPAGE_TABS;
   else tabs = TAB_DEFS;
   
@@ -1820,6 +2218,7 @@ function renderTabs(){
     else if(activeTab === 'basic') isActive = (currentBasicMode === t.id);
     else if(activeTab === 'adventure') isActive = (currentAdventureMode === t.id);
     else if(activeTab === 'mypage') isActive = ('mp-' + currentMyPageMode === t.id);
+    else if(activeTab === 'flipside') isActive = ('fs-' + currentFlipMode === t.id);
     else isActive = (activeTab === t.id);
     
     return `<button class="tab-btn ${isActive?'active':''}" data-action="${t.id === 'home-sub' ? 'go-home' : 'tab'}" data-tab="${t.id}">
@@ -1855,6 +2254,10 @@ function viewFor(tab){
     if(currentAdventureMode==='variety') return viewVariety();
     if(currentAdventureMode==='story') return viewStory();
     if(currentAdventureMode==='memory') return viewMemory();
+  }
+  if(tab==='flipside'){
+    if(!(state.flipside && state.flipside.unlocked)) return viewFlipGate();
+    return currentFlipMode === 'library' ? viewFlipLibrary() : viewFlip();
   }
   if(tab==='mypage'){
     if(sub.mypage === 'other') return viewOtherPage();
@@ -2317,19 +2720,214 @@ function viewHome(){
   `;
 }
 
-// バラエティモードは v.2.5.0 で廃止。工事中の案内だけを表示する。
-// （過去に遊んだ記録はライブラリにそのまま残る）
+/* ============================================================
+   FlipSide の画面
+   ============================================================ */
+function flipHero(eyebrow, title, text){
+  return `
+    <div class="hero fs-hero">
+      <div class="hero-eyebrow">${eyebrow}</div>
+      <h2>${title}</h2>
+      ${text ? `<p>${text}</p>` : ''}
+    </div>`;
+}
+function flipBadge(id){
+  const mark = (state.flipside.flip.results && state.flipside.flip.results[id]) || 'none';
+  const map = {
+    none:    ['#4a4f7a', 'まだ挑戦していません'],
+    tried:   ['#3b82f6', `挑戦しましたが、差が${FLIP_CLEAR_MARGIN}個に届いていません`],
+    won:     ['#8b6bff', `${FLIP_CLEAR_MARGIN}個以上の差で勝利しました`],
+    perfect: ['#ec4899', '完封勝利しました']
+  };
+  const b = map[mark] || map.none;
+  return `<span class="diff-badge" style="background:${b[0]};" title="${b[1]}" aria-label="${b[1]}"></span>`;
+}
+function isFlipGame(){ return !!(game && game.opts && (game.opts.isFlip || game.opts.isFlipGate)); }
+
+// 入口：番人との一度きり（何度でも挑める）の対戦
+function viewFlipGate(){
+  if(sub.flipside === 'play' && isFlipGame()) return renderBoardScreen();
+  if(sub.flipside === 'result') return renderFlipResultScreen();
+  return `
+    ${flipHero('FLIP SIDE', '裏側', 'ここから先は、表からは見えない場所。')}
+    <div class="card fs-card">
+      <p class="fs-text">扉の前に、番人が立っている。<br>通るには、その番人に勝たなければならない。</p>
+      <p class="fs-note">番人の強さは、ゆるモードの「超英雄」と同じです。この戦いでは、パスも投了もできません。負けても、何度でも挑めます。</p>
+      <button class="btn fs-btn" data-action="flip-gate-start" style="width:100%;">挑む</button>
+    </div>`;
+}
+
+// Flip モード：相手を選ぶ
+function viewFlip(){
+  if(sub.flipside === 'play' && isFlipGame()) return renderBoardScreen();
+  if(sub.flipside === 'result') return renderFlipResultScreen();
+  const fl = state.flipside.flip;
+  let shownLocked = false;
+  const rows = FLIP_DIFFS.map(d => {
+    if(!fl.unlocked[d.id]){
+      if(shownLocked) return '';
+      shownLocked = true;
+      return `<div class="diff-item locked"><span class="diff-name">？？？</span><span class="lock-icon">🔒</span></div>`;
+    }
+    return `<button class="diff-item" data-action="flip-pick" data-id="${d.id}" style="width:100%; text-align:left; border:1px solid var(--line);">
+      ${flipBadge(d.id)}
+      <span class="diff-name">${difficultyDisplayName(d)}</span>
+      <span class="lock-icon">▶</span>
+    </button>`;
+  }).join('');
+  return `
+    ${flipHero('FLIP MODE', 'Flip', `相手より${FLIP_CLEAR_MARGIN}個以上多く石を取って勝つと、次の相手が現れます。パスも、投了もできません。`)}
+    <div class="card fs-card">
+      <div class="toggle-row">
+        <div class="trow-text"><b>次に置ける場所を表示</b><span>ゆるモードと共通の設定です</span></div>
+        <label class="switch"><input type="checkbox" ${state.casual.showHints ? 'checked' : ''} data-action="toggle-casual-hint"><span class="toggle-track"></span></label>
+      </div>
+    </div>
+    <div class="section-title">相手をえらぶ</div>
+    <div class="diff-list">${rows}</div>`;
+}
+
+// Flip のライブラリ（記録は通常のライブラリには出ない）
+function viewFlipLibrary(){
+  if(sub.library === 'replay' && replayState) return renderReplayScreen();
+  const list = historyListFor('flip');
+  const prev = libTab;
+  libTab = 'flip';
+  const items = list.length
+    ? list.map((e, i) => renderHistItem(e, i)).join('')
+    : `<div class="card fs-card"><p class="fs-text" style="text-align:center; margin:0;">まだ記録がありません。</p></div>`;
+  libTab = prev;
+  return `${flipHero('FLIP LIBRARY', 'ライブラリ', 'Flip の記録です。')}${items}`;
+}
+
+function renderFlipResultScreen(){
+  const g = game, r = g && g.lastResult;
+  if(!r){
+    return `<div class="card fs-card"><p class="fs-text">結果がありません。</p>
+      <button class="btn fs-btn" data-action="flip-back" style="width:100%;">戻る</button></div>`;
+  }
+  const isGate = !!(g.opts && g.opts.isFlipGate);
+  const win = r.result === 'win', draw = r.result === 'draw';
+  const margin = r.myScore - r.aiScore;
+  let note = '', buttons = '';
+  if(isGate){
+    if(win){
+      note = '番人は道を空けた。扉が、ゆっくりと開いていく。';
+      buttons = `<button class="btn fs-btn" data-action="flip-back">裏側へ入る</button>`;
+    } else {
+      note = 'まだ、扉は開かない。何度でも挑めます。';
+      buttons = `<button class="btn fs-btn" data-action="flip-again">もう一度挑む</button>
+                 <button class="btn fs-ghost" data-action="go-home">O-LABOに戻る</button>`;
+    }
+  } else {
+    if(r.cleared){
+      note = g.unlockedFlip ? `差が${FLIP_CLEAR_MARGIN}個以上に届きました。次の相手が現れました。` : `差が${FLIP_CLEAR_MARGIN}個以上に届きました。`;
+    } else if(win){
+      note = `勝利しましたが、差は${margin}個でした。次の相手が現れるには、あと${FLIP_CLEAR_MARGIN - margin}個の差が必要です。`;
+    } else if(draw){
+      note = '引き分けでした。';
+    } else {
+      note = '敗北しました。';
+    }
+    buttons = `<button class="btn fs-btn" data-action="flip-again">もう一度</button>
+               <button class="btn fs-ghost" data-action="flip-back">相手をえらぶ</button>`;
+  }
+  return `
+    ${flipHero(isGate ? 'THE GATE' : 'RESULT', win ? '勝利' : (draw ? '引き分け' : '敗北'), '')}
+    <div class="card fs-card" style="text-align:center;">
+      <div class="fs-score"><b>${r.myScore}</b><span>-</span><b>${r.aiScore}</b></div>
+      ${isGate ? '' : `<div class="fs-margin">差 ${margin >= 0 ? '+' : ''}${margin}</div>`}
+      <p class="fs-text">${note}</p>
+      <div class="fs-actions">${buttons}</div>
+    </div>`;
+}
+
+/* ---------- 対局の開始と終了 ---------- */
+function startFlipGate(){
+  const d = CASUAL_DIFFS.find(x => x.id === 'chou_eiyuu');
+  if(!d) return;
+  navigate(() => {
+    game = makeGameSession('casual', {
+      aiDepth:d.depth, aiRnd:d.rnd, aiGreedy:d.greedy||0, boost:d.boost||0,
+      diffId:'flip_gate', diffName:'番人', showHints:state.casual.showHints,
+      playerStarts:true, isFlipGate:true
+    });
+    sub.flipside = 'play';
+  }, () => { startLiveTimer(); if(game) maybeTriggerAI(game); });
+}
+function startFlip(flipId){
+  const d = FLIP_DIFFS.find(x => x.id === flipId);
+  if(!d || !state.flipside.flip.unlocked[d.id]) return;
+  if((state.casual.startMode || 'choice') === 'random'){ doStartFlip(d, Math.random() < 0.5); return; }
+  // 先手・後手のシートは、確定したときに pendingSheetData を見て対局を始める（isFlip で Flip を始める）
+  pendingSheetData = { diffId: d.id, difficulty: d, isFlip: true };
+  showCasualStartChoice(null);
+}
+function doStartFlip(d, playerStarts){
+  navigate(() => {
+    game = makeGameSession('casual', {
+      aiDepth:d.depth, aiRnd:d.rnd, aiGreedy:d.greedy||0, boost:d.boost||0,
+      diffId:'flip_' + d.id, diffName:d.name, showHints:state.casual.showHints,
+      playerStarts, isFlip:true, flipId:d.id
+    });
+    sub.flipside = 'play';
+  }, () => { startLiveTimer(); if(game) maybeTriggerAI(game); });
+}
+// Flip の対局が終わったとき。通常の成績（通算・ランク・ゆるモードの記録）には一切混ぜない
+function handleFlipEnd(g, entry, black, white){
+  entry.myScore = black; entry.aiScore = white;
+  entry.difficulty = g.opts.diffName;
+  entry.result = black > white ? 'win' : (white > black ? 'lose' : 'draw');
+  if(g.opts.isFlipGate){
+    if(entry.result === 'win') state.flipside.unlocked = true;
+  } else {
+    const fl = state.flipside.flip;
+    const margin = black - white;
+    const cleared = entry.result === 'win' && margin >= FLIP_CLEAR_MARGIN;
+    const perfect = entry.result === 'win' && white === 0;
+    entry.margin = margin; entry.cleared = cleared;
+    const mark = perfect ? 'perfect' : (cleared ? 'won' : 'tried');
+    const order = {none:0, tried:1, won:2, perfect:3};
+    const prev = fl.results[g.opts.flipId];
+    if(!prev || order[mark] > order[prev]) fl.results[g.opts.flipId] = mark;
+    if(cleared){
+      const idx = FLIP_DIFFS.findIndex(d => d.id === g.opts.flipId);
+      const next = FLIP_DIFFS[idx + 1];
+      if(next && !fl.unlocked[next.id]){ fl.unlocked[next.id] = true; g.unlockedFlip = true; }
+    }
+    fl.history.unshift(entry);
+  }
+  g.lastResult = entry;
+  sub.flipside = 'result';
+  saveState();
+}
+
+// バラエティモードは v.2.5.0 で廃止。工事中の案内を表示する。
+// 前提を満たした人が決まった手順を踏むと、ここが少しずつ壊れて「裏側」への入口になる
 function viewVariety(){
+  const stage = fsArmed ? Math.min(fsTaps, 5) : 0;
+  if(stage >= 5){
+    return `
+      <div class="hero fs-hero">
+        <div class="hero-eyebrow">FLIP SIDE</div>
+        <h2>裏側</h2>
+      </div>
+      <div class="card fs-card" style="text-align:center; padding:20px 16px;">
+        <button class="btn fs-btn" data-action="flip-enter-gate" style="width:100%;">裏側へ</button>
+      </div>`;
+  }
+  const gl = stage >= 1 ? FS_GLITCH[stage - 1] : null;
+  const eyebrow = gl ? escapeHtml(gl.eyebrow) : 'WORK IN PROGRESS';
+  const title = gl ? escapeHtml(gl.title) : '工事中';
+  const body = gl ? escapeHtml(gl.body) : 'バラエティモードはv.2.5.0から廃止となりました。<br>現在工事中です。';
   return `
     <div class="hero" style="background:linear-gradient(150deg, #b98a4a, #8a6329 78%);">
-      <div class="hero-eyebrow">WORK IN PROGRESS</div>
-      <h2>工事中</h2>
+      <div class="hero-eyebrow">${eyebrow}</div>
+      <h2>${title}</h2>
     </div>
     <div class="card" style="text-align:center; padding:20px 16px;">
       <div style="font-size:40px; margin-bottom:10px;">🚧</div>
-      <p style="margin:0; font-size:14px; line-height:1.8; color:var(--ink);">
-        バラエティモードはv.2.5.0から廃止となりました。<br>現在工事中です。
-      </p>
+      <p style="margin:0; font-size:14px; line-height:1.8; color:var(--ink);">${body}</p>
     </div>
   `;
 }
@@ -2429,7 +3027,7 @@ const CAFE_TABS = {
   story: { label:'STORY',  subs:['music','photo','movie'] }
 };
 const CAFE_SUB_LABEL = { music:'MUSIC', photo:'PHOTO', movie:'MOVIE' };
-let cafeOpened = false;      // 「覗いてみる」を押したか
+let cafeOpened = true;       // 開いたら直接入れる（開店準備中の入口は廃止）
 let cafeTab = 'olabo';
 let cafeSub = 'music';
 const CAFE_PLACEHOLDER_COUNT = 6;
@@ -2469,13 +3067,6 @@ function viewMemory(){
       <p>対局のあとにひと息つく場所です。店内に流れる曲を聴いたり、飾られたイラストを眺めながら、ゆっくりお過ごしください。</p>
     </div>`;
 
-  if(!cafeOpened){
-    return hero + `
-      <div class="card" style="background:#9E6B48 !important; text-align:center;">
-        <p style="color:#fff; margin:0 0 12px; font-weight:700;">開店準備中です。覗いてみますか？</p>
-        <button class="btn" data-action="cafe-open" style="width:100%; background:#fff; color:#6F4A2E; font-weight:800;">覗いてみる</button>
-      </div>`;
-  }
 
   const subs = CAFE_TABS[cafeTab].subs;
   if(!subs.includes(cafeSub)) cafeSub = subs[0];
@@ -2488,8 +3079,7 @@ function viewMemory(){
       <button class="cafe-tab ${cafeTab===k?'on':''}" data-action="cafe-tab" data-k="${k}">${v.label}</button>`).join('')}</div>
     <div class="cafe-tabs sub">${subs.map(k => `
       <button class="cafe-tab ${cafeSub===k?'on':''}" data-action="cafe-sub" data-k="${k}">${CAFE_SUB_LABEL[k]}</button>`).join('')}</div>
-    <div class="card cafe-body">${body}</div>
-    <p class="cafe-note">v.2.5.0 で「O-LABO」の中身が公開されます。</p>`;
+    <div class="card cafe-body">${body}</div>`;
 }
 function viewBattle(){
   if(game && game.mode==='battle' && sub.battle==='play') return renderBoardScreen();
@@ -2841,9 +3431,9 @@ async function scanBgmFolder(folder, prefix){
 
 // いまのゾーンで流す曲の候補（行事版があれば先に、通常版をその次に）を1つずつ選ぶ
 async function pickZoneBgm(zone){
-  const prefix = zone === 'home' ? 'ro' : 'vs';
+  const prefix = zone === 'home' ? 'ro' : (zone === 'flipside' ? 'fl' : 'vs');
   const normalNames = await scanBgmFolder(zone, prefix);
-  const ev = (state.settings.eventSkins !== false) ? activeEvent() : null;
+  const ev = (state.settings.eventSkins !== false && activeTab !== 'flipside') ? activeEvent() : null;
 
   const candidates = [];
   if(ev){
@@ -2867,7 +3457,8 @@ async function playZoneBGM(zone){
 // ゾーンが切り替わったときだけ曲を選び直す。force を渡すと、
 // ゾーンが同じでも改めて鳴らす（音声の許可が下りた直後などに使う）
 function updateBGM(force){
-  const zone = isPlayingBoard() ? 'battling' : 'home';
+  // FlipSide にいる間は、対局の開始・終了で曲を変えず、O-LABO 本編に戻るまで同じ曲を流す
+  const zone = (activeTab === 'flipside') ? 'flipside' : (isPlayingBoard() ? 'battling' : 'home');
   if(!force && zone === bgmZone) return;
   bgmZone = zone;
   playZoneBGM(zone);
@@ -3329,7 +3920,10 @@ function progressScore(st){
   const wins    = st.totalWins || 0;
   const stella  = (st.settings && st.settings.stellaUnlocked) ? 1 : 0;
   // 解禁数をいちばん重く見て、次に特訓ランク、最後に対局数で比べる
-  return unlocked*1e9 + rankIdx*1e7 + xNum*1e5 + stella*5e4 + rank*100 + wins*2 + games;
+  const fs = st.flipside || {};
+  const flipGate = fs.unlocked ? 1 : 0;
+  const flipUnl = fs.flip && fs.flip.unlocked ? Object.keys(fs.flip.unlocked).filter(k => fs.flip.unlocked[k]).length : 0;
+  return flipGate*2e11 + flipUnl*1e9 + unlocked*1e9 + rankIdx*1e7 + xNum*1e5 + stella*5e4 + rank*100 + wins*2 + games;
 }
 
 // 保存する形に整える（容量を抑えるため履歴を削る）
@@ -3561,6 +4155,9 @@ function isPlayingBoard(){
     if(m === 'casual' && stellaChallengeActive) return game.mode === 'casual';
     return game.mode === m && sub[m] === 'play';
   }
+  if(activeTab === 'flipside'){
+    return game.mode === 'casual' && sub.flipside === 'play' && isFlipGame();
+  }
   if(activeTab === 'adventure'){
     // バラエティモードは v.2.5.0 で廃止（工事中）のため、ここに来ることはない
     return currentAdventureMode === 'variety' && game.mode === 'variety' && sub.variety === 'play';
@@ -3575,6 +4172,22 @@ function currentPageEvent(){
   if(state.settings.eventSkins === false) return null;
   if(!EVENT_THEME_TABS.includes(activeTab)) return null;
   return activeEvent();   // 今は誕生日のみが match を返す
+}
+// FlipSide にいる間は、端末の設定にかかわらず必ず黒・青・紫のダークな見た目にし、ロゴも入れ替える
+function applyFlipsideTheme(){
+  const on = (activeTab === 'flipside');
+  document.body.classList.toggle('flipside', on);
+  const img = document.querySelector('.brand-logo');
+  const fb = document.querySelector('.brand-fallback');
+  if(!img || !fb) return;
+  const want = on ? 'db/img/fliplogo.png' : 'db/img/logo.png';
+  if(img.getAttribute('src') !== want){
+    img.classList.remove('is-failed');
+    img.setAttribute('src', want);
+    img.setAttribute('alt', on ? 'O-LABO -FlipSide-' : 'O-LABO');
+  }
+  const txt = on ? 'FlipSide' : 'O-LABO';
+  if(fb.textContent !== txt) fb.textContent = txt;
 }
 function applyEventTheme(){
   const ev = currentPageEvent();
@@ -3766,7 +4379,6 @@ async function publishStats(){
       casualUnlocked: unlocked,
       casualTotal: CASUAL_DIFFS.length,
       training: rankLabel(state.training.rankIndex, state.training.xNumber),
-      stella: !!state.settings.stellaUnlocked,
       updatedAt: Date.now()
     });
   }catch(err){ console.warn('戦績の公開に失敗:', err); }
@@ -5028,7 +5640,8 @@ function onlineAttachRoom(id){
       onlineState.oppUid = newOppUid;
       onlineState.oppIcon = '';
     }
-    const firstTime = onlineState.phase !== 'playing';
+    // 終局後（finished）に部屋の更新がもう一度届いても、対局を作り直さない
+    const firstTime = onlineState.phase !== 'playing' && onlineState.phase !== 'finished';
     onlineState.oppName = newOpp;
 
     if(firstTime){
@@ -5047,10 +5660,15 @@ function onlineAttachRoom(id){
       // 先に出すと、初対戦のときだけ既定の絵になってしまう。
       if(onlineState.mode === 'random'){
         (async ()=>{
+          const rid = onlineState.roomId;
           const icon = await fetchOpponentIcon(newOppUid);
           if(onlineState.oppUid !== newOppUid) return;   // 途中で相手が変わった
           onlineState.oppIcon = icon || '';
           await preloadIcon(icon, 1500);
+          // アイコンの読み込み中に対局が終わった・別の部屋に移った場合は出さない。
+          // 同じ部屋の演出は1回だけ
+          if(onlineState.phase !== 'playing' || onlineState.roomId !== rid || onlineState.matchShownFor === rid) return;
+          onlineState.matchShownFor = rid;
           showMatchFound(newOpp);
           render();
         })();
@@ -5357,12 +5975,69 @@ async function onlineSendMove(r, c){
   }
 }
 
+// オンライン対局の投了。負けになり、相手に伝わる
+function showOnlineResignConfirm(){
+  showSheet(`
+    <h3>${ruby('投了','とうりょう',1)}しますか？</h3>
+    <p>投了すると、あなたの負けとして対局が終わります。</p>
+    <div class="btn-row">
+      <button class="btn btn-ghost" data-action="close-sheet">キャンセル</button>
+      <button class="btn btn-danger" data-action="online-resign-confirm" style="border:1px solid var(--urushi);">投了する</button>
+    </div>
+  `);
+}
+async function onlineResign(){
+  if(!onlineRoomRef || !game || game.over || onlineState.phase !== 'playing') return;
+  try{
+    await onlineRoomRef.update({
+      status: 'finished',
+      resignedBy: onlineState.myColor,
+      updatedAt: Date.now()
+    });
+  }catch(err){
+    console.warn('投了に失敗:', err);
+    toast('投了できませんでした');
+  }
+}
+// 以前の不具合で二重に記録された試合を取り除く
+// （1分以内に、同じ相手・同じ結果・同じ石の数が続いたもの。あとから記録された側を捨てる）
+function dedupeOnlineHistory(){
+  const h = state.online && state.online.history;
+  if(!Array.isArray(h) || h.length < 2) return 0;
+  const out = [];
+  let removed = 0;
+  for(let i = h.length - 1; i >= 0; i--){
+    const e = h[i], prev = out[out.length - 1];
+    if(prev && prev.oppUid === e.oppUid && prev.oppName === e.oppName
+       && prev.myScore === e.myScore && prev.aiScore === e.aiScore
+       && prev.result === e.result && prev.myColor === e.myColor
+       && Math.abs((e.timestamp || 0) - (prev.timestamp || 0)) < 60000){
+      removed++;
+      continue;
+    }
+    out.push(e);
+  }
+  out.reverse();
+  state.online.history = out;
+  return removed;
+}
 function onlineFinish(room){
+  // 同じ試合を二重に記録しない（部屋の更新が続けて届いても、記録は1回だけ）
+  const rid = onlineState.roomId;
+  if(rid){
+    if(onlineState.recordedRoomId === rid) return;
+    onlineState.recordedRoomId = rid;
+  }
   const {black, white} = countStones(game.board);
   const mine = onlineState.myColor === 1 ? black : white;
   const theirs = onlineState.myColor === 1 ? white : black;
   let result;
-  if(room && room.abandonedBy){
+  if(room && room.resignedBy){
+    result = (room.resignedBy === onlineState.myColor) ? 'lose' : 'win';
+    onlineState.message = (room.resignedBy === onlineState.myColor)
+      ? '投了しました'
+      : '相手が投了しました。あなたの勝ちです';
+  } else if(room && room.abandonedBy){
     // 放置した側の負けにする
     result = (room.abandonedBy === onlineState.myColor) ? 'lose' : 'win';
     onlineState.message = (room.abandonedBy === onlineState.myColor)
@@ -5386,6 +6061,8 @@ function onlineFinish(room){
     myColor: onlineState.myColor,
     matchType: onlineState.mode || 'random',          // random / code / invite
     abandoned: !!(room && room.abandonedBy),
+    resigned: !!(room && room.resignedBy),
+    roomId: rid || '',
     moves: game.moveCount || 0,
     durationSec: Math.max(0, Math.floor((Date.now() - (game.startedAt || Date.now())) / 1000)),
     boardStates: Array.isArray(game.boardStates) ? game.boardStates.slice() : []
@@ -5823,6 +6500,7 @@ function turnColorMeta(g){
 //  ・解禁のための挑戦中は必ず使う
 //  ・解禁後は、ゆるモードでスキンに Stella を選んでいるとき
 function useStellaSkin(){
+  if(isFlipGame()) return false;
   if(stellaChallengeActive && game && game.mode==='casual') return true;
   return !!(game && game.mode==='casual'
             && state.settings.stellaUnlocked
@@ -5940,7 +6618,7 @@ function renderBoardScreen(){
   
   // パスボタンの表示判定
   const showPassBtn = state.settings.allowPass && !g.over && !g.thinking && !g.pendingFlips && 
-                      (g.mode==='battle' || g.current===1);
+                      (g.mode==='battle' || g.current===1) && !(g.opts && (g.opts.isFlip || g.opts.isFlipGate)) && g.mode!=='online';
   
   return `
     <div class="board-wrap">
@@ -5960,7 +6638,9 @@ function renderBoardScreen(){
     ${showPassBtn?`<div style="margin-top:10px;"><button class="btn btn-soft" data-action="player-pass">このターンをパスする</button></div>`:''}
     ${reactionButtonMarkup()}
     <div class="btn-row" style="margin-top:14px;">
-      ${g.mode==='online' ? '' : `<button class="btn btn-ghost" data-action="give-up">${ruby('投了','とうりょう',1)}してもどる</button>`}
+      ${g.mode==='online'
+        ? (g.over ? '' : `<button class="btn btn-ghost" data-action="online-resign">${ruby('投了','とうりょう',1)}する</button>`)
+        : ((g.opts && (g.opts.isFlip || g.opts.isFlipGate)) ? '' : `<button class="btn btn-ghost" data-action="give-up">${ruby('投了','とうりょう',1)}してもどる</button>`)}
       ${g.over?'<button class="btn btn-primary" data-action="see-result">結果を見る</button>':''}
     </div>
   `;
@@ -6153,7 +6833,7 @@ function maybeTriggerAI(g){
       const humanMoves = validMoves(g.board,1);
       if(humanMoves.length===0){ 
         endGame(g); 
-        sub[g.mode === 'training' ? 'training' : g.mode === 'casual' ? 'casual' : 'variety'] = 'result';
+        sub[resultSubKey(g)] = 'result';
         render(); 
         return; 
       }
@@ -6165,7 +6845,7 @@ function maybeTriggerAI(g){
       // 連続パス（両者がパス）で即終了
       if(g.passStreak >= 2){ 
         endGame(g); 
-        sub[g.mode === 'training' ? 'training' : g.mode === 'casual' ? 'casual' : 'variety'] = 'result';
+        sub[resultSubKey(g)] = 'result';
         render(); 
         return; 
       }
@@ -6190,7 +6870,7 @@ function maybeTriggerAI(g){
             g.statusNote = `<div class="pass-note">AIがパスしました（制限時間）</div>`;
             if(g.passStreak >= 2){
               endGame(g);
-              sub[g.mode === 'training' ? 'training' : g.mode === 'casual' ? 'casual' : 'variety'] = 'result';
+              sub[resultSubKey(g)] = 'result';
               render();
               return;
             }
@@ -6200,7 +6880,7 @@ function maybeTriggerAI(g){
             setTimeout(() => maybeTriggerAI(g), state.settings.animFlip ? flipAnimTotalMs(0) : 30);
             return;
           }
-          else { endGame(g); sub[g.mode === 'training' ? 'training' : g.mode === 'casual' ? 'casual' : 'variety'] = 'result'; render(); return; }
+          else { endGame(g); sub[resultSubKey(g)] = 'result'; render(); return; }
           render();
           startLiveTimer();
           return;
@@ -6223,7 +6903,7 @@ function maybeTriggerAI(g){
             setTimeout(() => maybeTriggerAI(g), state.settings.animFlip ? flipAnimTotalMs(mv.flips.length) : 30);
             return;
           }
-          else { endGame(g); sub[g.mode === 'training' ? 'training' : g.mode === 'casual' ? 'casual' : 'variety'] = 'result'; render(); return; }
+          else { endGame(g); sub[resultSubKey(g)] = 'result'; render(); return; }
         } else {
           // No move found - AI passes
           const humanMoves = validMoves(g.board,1);
@@ -6234,7 +6914,7 @@ function maybeTriggerAI(g){
             g.statusNote = `<div class="pass-note">AIがパスしました</div>`;
             if(g.passStreak >= 2){
               endGame(g);
-              sub[g.mode === 'training' ? 'training' : g.mode === 'casual' ? 'casual' : 'variety'] = 'result';
+              sub[resultSubKey(g)] = 'result';
               render();
               return;
             }
@@ -6244,7 +6924,7 @@ function maybeTriggerAI(g){
             setTimeout(() => maybeTriggerAI(g), state.settings.animFlip ? flipAnimTotalMs(0) : 30);
             return;
           }
-          else { endGame(g); sub[g.mode === 'training' ? 'training' : g.mode === 'casual' ? 'casual' : 'variety'] = 'result'; render(); return; }
+          else { endGame(g); sub[resultSubKey(g)] = 'result'; render(); return; }
         }
         render();
         startLiveTimer();
@@ -6260,6 +6940,11 @@ function maybeTriggerAI(g){
     render();
   }
 }
+// 対局が終わったとき、結果画面を出すための sub のキー
+function resultSubKey(g){
+  if(g.opts && (g.opts.isFlip || g.opts.isFlipGate)) return 'flipside';
+  return g.mode === 'training' ? 'training' : g.mode === 'casual' ? 'casual' : 'variety';
+}
 function endGame(g){
   g.over=true;
   stopLiveTimer();
@@ -6271,6 +6956,8 @@ function endGame(g){
     moves: g.moveCount,
     boardStates: g.boardStates,
   };
+  // FlipSide の対局は、通常の成績（通算・ランク・ゆるモードの記録）に混ぜない
+  if(g.opts && (g.opts.isFlip || g.opts.isFlipGate)){ handleFlipEnd(g, entry, black, white); return; }
   // 統計を更新
   state.totalGames = (state.totalGames || 0) + 1;
   if(g.mode==='battle'){
@@ -6425,6 +7112,7 @@ function historyListFor(scope){
   if(scope==='training') return (state.training && state.training.history) || [];
   if(scope==='casual')   return (state.casual && state.casual.history) || [];
   if(scope==='online')   return (state.online && state.online.history) || [];
+  if(scope==='flip')     return (state.flipside && state.flipside.flip && state.flipside.flip.history) || [];
   if(scope==='variety')  return (state.variety && state.variety.history) || [];
   return [];
 }
@@ -6492,7 +7180,9 @@ function renderHistItem(e,i){
     </div>`;
   }
   // ゆるモードとバラエティは同じ形で並べる（見出しとリプレイの対象だけ変える）
-  const title = libTab==='variety'
+  const title = libTab==='flip'
+    ? `Flip（${escapeHtml(e.difficulty||'')}）`
+    : libTab==='variety'
     ? `バラエティ（${escapeHtml(((VARIETY_RULES.find(r => r.id === e.presetName)) || {}).name || e.presetName || 'カスタム')}）`
     : `ゆる対局（${escapeHtml(e.difficulty||'')}）`;
   return `<div class="hist-item">
@@ -6503,7 +7193,7 @@ function renderHistItem(e,i){
       <span>${e.moves}手</span>
       <span class="result-pill ${e.result==='win'?'win':(e.result==='lose'?'lose':'draw')}">${e.result==='win'?'勝ち':e.result==='lose'?'負け':'分け'}</span>
     </div>
-    <button class="btn btn-soft" data-action="watch-replay" data-scope="${libTab==='variety'?'variety':'casual'}" data-idx="${i}">一手一手を再生する</button>
+    <button class="btn btn-soft" data-action="watch-replay" data-scope="${libTab==='flip'?'flip':(libTab==='variety'?'variety':'casual')}" data-idx="${i}">一手一手を再生する</button>
   </div>`;
 }
 function fmtDate(ts){
@@ -6641,8 +7331,7 @@ function statRowsMarkup(st){
     <div class="acc-row"><span class="acc-k">プレイヤーランク</span><span class="acc-v">${st.rank}</span></div>
     <div class="acc-row"><span class="acc-k">通算成績</span><span class="acc-v">${st.games}戦 ${st.wins}勝（${rate}%）</span></div>
     <div class="acc-row"><span class="acc-k">ゆるモード解禁</span><span class="acc-v">${st.casualUnlocked} / ${st.casualTotal}</span></div>
-    <div class="acc-row"><span class="acc-k">特訓ランク</span><span class="acc-v">${escapeHtml(st.training||'-')}</span></div>
-    <div class="acc-row"><span class="acc-k">Stella</span><span class="acc-v">${st.stella ? '解禁済み' : '未解禁'}</span></div>`;
+    <div class="acc-row"><span class="acc-k">特訓ランク</span><span class="acc-v">${escapeHtml(st.training||'-')}</span></div>`;
 }
 
 // 見出しの色。アイコンから取り出した色が分かっていればそれを使う
@@ -6696,7 +7385,6 @@ function viewMyPage(){
     rank: state.playerRank, games: state.totalGames, wins: state.totalWins,
     casualUnlocked: unlocked, casualTotal: CASUAL_DIFFS.length,
     training: rankLabel(state.training.rankIndex, state.training.xNumber),
-    stella: !!state.settings.stellaUnlocked
   };
 
   const reqRows = friendRequests.length ? friendRequests.map(r => `
@@ -7061,7 +7749,7 @@ function viewSettings(){
       <button class="btn btn-danger" data-action="delete-cache">キャッシュデータを${ruby('削除','さくじょ',2)}</button>
     </div>
     <div style="text-align:center; margin-top:20px; padding:10px; font-size:10px; color:var(--ink-soft);">
-      <span>ver. 2.5.0</span>
+      <span>ver. 2.6.0</span>
     </div>
     <input type="file" id="importFile" accept=".txt" style="display:none;">
   `;
@@ -7260,7 +7948,7 @@ function audioSaveSoon(){
 // 効果音の音量は、手を離したときに一度だけ試聴させる
 document.addEventListener('change', (e)=>{
   const el = e.target;
-  if(el && el.dataset && el.dataset.action === 'set-se-volume') playSE('pass');
+  if(el && el.dataset && el.dataset.action === 'set-se-volume') playSE('decision');
 }, true);
 
 document.addEventListener('click', (e)=>{
@@ -7268,10 +7956,14 @@ document.addEventListener('click', (e)=>{
     const el = e.target.closest('[data-action]');
     if(!el) return;
     const action = el.dataset.action;
+    // 選択・決定したときの音
+    if(!NO_DECISION_SE.has(action)) playSE('decision');
   switch(action){
     case 'tab':
       navigate(()=>{
         const tabId = el.dataset.tab;
+        // アドベンチャーの外へ出たら、隠しコマンドは最初から
+        if(tabId !== 'variety' && tabId !== 'story' && tabId !== 'memory') resetFlipsideCommand();
         if(tabId === 'battle' || tabId === 'training' || tabId === 'casual' || tabId === 'online'){
           // 挑戦中にタブで抜けた場合は、挑戦を終わらせてスキンも戻す
           if(stellaChallengeActive){ endStellaChallenge(); game = null; sub.casual = 'home'; }
@@ -7285,10 +7977,18 @@ document.addEventListener('click', (e)=>{
           sub.mypage = 'main';
           otherProfile = null;
           activeTab = 'mypage';
+        } else if(tabId === 'fs-flip' || tabId === 'fs-library'){
+          currentFlipMode = (tabId === 'fs-library') ? 'library' : 'flip';
+          if(tabId === 'fs-library') sub.library = 'list';
+          activeTab = 'flipside';
+        } else if(tabId === 'flipside'){
+          currentFlipMode = 'flip';
+          activeTab = 'flipside';
         } else if(tabId === 'variety' || tabId === 'story' || tabId === 'memory'){
           currentAdventureMode = tabId;
           activeTab = 'adventure';
           stellaCommandSequence = [];
+          trackFlipsideCommand(tabId);
         } else {
           if(tabId === 'library'){ sub.library='list'; }
           activeTab = tabId;
@@ -7298,6 +7998,7 @@ document.addEventListener('click', (e)=>{
       break;
     case 'go-home':
       stopQRScan(); friendAddMode = null; newsDetailFile = null;
+      resetFlipsideCommand();
       navigate(()=>{ activeTab = 'home'; });
       break;
     case 'react-toggle':
@@ -7312,7 +8013,6 @@ document.addEventListener('click', (e)=>{
       sendReaction(v.trim()); render();
       break;
     }
-    case 'cafe-open': cafeOpened = true; render(); break;
     case 'cafe-tab':
       cafeTab = el.dataset.k;
       if(!CAFE_TABS[cafeTab].subs.includes(cafeSub)) cafeSub = CAFE_TABS[cafeTab].subs[0];
@@ -7356,6 +8056,7 @@ document.addEventListener('click', (e)=>{
       navigate(()=>{ activeTab = 'basic'; currentBasicMode = 'battle'; });
       break;
     case 'go-adventure':
+      resetFlipsideCommand(); fsSeq = ['story'];
       navigate(()=>{ activeTab = 'adventure'; currentAdventureMode = 'story'; });
       break;
     case 'battle-flip':
@@ -7406,9 +8107,28 @@ document.addEventListener('click', (e)=>{
         }
       }
       break;
+    case 'online-resign':
+      if(game && game.mode==='online' && !game.over) showOnlineResignConfirm();
+      break;
+    case 'online-resign-confirm':
+      closeSheet(); onlineResign();
+      break;
+    case 'flip-enter-gate':
+      navigate(()=>{ activeTab = 'flipside'; currentFlipMode = 'flip'; sub.flipside = 'home'; game = null; });
+      break;
+    case 'flip-gate-start': startFlipGate(); break;
+    case 'flip-pick': startFlip(el.dataset.id); break;
+    case 'flip-again': {
+      const o = game && game.opts;
+      if(!o) break;
+      navigate(()=>{ game = makeGameSession('casual', o); sub.flipside = 'play'; },
+               ()=>{ startLiveTimer(); if(game) maybeTriggerAI(game); });
+      break;
+    }
+    case 'flip-back': navigate(()=>{ game = null; sub.flipside = 'home'; }); break;
     case 'give-up':
-      // オンライン対局では投了できない（相手を置き去りにしないため）
-      if(game && game.mode==='online') break;
+      // オンラインは専用の投了（online-resign）を使う。FlipSide の対局（番人戦も Flip も）は投了できない
+      if(game && (game.mode==='online' || (game.opts && (game.opts.isFlip || game.opts.isFlipGate)))) break;
       navigate(()=>{ if(game){ game=null; } sub[activeTab]='home'; });
       break;
     case 'see-result':
@@ -7487,7 +8207,7 @@ document.addEventListener('click', (e)=>{
     case 'toggle-se':
       state.settings.seEnabled = !(state.settings.seEnabled !== false);
       saveState();
-      if(state.settings.seEnabled) playSE('pass');
+      if(state.settings.seEnabled) playSE('decision');
       render();
       break;
     case 'online-join-code': {
@@ -7684,7 +8404,8 @@ document.addEventListener('click', (e)=>{
           doStartTraining(depth, isBlack);
         } else if(sheetType === 'casual' && pendingSheetData){
           const d = pendingSheetData.difficulty;
-          doStartCasual(d, isBlack);
+          if(pendingSheetData.isFlip) doStartFlip(d, isBlack);   // FlipSide の対局
+          else doStartCasual(d, isBlack);
           pendingSheetData = null;
         }
         pendingSheetCallback = null;
@@ -7745,6 +8466,7 @@ document.addEventListener('touchend', (e)=>{
 }, {passive:false});
 applyTheme(state.settings.theme);
 render();
+if(dedupeOnlineHistory() > 0) saveState();
 preloadAudioFiles();
 setupAudioUnlock();
 // アカウント状態と招待を受け取れるよう、開いた時点で接続する
