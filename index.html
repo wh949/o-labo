@@ -219,7 +219,7 @@ main{flex:1; padding:6px 16px 100px; overflow-x:hidden;}
 .switch input:checked + .toggle-track::after{transform:translateX(19px);}
 
 .btn{
-  display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:13px 20px; border-radius:12px;
+  display:flex; align-items:center; justify-content:center; gap:8px; padding:13px 20px; border-radius:12px;
   border:none; font-size:14px; font-weight:700; letter-spacing:.03em; width:100%; transition:transform .12s, filter .15s;
 }
 .btn:active{transform:scale(.97);}
@@ -504,6 +504,9 @@ html[data-theme="dark"] {
   main{padding:20px 40px 40px;}
   main > *{max-width:900px; margin-left:auto; margin-right:auto;}
   .board-wrap{max-width:620px; margin-left:auto; margin-right:auto;}
+  /* .cafe-tabs は margin:0 0 10px; で左右マージンを 0 に固定しているため、
+     詳細度を上げて上書きし、main > * の中央寄せが効くようにする */
+  main .cafe-tabs{margin-left:auto; margin-right:auto;}
 }
 
 
@@ -1534,8 +1537,13 @@ const DEFAULT_STATE = {
     showTimer:true,
     theme:'device',
     allowPass:true,
-    bgmEnabled:true, bgmVolume:50,   // 0〜100
+    bgmEnabled:true, bgmVolume:50,   // 0〜100（旧設定。ホーム/対局中に分ける前の値。移行のためだけに残す）
     seEnabled:true,  seVolume:70,
+    homeBgmEnabled:true, homeBgmVolume:50,     // ホーム・メニュー画面の BGM
+    homeSeEnabled:true,  homeSeVolume:70,      // ホーム・メニュー画面の 効果音
+    battleBgmEnabled:true, battleBgmVolume:50, // 対局中（FlipSide も含む）の BGM
+    battleSeEnabled:true,  battleSeVolume:70,  // 対局中（FlipSide も含む）の 効果音
+    volumeSplitMigrated:false,   // 旧設定を home/battle 両方へ一度だけコピーしたか
     stellaUnlocked:false,   // 解禁済みか（スキン選択に出るか）
     stellaCheckedV2:false,  // 旧方式の解禁を一度だけ解除するための印
     casualSkin:'default',   // 'default' | 'stella'
@@ -1560,7 +1568,13 @@ let state = loadState();
 function loadState(){
   try{
     const raw = localStorage.getItem('genseki_othello_save_v1');
-    if(!raw) return structuredClone(DEFAULT_STATE);
+    if(!raw){
+      // 新規ユーザーは最初から「ホーム／対局中」に分かれた新方式なので、移行済み扱いにしておく
+      // （そうしないと、初回保存後の次回読み込みで、旧設定の初期値による上書きが誤って走ってしまう）
+      const fresh = structuredClone(DEFAULT_STATE);
+      fresh.settings.volumeSplitMigrated = true;
+      return fresh;
+    }
     const parsed = JSON.parse(raw);
     const st = deepMerge(structuredClone(DEFAULT_STATE), parsed);
 
@@ -1570,6 +1584,19 @@ function loadState(){
       st.settings.stellaUnlocked = false;
       st.settings.casualSkin = 'default';
       st.settings.stellaCheckedV2 = true;
+    }
+    // 音量は以前「ホーム」「対局中」の区別が無かったため、
+    // 一度だけ旧設定の値を両方へコピーする（以降は個別に変えられる）
+    if(!st.settings.volumeSplitMigrated){
+      st.settings.homeBgmEnabled = st.settings.bgmEnabled;
+      st.settings.homeBgmVolume = st.settings.bgmVolume;
+      st.settings.homeSeEnabled = st.settings.seEnabled;
+      st.settings.homeSeVolume = st.settings.seVolume;
+      st.settings.battleBgmEnabled = st.settings.bgmEnabled;
+      st.settings.battleBgmVolume = st.settings.bgmVolume;
+      st.settings.battleSeEnabled = st.settings.seEnabled;
+      st.settings.battleSeVolume = st.settings.seVolume;
+      st.settings.volumeSplitMigrated = true;
     }
     return st;
   }catch(e){ return structuredClone(DEFAULT_STATE); }
@@ -2129,7 +2156,8 @@ const AUDIO_FILES = {
     'flip1', 'flip2', 'flip3', 'flip4', 'flip5', 'flip6',   // 石を置く・ひっくり返す音（ランダムに1つ）
     'pass',           // パスしたとき
     'online_emoji',   // オンラインで絵文字を送る・受け取ったとき
-    'decision'        // 選択・決定したとき全般（メニュー、モード選択、設定の切り替えなど）
+    'decision',       // 選択・決定したとき全般（メニュー、モード選択、設定の切り替えなど）
+    'flip_decision'   // FlipSide へ移動するとき・FlipSide の中での選択・決定
   ]
 };
 // 石を置く・ひっくり返すたびに、6種類の中からランダムに1つ選ぶ
@@ -2139,7 +2167,9 @@ const NO_DECISION_SE = new Set([
   'cell', 'player-pass',
   'react-toggle', 'react-send', 'react-plus', 'react-input-cancel', 'react-send-custom',
   'replay-first', 'replay-last', 'replay-prev', 'replay-next', 'replay-play', 'replay-seek',
-  'set-bgm-volume', 'set-se-volume', 'cafe-play', 'cafe-play-movie'
+  'set-home-bgm-volume', 'set-battle-bgm-volume', 'set-home-se-volume', 'set-battle-se-volume',
+  'toggle-home-se', 'toggle-battle-se',   // 試聴音を別に鳴らすので、決定音とは重ねない
+  'cafe-play', 'cafe-play-movie'
 ]);
 function randomFlipSeName(){
   return 'flip' + (1 + Math.floor(Math.random() * FLIP_SE_COUNT));
@@ -3184,15 +3214,6 @@ function viewTraining(){
     </div>
     ` : ''}
     <button class="btn btn-primary" data-action="training-start">特訓を始める</button>
-
-    <div class="section-title">セーブデータ</div>
-    <div class="card">
-      <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">特訓の記録は自動的に保存されます。txtファイルとして書き出し・読み込みもできます（〜20MB）。</p>
-      <div class="file-actions">
-        <button class="btn btn-ghost" data-action="export-save" data-scope="training">書き出す</button>
-        <button class="btn btn-ghost" data-action="import-save" data-scope="training">読み込む</button>
-      </div>
-    </div>
   `;
 }
 function startTraining(){
@@ -3453,24 +3474,53 @@ async function playZoneBGM(zone){
 }
 // ゾーンが切り替わったときだけ曲を選び直す。force を渡すと、
 // ゾーンが同じでも改めて鳴らす（音声の許可が下りた直後などに使う）
+let bgmInBattle = null;   // 直前に音量・オンオフの判定に使った「対局中かどうか」
 function updateBGM(force){
-  // FlipSide にいる間は、対局の開始・終了で曲を変えず、O-LABO 本編に戻るまで同じ曲を流す
-  const zone = (activeTab === 'flipside') ? 'flipside' : (isPlayingBoard() ? 'battling' : 'home');
-  if(!force && zone === bgmZone) return;
+  // FlipSide にいる間は、対局の開始・終了で曲を変えず、O-LABO 本編に戻るまで同じ曲を流す。
+  // 一方、音量・オンオフは「ホーム」「対局中」で別々の設定を見るため、
+  // 曲を選び直すべきか（ゾーンが変わった）と、音量だけ再適用すればよいか（対局中かどうかだけ変わった）を分けて扱う
+  const inBattle = isPlayingBoard();
+  const zone = (activeTab === 'flipside') ? 'flipside' : (inBattle ? 'battling' : 'home');
+  const zoneChanged = zone !== bgmZone;
+  const contextChanged = inBattle !== bgmInBattle;
+  if(!force && !zoneChanged && !contextChanged) return;
   bgmZone = zone;
-  playZoneBGM(zone);
+  bgmInBattle = inBattle;
+
+  if(!bgmEnabledNow()){
+    stopBGM(true);
+    audioState.desiredKey = null; audioState.desiredBGM = null;
+    return;
+  }
+  if(force || zoneChanged || !audioState.bgmNode){
+    playZoneBGM(zone);          // ゾーンが変わった（または鳴っていない）ので、曲を選び直す
+  } else {
+    applyBgmVolume();           // 曲はそのまま、音量だけ今のコンテキストに合わせる
+  }
 }
 
+// 「ホーム」（メニュー画面全般）か「対局中」（FlipSide の対局も含む）かで、
+// BGM・効果音のオンオフと音量をそれぞれ別に持てるようにしている
+function bgmEnabledNow(){
+  const st = state.settings || {};
+  return (isPlayingBoard() ? st.battleBgmEnabled : st.homeBgmEnabled) !== false;
+}
+function seEnabledNow(){
+  const st = state.settings || {};
+  return (isPlayingBoard() ? st.battleSeEnabled : st.homeSeEnabled) !== false;
+}
 // 設定から実際の音量（0〜1）を取り出す
 function bgmVolumeNow(){
+  if(!bgmEnabledNow()) return 0;
   const st = state.settings || {};
-  if(st.bgmEnabled === false) return 0;
-  return Math.max(0, Math.min(100, st.bgmVolume ?? 50)) / 100;
+  const vol = isPlayingBoard() ? st.battleBgmVolume : st.homeBgmVolume;
+  return Math.max(0, Math.min(100, vol ?? 50)) / 100;
 }
 function seVolumeNow(){
+  if(!seEnabledNow()) return 0;
   const st = state.settings || {};
-  if(st.seEnabled === false) return 0;
-  return Math.max(0, Math.min(100, st.seVolume ?? 70)) / 100;
+  const vol = isPlayingBoard() ? st.battleSeVolume : st.homeSeVolume;
+  return Math.max(0, Math.min(100, vol ?? 70)) / 100;
 }
 
 // 再生中のBGMの音量を、設定を変えた瞬間に反映する
@@ -3489,7 +3539,7 @@ async function playBGM(names, fadeIn=true){
   const key = list.join('|');
   audioState.desiredKey = key;              // 鳴らしたい曲を覚えておく
   audioState.desiredBGM = list[list.length-1];
-  if(state.settings.bgmEnabled === false) return;
+  if(!bgmEnabledNow()) return;
 
   const ctx = await initAudioContext();
   if(!ctx) return;
@@ -3542,7 +3592,7 @@ function stopBGM(fadeOut=false){
 }
 
 async function playSE(seName){
-  if(state.settings.seEnabled === false) return;
+  if(!seEnabledNow()) return;
   const ctx = await initAudioContext();
   if(!ctx || ctx.state === 'suspended') return;
 
@@ -3926,7 +3976,11 @@ function progressScore(st){
 // 保存する形に整える（容量を抑えるため履歴を削る）
 // 端末ごとに変えたい設定。クラウドには保存せず、この端末の localStorage にだけ残す
 // （同じアカウントでも、端末によって音量を変えたい場合があるため）
-const DEVICE_ONLY_SETTINGS = ['bgmEnabled', 'bgmVolume', 'seEnabled', 'seVolume'];
+const DEVICE_ONLY_SETTINGS = [
+  'bgmEnabled', 'bgmVolume', 'seEnabled', 'seVolume',   // 旧設定（移行用に残っているだけ）
+  'homeBgmEnabled', 'homeBgmVolume', 'homeSeEnabled', 'homeSeVolume',
+  'battleBgmEnabled', 'battleBgmVolume', 'battleSeEnabled', 'battleSeVolume'
+];
 function stripDeviceOnlySettings(settingsObj){
   if(!settingsObj) return settingsObj;
   const copy = Object.assign({}, settingsObj);
@@ -6349,14 +6403,7 @@ function viewCasual(){
     <div class="section-title">${ruby('難易度','なんいど',1)}をえらぶ</div>
     <div class="diff-list">${rows}</div>
 
-    <div class="section-title">セーブデータ</div>
-    <div class="card">
-      <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">解禁の状況は自動的に保存されます。txtファイルとして書き出し・読み込みもできます。</p>
-      <div class="file-actions">
-        <button class="btn btn-ghost" data-action="export-save" data-scope="casual">書き出す</button>
-        <button class="btn btn-ghost" data-action="import-save" data-scope="casual">読み込む</button>
-      </div>
-    </div>
+    <p style="font-size:10.5px; color:var(--ink-soft); text-align:center; margin:18px 0 0;">Othello, オセロは株式会社メガハウスの登録商標です。</p>
   `;
 }
 function startCasual(diffId){
@@ -7561,7 +7608,9 @@ function viewFriendsTab(){
 
   return `
     <div class="section-title">フレンドの追加</div>
-    <div class="card">${addBody}<input type="file" id="qrImageFile" accept="image/*" style="display:none;"></div>
+    <div class="card">${addBody}
+      <p style="font-size:10.5px; color:var(--ink-soft); text-align:center; margin:14px 0 0;">QRコードは株式会社デンソーウェーブの登録商標です。</p>
+    <input type="file" id="qrImageFile" accept="image/*" style="display:none;"></div>
 
     ${friendRequests.length ? `<div class="section-title">届いている申請（${friendRequests.length}件）</div>
     <div class="card">${friendRequests.map(r => `
@@ -7614,6 +7663,40 @@ function viewOtherPage(){
   `;
 }
 
+// 「ホーム」「対局中」それぞれの音声設定カードを作る（prefix: 'home' | 'battle'）
+function volumeCardMarkup(prefix, label){
+  const s = state.settings;
+  const bgmOn = s[prefix + 'BgmEnabled'] !== false;
+  const seOn = s[prefix + 'SeEnabled'] !== false;
+  const bgmVol = s[prefix + 'BgmVolume'] ?? 50;
+  const seVol = s[prefix + 'SeVolume'] ?? 70;
+  return `
+    <div class="section-title" style="font-size:13px; margin-top:14px;">${label}</div>
+    <div class="card">
+      <div class="toggle-row">
+        <div class="trow-text"><b>BGM</b><span>背景音楽を再生します</span></div>
+        <label class="switch"><input type="checkbox" ${bgmOn?'checked':''} data-action="toggle-${prefix}-bgm"><span class="toggle-track"></span></label>
+      </div>
+      ${bgmOn ? `
+      <div class="vol-row">
+        <span class="vol-label">音量</span>
+        <input type="range" class="vol-slider" id="${prefix}BgmVol" min="0" max="100" step="1"
+               value="${bgmVol}" data-action="set-${prefix}-bgm-volume">
+        <span class="vol-num" id="${prefix}BgmVolNum">${bgmVol}</span>
+      </div>` : ''}
+      <div class="toggle-row">
+        <div class="trow-text"><b>効果音</b><span>操作時の効果音を再生します</span></div>
+        <label class="switch"><input type="checkbox" ${seOn?'checked':''} data-action="toggle-${prefix}-se"><span class="toggle-track"></span></label>
+      </div>
+      ${seOn ? `
+      <div class="vol-row">
+        <span class="vol-label">音量</span>
+        <input type="range" class="vol-slider" id="${prefix}SeVol" min="0" max="100" step="1"
+               value="${seVol}" data-action="set-${prefix}-se-volume">
+        <span class="vol-num" id="${prefix}SeVolNum">${seVol}</span>
+      </div>` : ''}
+    </div>`;
+}
 function viewSettings(){
   if(sub.settings === 'mypage') return viewMyPage();
   if(sub.settings === 'otherpage') return viewOtherPage();
@@ -7694,31 +7777,9 @@ function viewSettings(){
     </div>
 
     <div class="section-title">音声</div>
-    <p style="margin:0 0 8px; font-size:11px; color:var(--ink-soft);">この端末だけの設定です。アカウントでログインしていても、ほかの端末には反映されません。</p>
-    <div class="card">
-      <div class="toggle-row">
-        <div class="trow-text"><b>BGM</b><span>背景音楽を再生します</span></div>
-        <label class="switch"><input type="checkbox" ${state.settings.bgmEnabled!==false?'checked':''} data-action="toggle-bgm"><span class="toggle-track"></span></label>
-      </div>
-      ${state.settings.bgmEnabled!==false ? `
-      <div class="vol-row">
-        <span class="vol-label">音量</span>
-        <input type="range" class="vol-slider" id="bgmVol" min="0" max="100" step="1"
-               value="${state.settings.bgmVolume ?? 50}" data-action="set-bgm-volume">
-        <span class="vol-num" id="bgmVolNum">${state.settings.bgmVolume ?? 50}</span>
-      </div>` : ''}
-      <div class="toggle-row">
-        <div class="trow-text"><b>効果音</b><span>操作時の効果音を再生します</span></div>
-        <label class="switch"><input type="checkbox" ${state.settings.seEnabled!==false?'checked':''} data-action="toggle-se"><span class="toggle-track"></span></label>
-      </div>
-      ${state.settings.seEnabled!==false ? `
-      <div class="vol-row">
-        <span class="vol-label">音量</span>
-        <input type="range" class="vol-slider" id="seVol" min="0" max="100" step="1"
-               value="${state.settings.seVolume ?? 70}" data-action="set-se-volume">
-        <span class="vol-num" id="seVolNum">${state.settings.seVolume ?? 70}</span>
-      </div>` : ''}
-    </div>
+    <p style="margin:0 0 8px; font-size:11px; color:var(--ink-soft);">この端末だけの設定です。アカウントでログインしていても、ほかの端末には反映されません。「ホーム」と「対局中」（FlipSide の対局も含む）で、それぞれ別に設定できます。</p>
+    ${volumeCardMarkup('home', 'ホーム')}
+    ${volumeCardMarkup('battle', '対局中')}
 
     <div class="section-title">対戦モードの設定</div>
     <div class="card">
@@ -7746,7 +7807,7 @@ function viewSettings(){
       <button class="btn btn-danger" data-action="delete-cache">キャッシュデータを${ruby('削除','さくじょ',2)}</button>
     </div>
     <div style="text-align:center; margin-top:20px; padding:10px; font-size:10px; color:var(--ink-soft);">
-      <span>ver. 2.6.0</span>
+      <span>ver. 2.6.1</span>
     </div>
     <input type="file" id="importFile" accept=".txt" style="display:none;">
   `;
@@ -7919,17 +7980,20 @@ document.addEventListener('input', (e)=>{
     if(n) n.textContent = el.value.length;
     return;
   }
-  if(act === 'set-bgm-volume'){
+  if(act === 'set-home-bgm-volume' || act === 'set-battle-bgm-volume'){
+    const prefix = act === 'set-home-bgm-volume' ? 'home' : 'battle';
     const v = Math.max(0, Math.min(100, parseInt(el.value, 10) || 0));
-    state.settings.bgmVolume = v;
-    const num = document.getElementById('bgmVolNum');
+    state.settings[prefix + 'BgmVolume'] = v;
+    const num = document.getElementById(prefix + 'BgmVolNum');
     if(num) num.textContent = v;
-    applyBgmVolume();          // 鳴らしたまま音量だけ変える
+    // 今まさにそのコンテキスト（ホーム／対局中）で鳴っている曲だけ、鳴らしたまま音量を変える
+    if((prefix === 'battle') === isPlayingBoard()) applyBgmVolume();
     audioSaveSoon();
-  } else if(act === 'set-se-volume'){
+  } else if(act === 'set-home-se-volume' || act === 'set-battle-se-volume'){
+    const prefix = act === 'set-home-se-volume' ? 'home' : 'battle';
     const v = Math.max(0, Math.min(100, parseInt(el.value, 10) || 0));
-    state.settings.seVolume = v;
-    const num = document.getElementById('seVolNum');
+    state.settings[prefix + 'SeVolume'] = v;
+    const num = document.getElementById(prefix + 'SeVolNum');
     if(num) num.textContent = v;
     audioSaveSoon();
   }
@@ -7942,10 +8006,29 @@ function audioSaveSoon(){
   audioSaveTimer = setTimeout(()=>{ saveState(); audioSaveTimer = null; }, 400);
 }
 
+// 設定画面から効果音を試聴するときは、今のコンテキスト（ホーム／対局中）に関わらず、
+// そのスライダー・トグルが表す方の音量を直接使って鳴らす
+async function previewSE(seName, volume01){
+  const ctx = await initAudioContext();
+  if(!ctx || ctx.state === 'suspended') return;
+  const buffer = await loadAudioFile('se', seName);
+  if(!buffer) return;
+  try{
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const gain = ctx.createGain();
+    gain.gain.value = volume01;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    source.start(0);
+  }catch(err){ console.warn('効果音の再生に失敗:', err); }
+}
 // 効果音の音量は、手を離したときに一度だけ試聴させる
 document.addEventListener('change', (e)=>{
   const el = e.target;
-  if(el && el.dataset && el.dataset.action === 'set-se-volume') playSE('decision');
+  const act = el && el.dataset && el.dataset.action;
+  if(act === 'set-home-se-volume') previewSE('decision', (state.settings.homeSeVolume ?? 70) / 100);
+  else if(act === 'set-battle-se-volume') previewSE('flip1', (state.settings.battleSeVolume ?? 70) / 100);
 }, true);
 
 document.addEventListener('click', (e)=>{
@@ -7953,8 +8036,12 @@ document.addEventListener('click', (e)=>{
     const el = e.target.closest('[data-action]');
     if(!el) return;
     const action = el.dataset.action;
-    // 選択・決定したときの音
-    if(!NO_DECISION_SE.has(action)) playSE('decision');
+    // 選択・決定したときの音。FlipSide へ向かう操作・FlipSide の中にいる間は専用の音を鳴らす
+    if(!NO_DECISION_SE.has(action)){
+      const enteringFlipside = action === 'flip-enter-gate'
+        || (action === 'tab' && ['fs-flip', 'fs-library', 'flipside'].includes(el.dataset.tab));
+      playSE((enteringFlipside || activeTab === 'flipside') ? 'flip_decision' : 'decision');
+    }
   switch(action){
     case 'tab':
       navigate(()=>{
@@ -8194,19 +8281,27 @@ document.addEventListener('click', (e)=>{
     case 'training-start-mode': state.training.startMode=el.dataset.v; saveState(); render(); break;
     case 'casual-start-mode': state.casual.startMode=el.dataset.v; saveState(); render(); break;
     case 'toggle-casual-hint': state.casual.showHints = !state.casual.showHints; saveState(); render(); break;
-    case 'toggle-bgm':
-      state.settings.bgmEnabled = !(state.settings.bgmEnabled !== false);
+    case 'toggle-home-bgm':
+    case 'toggle-battle-bgm': {
+      const prefix = action === 'toggle-home-bgm' ? 'home' : 'battle';
+      const key = prefix + 'BgmEnabled';
+      state.settings[key] = !(state.settings[key] !== false);
       saveState();
-      if(state.settings.bgmEnabled) updateBGM(true);
-      else stopBGM(true);
+      // 今そのコンテキスト（ホーム／対局中）にいるときだけ、実際の再生に反映する
+      if((prefix === 'battle') === isPlayingBoard()) updateBGM(true);
       render();
       break;
-    case 'toggle-se':
-      state.settings.seEnabled = !(state.settings.seEnabled !== false);
+    }
+    case 'toggle-home-se':
+    case 'toggle-battle-se': {
+      const prefix = action === 'toggle-home-se' ? 'home' : 'battle';
+      const key = prefix + 'SeEnabled';
+      state.settings[key] = !(state.settings[key] !== false);
       saveState();
-      if(state.settings.seEnabled) playSE('decision');
+      if(state.settings[key]) previewSE(prefix === 'home' ? 'decision' : 'flip1', (state.settings[prefix + 'SeVolume'] ?? 70) / 100);
       render();
       break;
+    }
     case 'online-join-code': {
       const nameEl = document.getElementById('onlineName');
       const codeEl = document.getElementById('onlineCode');
