@@ -1396,9 +1396,14 @@ const FLIP_DIFFS = [
   {id:'im_here', name:'I’m here', nameRuby:'アイムヒア', nameRubyLevel:3},
   {id:'hyouri', name:'表裏一体の理を表す', nameRuby:'ひょうりいったいのことわりをあらわす', nameRubyLevel:2},
   {id:'dots', name:'…'},
-  {id:'odosu_1', name:'脅', nameRuby:'おどす', nameRubyLevel:0},
+  {id:'odosu_1', name:'脅', nameRuby:'おどし', nameRubyLevel:0},
   {id:'odosu_2', name:'威', nameRuby:'おどす', nameRubyLevel:0},
   {id:'kyoui', name:'脅威', nameRuby:'きょうい', nameRubyLevel:1},
+  {id:'jouki', name:'常軌を逸する', nameRuby:'じょうきをいっする', nameRubyLevel:2},
+  {id:'akatsuki', name:'暁', nameRuby:'あかつき', nameRubyLevel:0},
+  {id:'wave', name:'〜'},
+  {id:'ware', name:'我', nameRuby:'われ', nameRubyLevel:0},
+  {id:'fugaku', name:'富嶽', nameRuby:'ふがく', nameRubyLevel:0},
 ];
 // でたらめ・悪手は無し。読みの深さと係数を、弱い順に等間隔で上げていく
 function calibrateFlipDiffs(){
@@ -1556,7 +1561,7 @@ const DEFAULT_STATE = {
   },
   training:{ rankIndex:0, xNumber:0, history:[], winCount:0, startMode:'choice' },
   casual:{ unlocked:{ultra_easy:true,easy:true,normal:true,hard:true,ultra_hard:true,oni:false,ultra_oni:false,kami:false,ultra_kami:false,infinity:false,super_infinity:false,alpha:false,beta:false,gamma:false,super_alpha:false,super_beta:false,super_gamma:false,transcendent:false,zero:false,maru:false,equal:false,not_equal:false,approx:false,chou_transcendent:false,chou_zero:false,chou_maru:false,chou_equal:false,chou_not_equal:false,chou_approx:false,chou:false,null:false,z:false,reverse_a:false,you:false,no_cap:false,sup:false,verse:false,re_no_cap:false,re_sup:false,re_verse:false,exe:false,othello:false,othello_exe:false,exclamation:false,question:false,nijinoten:false,yagyoue:false,kunojiten_ue:false,kunojiten_shita:false,kunojiten:false,kunojiten_daku:false,kunojiten_handaku:false,ka:false,jun:false,nuta:false,tai:false,tou:false,taito:false,maou:false,eiyuu:false,chou_exe:false,chou_othello:false,chou_othello_exe:false,chou_exclamation:false,chou_question:false,chou_nijinoten:false,chou_yagyoue:false,chou_kunojiten_ue:false,chou_kunojiten_shita:false,chou_kunojiten:false,chou_kunojiten_daku:false,chou_kunojiten_handaku:false,chou_ka:false,chou_jun:false,chou_nuta:false,chou_tai:false,chou_tou:false,chou_taito:false,chou_maou:false,chou_eiyuu:false,modoru:false,otosu:false,a_kyuji:false,period:false,comma:false,chou_modoru:false,chou_otosu:false,chou_a_kyuji:false,chou_period:false,chou_comma:false,chou3_transcendent:false,modori_modoru:false,chou2_oni:false,chou2_kami:false,chou2_infinity:false,sakanoboru:false,nozomi:false,nozomu:false,yuru:false,olabo:false}, results:{}, history:[], showHints:true, startMode:'choice' },
-  flipside:{ unlocked:false, flip:{ unlocked:{where_am_i:true, kotowari:false, omote:false, ura:false, im_here:false, hyouri:false, dots:false, odosu_1:false, odosu_2:false, kyoui:false}, results:{}, history:[] } },
+  flipside:{ unlocked:false, flip:{ unlocked:{where_am_i:true, kotowari:false, omote:false, ura:false, im_here:false, hyouri:false, dots:false, odosu_1:false, odosu_2:false, kyoui:false, jouki:false, akatsuki:false, wave:false, ware:false, fugaku:false}, results:{}, history:[] } },
   battleHistory: [],
   online:{ lastName:'', history:[] },
   variety:{ history:[], customRules:{random:false, lucky_unlucky:false, warp:false, timer:false} },
@@ -3030,7 +3035,7 @@ function viewStory(){
       <p>物語を進めながら、様々なキャラクターとオセロで対局します。</p>
     </div>
     <div style="background:#FF9800 !important; border:1px solid var(--line); border-radius:var(--radius-md); box-shadow:var(--shadow-1); padding:16px; margin-bottom:12px;">
-      <p style="color:#fff; text-align:center; margin:0; line-height:1.8;">v.3.0.0から、英雄と魔王、<br>まったく正反対な二人の、<br>ストーリーが始まる──</p>
+      <p style="color:#fff; text-align:center; margin:0; line-height:1.8;">v.5.0.0から、英雄と魔王、<br>まったく正反対な二人の、<br>ストーリーが始まる──</p>
     </div>
   `;
 }
@@ -3086,27 +3091,22 @@ function cafeMovieList(){
     </button>`).join('')}</div>`;
 }
 
+// カフェは大型刷新（マスターと話す・音楽に耳を澄ます・思い出にひたる）の準備中のため、
+// v.2.7.0 まで封鎖しておく。以前の MUSIC/PHOTO/MOVIE タブの実装はそのまま残してあるので、
+// 刷新時に必要な部分だけ使い回せる
 function viewMemory(){
-  const hero = `
+  return `
     <div class="hero" style="background:linear-gradient(150deg, #A9764F, #6F4A2E 78%);">
       <div class="hero-eyebrow">CAFE</div>
       <h2>カフェ</h2>
-      <p>対局のあとにひと息つく場所です。店内に流れる曲を聴いたり、飾られたイラストを眺めながら、ゆっくりお過ごしください。</p>
-    </div>`;
-
-
-  const subs = CAFE_TABS[cafeTab].subs;
-  if(!subs.includes(cafeSub)) cafeSub = subs[0];
-  const body = cafeSub === 'music' ? cafeMusicList()
-             : cafeSub === 'photo' ? cafePhotoGrid()
-             : cafeMovieList();
-
-  return hero + `
-    <div class="cafe-tabs">${Object.entries(CAFE_TABS).map(([k,v]) => `
-      <button class="cafe-tab ${cafeTab===k?'on':''}" data-action="cafe-tab" data-k="${k}">${v.label}</button>`).join('')}</div>
-    <div class="cafe-tabs sub">${subs.map(k => `
-      <button class="cafe-tab ${cafeSub===k?'on':''}" data-action="cafe-sub" data-k="${k}">${CAFE_SUB_LABEL[k]}</button>`).join('')}</div>
-    <div class="card cafe-body">${body}</div>`;
+    </div>
+    <div class="card" style="text-align:center; padding:20px 16px;">
+      <div style="font-size:40px; margin-bottom:10px;">🚧</div>
+      <p style="margin:0; font-size:14px; line-height:1.8; color:var(--ink);">
+        カフェは現在、改装のため準備中です。<br>生まれ変わって、また皆さんをお待ちしています。
+      </p>
+    </div>
+  `;
 }
 function viewBattle(){
   if(game && game.mode==='battle' && sub.battle==='play') return renderBoardScreen();
@@ -3973,6 +3973,45 @@ function progressScore(st){
   return flipGate*2e11 + flipUnl*1e9 + unlocked*1e9 + rankIdx*1e7 + xNum*1e5 + stella*5e4 + rank*100 + wins*2 + games;
 }
 
+// 進捗を人が読める形でまとめる（記録の選択画面に出すため）
+function progressSummary(st){
+  if(!st) return null;
+  const unlocked = st.casual && st.casual.unlocked
+    ? Object.keys(st.casual.unlocked).filter(k => st.casual.unlocked[k]).length : 0;
+  const rankIdx = (st.training && st.training.rankIndex) || 0;
+  const games = st.totalGames || 0;
+  const wins = st.totalWins || 0;
+  const fs = st.flipside || {};
+  const flipGate = !!fs.unlocked;
+  const flipUnl = fs.flip && fs.flip.unlocked ? Object.keys(fs.flip.unlocked).filter(k => fs.flip.unlocked[k]).length : 0;
+  return { unlocked, rankIdx, games, wins, flipGate, flipUnl };
+}
+function progressSummaryText(sum){
+  if(!sum) return 'まだ記録がありません';
+  const parts = [`ゆるモード解禁 ${sum.unlocked}/100`, `特訓ランク ${RANK_LADDER[sum.rankIdx] || RANK_LADDER[0]}`, `通算 ${sum.games}戦${sum.wins}勝`];
+  if(sum.flipGate) parts.push('FlipSide解禁済み');
+  return parts.join('・');
+}
+// 2つの進捗に「選んでもらうべき」ほどの大きな差があるかどうか
+function progressDiffersALot(a, b){
+  if(!a || !b) return false;
+  if(Math.abs(a.unlocked - b.unlocked) >= 10) return true;   // ゆるモード解禁数が10個以上違う
+  if(Math.abs(a.rankIdx - b.rankIdx) >= 3) return true;       // 特訓ランクが3段階以上違う
+  if(a.flipGate !== b.flipGate) return true;                  // FlipSideの解禁状態が違う
+  if(Math.abs(a.flipUnl - b.flipUnl) >= 3) return true;        // Flipモードの解禁数が3個以上違う
+  if(Math.abs(a.games - b.games) >= 100) return true;          // 通算対局数が100以上違う
+  return false;
+}
+// クラウドの記録を、この端末に適用する（端末ごとの音量設定は保ったまま）
+function applyCloudSave(cloud){
+  const myDeviceSettings = {};
+  for(const k of DEVICE_ONLY_SETTINGS) myDeviceSettings[k] = state.settings[k];
+  state = deepMerge(structuredClone(DEFAULT_STATE), cloud.data);
+  Object.assign(state.settings, myDeviceSettings);
+  trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
+  saveState();
+}
+
 // 保存する形に整える（容量を抑えるため履歴を削る）
 // 端末ごとに変えたい設定。クラウドには保存せず、この端末の localStorage にだけ残す
 // （同じアカウントでも、端末によって音量を変えたい場合があるため）
@@ -4014,33 +4053,60 @@ function cloudSaveSoon(){
 }
 
 // ログイン直後：端末とクラウドを比べ、進んでいるほうを使う
+let pendingSyncCloud = null;   // 選択待ちのクラウドデータ（差が大きいときだけ使う）
 async function syncAfterLogin(){
   if(!fbDb || !isSignedIn()) return;
   try{
     const snap = await fbDb.ref('saves/' + fbUid).once('value');
     const cloud = snap.val();
-    const localScore = progressScore(state);
-    const cloudScore = cloud ? (cloud.progress ?? progressScore(cloud.data)) : -1;
 
-    if(cloud && cloud.data && cloudScore > localScore){
-      // クラウドのほうが進んでいる。ただし音量など端末ごとの設定はこの端末の値を保つ
-      const myDeviceSettings = {};
-      for(const k of DEVICE_ONLY_SETTINGS) myDeviceSettings[k] = state.settings[k];
-      state = deepMerge(structuredClone(DEFAULT_STATE), cloud.data);
-      Object.assign(state.settings, myDeviceSettings);
-      trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
-      saveState();
+    if(!cloud || !cloud.data){
+      // クラウドに記録がまだ無い（初めてのログイン）→ この端末の記録を保存するだけ
+      await cloudSaveNow();
+      await ensureUserRecord();
+      return;
+    }
+
+    const localSummary = progressSummary(state);
+    const cloudSummary = progressSummary(cloud.data);
+
+    if(progressDiffersALot(localSummary, cloudSummary)){
+      // 差が大きいので、自動では決めずに選んでもらう
+      pendingSyncCloud = cloud;
+      showSaveConflictChoice(localSummary, cloudSummary);
+      await ensureUserRecord();
+      return;
+    }
+
+    const localScore = progressScore(state);
+    const cloudScore = cloud.progress ?? progressScore(cloud.data);
+    if(cloudScore > localScore){
+      applyCloudSave(cloud);
       toast('クラウドの記録を読み込みました');
     } else {
-      // 端末のほうが進んでいる（または初回）
       await cloudSaveNow();
-      if(cloud) toast('この端末の記録をクラウドに保存しました');
+      toast('この端末の記録をクラウドに保存しました');
     }
     await ensureUserRecord();
   }catch(err){
     console.warn('同期に失敗:', err);
     toast('クラウドとの同期に失敗しました');
   }
+}
+// デバイスとクラウドの記録に大きな差があるとき、どちらを使うか選んでもらう
+function showSaveConflictChoice(localSummary, cloudSummary){
+  showSheet(`
+    <h3>記録に大きな差があります</h3>
+    <p>この端末とアカウントの記録が、大きく違っています。別の端末で遊んだ記録かもしれません。どちらを使いますか？</p>
+    <div style="margin:4px 0 14px; font-size:12.5px; color:var(--ink-soft); line-height:1.8;">
+      <div><b>この端末：</b>${escapeHtml(progressSummaryText(localSummary))}</div>
+      <div><b>アカウント：</b>${escapeHtml(progressSummaryText(cloudSummary))}</div>
+    </div>
+    <div class="btn-row" style="flex-direction:column; gap:8px;">
+      <button class="btn btn-accent" data-action="save-conflict-use-cloud" style="width:100%;">アカウントの記録を使う</button>
+      <button class="btn btn-ghost" data-action="save-conflict-use-local" style="width:100%;">この端末の記録を使う</button>
+    </div>
+  `);
 }
 
 /* ============================================================
@@ -7777,7 +7843,7 @@ function viewSettings(){
     </div>
 
     <div class="section-title">音声</div>
-    <p style="margin:0 0 8px; font-size:11px; color:var(--ink-soft);">この端末だけの設定です。アカウントでログインしていても、ほかの端末には反映されません。「ホーム」と「対局中」（FlipSide の対局も含む）で、それぞれ別に設定できます。</p>
+    <p style="margin:0 0 8px; font-size:11px; color:var(--ink-soft);">この端末だけの設定です。アカウントでログインしていても、ほかの端末には反映されません。「ホーム」と「対局中」で、それぞれ別に設定できます。</p>
     ${volumeCardMarkup('home', 'ホーム')}
     ${volumeCardMarkup('battle', '対局中')}
 
@@ -7807,7 +7873,7 @@ function viewSettings(){
       <button class="btn btn-danger" data-action="delete-cache">キャッシュデータを${ruby('削除','さくじょ',2)}</button>
     </div>
     <div style="text-align:center; margin-top:20px; padding:10px; font-size:10px; color:var(--ink-soft);">
-      <span>ver. 2.6.1</span>
+      <span>ver. 2.6.2</span>
     </div>
     <input type="file" id="importFile" accept=".txt" style="display:none;">
   `;
@@ -8477,6 +8543,20 @@ document.addEventListener('click', (e)=>{
       state = structuredClone(DEFAULT_STATE);
       closeSheet(); toast('キャッシュを削除しました'); render(); break;
     case 'close-sheet': closeSheet(); break;
+    case 'save-conflict-use-cloud':
+      closeSheet();
+      if(pendingSyncCloud){
+        applyCloudSave(pendingSyncCloud);
+        pendingSyncCloud = null;
+        toast('アカウントの記録を読み込みました');
+        render();
+      }
+      break;
+    case 'save-conflict-use-local':
+      closeSheet();
+      pendingSyncCloud = null;
+      cloudSaveNow().then(ok => toast(ok ? 'この端末の記録をアカウントに保存しました' : '保存できませんでした'));
+      break;
     case 'confirm-sheet-choice':
       const sheetType = el.dataset.sheetType;
       let selectedValue = null;
