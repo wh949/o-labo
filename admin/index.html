@@ -74,6 +74,10 @@ label.f{ display:block; font-size:12px; color:var(--ink-soft); margin:10px 0 4px
 .btn{ border:1px solid var(--line); background:var(--panel); padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:700; font-size:13px; white-space:nowrap; }
 .btn.primary{ background:var(--leaf); border-color:var(--leaf); color:#fff; }
 .btn.danger{ background:var(--danger); border-color:var(--danger); color:#fff; }
+.tiers{ width:100%; border-collapse:collapse; margin-top:6px; }
+.tiers th, .tiers td{ padding:4px 6px; text-align:center; font-size:12px; }
+.tiers th{ color:var(--ink-soft); font-weight:600; }
+.tiers input{ width:100%; padding:4px 2px; font-size:12px; text-align:center; }
 .btn.ghost-danger{ color:var(--danger); border-color:var(--danger); }
 .btn:disabled{ opacity:.5; cursor:not-allowed; }
 
@@ -180,7 +184,9 @@ const db = firebase.database();
 
 let me = null;            // ログイン中の利用者
 let isOwner = false;      // 大元の管理者か
-let view = 'users';       // users | user | titles | rooms | admins
+let view = 'users';       // users | user | titles | rooms | admins | events
+let currentEvent = null;  // events/current のキャッシュ
+let eventEditing = false; // イベント編集フォームを開いているか
 let users = {};           // uid → 利用者
 let titles = {};          // 称号の一覧
 let presence = {};
@@ -268,22 +274,24 @@ auth.getRedirectResult().catch(()=>{});
 
 /* ---------- データの読み込み ---------- */
 async function loadAll(){
-  const [u, t, p, a] = await Promise.all([
+  const [u, t, p, a, ev] = await Promise.all([
     db.ref('users').once('value'),
     db.ref('titles').once('value'),
     db.ref('presence').once('value'),
-    db.ref('admins').once('value').catch(()=>({ val:()=>({}) }))
+    db.ref('admins').once('value').catch(()=>({ val:()=>({}) })),
+    db.ref('events/current').once('value').catch(()=>({ val:()=>null }))
   ]);
   users = u.val() || {};
   titles = mergeTitles(t.val() || {});
   presence = p.val() || {};
   admins = a.val() || {};
+  currentEvent = ev.val() || null;
 }
 
 /* ---------- 画面 ---------- */
 function render(){
   const tabs = [
-    ['users','利用者'], ['titles','称号'], ['rooms','対局の部屋'],
+    ['users','利用者'], ['titles','称号'], ['rooms','対局の部屋'], ['events','イベント'],
     ...(isOwner ? [['admins','管理者']] : [])
   ];
   $('#app').innerHTML = `
@@ -301,6 +309,7 @@ function render(){
         view==='user'  ? viewUser()  :
         view==='titles'? viewTitles():
         view==='rooms' ? viewRooms() :
+        view==='events'? viewEvents():
         view==='admins'? viewAdmins(): ''
       }</main>
     </div>`;
@@ -631,6 +640,132 @@ function pickColor(c, fromCustom){
     if(b) b.classList.add('on');
   }
 }
+/* イベント（期間限定のハントイベント）の管理 */
+const EVENT_DAY_MS = 86400000;
+function eventPhaseOf(ev, now){
+  now = now || Date.now();
+  if(!ev || !ev.startAt) return 'none';
+  const voteEnd = ev.startAt + (ev.voteDays||2)*EVENT_DAY_MS;
+  const huntEnd = voteEnd + (ev.huntDays||3)*EVENT_DAY_MS;
+  const resultEnd = huntEnd + (ev.resultDays||1)*EVENT_DAY_MS;
+  if(now < ev.startAt) return 'none（開始前）';
+  if(now < voteEnd) return 'vote（投票期間）';
+  if(now < huntEnd) return 'hunt（イベント期間）';
+  if(now < resultEnd) return 'result（結果発表）';
+  return 'ended（終了済み）';
+}
+function dtLocal(ms){
+  if(!ms) return '';
+  const d = new Date(ms);
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function viewEvents(){
+  const ev = currentEvent;
+  const tiers = (ev && ev.aiTiers) || [
+    {depth:3,rnd:0.25,boost:0,pt:5}, {depth:5,rnd:0.1,boost:0,pt:15}, {depth:7,rnd:0,boost:0,pt:30},
+    {depth:9,rnd:0,boost:1,pt:50}, {depth:11,rnd:0,boost:2,pt:75}, {depth:12,rnd:0,boost:4,pt:100},
+  ];
+  return `
+    <h2>イベント</h2>
+    <p class="lead">O-LABO 内で不定期に開催する「ハントイベント」を作成・編集・削除できます。投票期間（参加表明）→ イベント期間（ハント）→ 結果発表、の順で自動的に進みます。</p>
+    ${ev ? `<div class="box">
+      <h3>現在のイベント</h3>
+      <p style="margin:0 0 4px;"><b>${esc(ev.title||'（名前未設定）')}</b></p>
+      <p style="margin:0 0 4px; font-size:12px; color:var(--ink-soft);">今のフェーズ：${eventPhaseOf(ev)}</p>
+      <p style="margin:0 0 10px; font-size:12px; color:var(--ink-soft);">開始：${dtLocal(ev.startAt)} / 投票${ev.voteDays||2}日・イベント${ev.huntDays||3}日・結果発表${ev.resultDays||1}日</p>
+      <div class="row">
+        <button class="btn" onclick="eventEditing=true; render();">編集する</button>
+        <button class="btn danger" onclick="deleteEvent()">削除する</button>
+      </div>
+    </div>` : `<div class="box"><p style="margin:0; color:var(--ink-soft);">現在、登録されているイベントはありません。</p></div>`}
+    ${(!ev || eventEditing) ? `
+    <div class="box">
+      <h3>${ev ? 'イベントを編集' : 'イベントを作る'}</h3>
+      <label class="f" for="evTitle">イベント名</label>
+      <input type="text" id="evTitle" maxlength="40" value="${esc((ev&&ev.title)||'')}">
+      <label class="f" for="evStart">投票期間の開始日時</label>
+      <input type="datetime-local" id="evStart" value="${ev ? dtLocal(ev.startAt) : ''}">
+      <div class="row" style="margin-top:8px;">
+        <div style="flex:1;">
+          <label class="f" for="evVoteDays">投票期間（日）</label>
+          <input type="number" id="evVoteDays" min="1" max="14" value="${(ev&&ev.voteDays)||2}">
+        </div>
+        <div style="flex:1;">
+          <label class="f" for="evHuntDays">イベント期間（日）</label>
+          <input type="number" id="evHuntDays" min="1" max="14" value="${(ev&&ev.huntDays)||3}">
+        </div>
+        <div style="flex:1;">
+          <label class="f" for="evResultDays">結果発表（日）</label>
+          <input type="number" id="evResultDays" min="1" max="14" value="${(ev&&ev.resultDays)||1}">
+        </div>
+      </div>
+      <label class="f" for="evNextNote">結果発表画面に出す「次回予告」の文</label>
+      <input type="text" id="evNextNote" maxlength="80" value="${esc((ev&&ev.nextEventNote)||'')}" placeholder="次回のイベントは◯月◯日〜を予定しています！">
+      <p class="f" style="margin-top:14px;">AI の強さと、もらえるポイント（弱い→強いの順、6段階）</p>
+      <table class="tiers">
+        <thead><tr><th>Tier</th><th>読みの深さ</th><th>ランダム度</th><th>ブースト</th><th>pt</th></tr></thead>
+        <tbody>
+          ${tiers.map((t,i)=>`<tr>
+            <td>${i+1}</td>
+            <td><input type="number" id="evTierDepth${i}" min="1" max="20" value="${t.depth}"></td>
+            <td><input type="number" id="evTierRnd${i}" min="0" max="1" step="0.01" value="${t.rnd}"></td>
+            <td><input type="number" id="evTierBoost${i}" min="0" max="12" step="0.5" value="${t.boost||0}"></td>
+            <td><input type="number" id="evTierPt${i}" min="0" max="1000" value="${t.pt}"></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="row" style="margin-top:14px;">
+        <button class="btn primary" onclick="saveEvent()">${ev?'変更を保存':'作る'}</button>
+        ${ev ? '<button class="btn" onclick="eventEditing=false; render();">やめる</button>' : ''}
+      </div>
+    </div>` : ''}
+  `;
+}
+async function saveEvent(){
+  const title = ($('#evTitle')||{}).value || '';
+  const startStr = ($('#evStart')||{}).value || '';
+  if(!title.trim()){ toast('イベント名を入力してください'); return; }
+  if(!startStr){ toast('投票期間の開始日時を入力してください'); return; }
+  const startAt = new Date(startStr).getTime();
+  if(!startAt || isNaN(startAt)){ toast('開始日時が正しくありません'); return; }
+  const tiers = [];
+  for(let i=0;i<6;i++){
+    tiers.push({
+      depth: parseInt(($('#evTierDepth'+i)||{}).value, 10) || 1,
+      rnd: parseFloat(($('#evTierRnd'+i)||{}).value) || 0,
+      boost: parseFloat(($('#evTierBoost'+i)||{}).value) || 0,
+      pt: parseInt(($('#evTierPt'+i)||{}).value, 10) || 0,
+    });
+  }
+  const data = {
+    title: title.trim(),
+    startAt,
+    voteDays: parseInt(($('#evVoteDays')||{}).value, 10) || 2,
+    huntDays: parseInt(($('#evHuntDays')||{}).value, 10) || 3,
+    resultDays: parseInt(($('#evResultDays')||{}).value, 10) || 1,
+    nextEventNote: ($('#evNextNote')||{}).value || '',
+    aiTiers: tiers,
+  };
+  try{
+    await db.ref('events/current').set(data);
+    currentEvent = data;
+    eventEditing = false;
+    toast('イベントを保存しました');
+    render();
+  }catch(err){ toast('保存に失敗しました: ' + err.message); }
+}
+async function deleteEvent(){
+  if(!confirm('現在のイベントを削除します。参加者の記録もすべて消えます。よろしいですか？')) return;
+  try{
+    await db.ref('events/current').remove();
+    currentEvent = null;
+    eventEditing = false;
+    toast('イベントを削除しました');
+    render();
+  }catch(err){ toast('削除に失敗しました: ' + err.message); }
+}
+
 function viewTitles(){
   const list = sortedTitles();
   const holders = id => Object.values(users).filter(u => titlesOf(u)[id]).length;
