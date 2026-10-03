@@ -80,6 +80,27 @@ rt{font-size:.58em; font-weight:500; color:var(--ink-soft); opacity:.72; letter-
   padding:6px 18px;
 }
 .brand{display:flex; align-items:center; gap:10px;}
+.topbar-right{ display:flex; align-items:center; gap:8px; }
+.settings-icon-btn{
+  width:34px; height:34px; border-radius:50%; border:none; cursor:pointer;
+  background:var(--panel); box-shadow:var(--shadow-1); color:var(--ink);
+  display:flex; align-items:center; justify-content:center; font-size:16px; flex:0 0 auto;
+}
+.settings-icon-btn:active{ transform:scale(.92); }
+/* ランキング */
+.rank-row{
+  display:flex; align-items:center; gap:10px; padding:11px 14px;
+  border-bottom:1px solid var(--line-soft);
+}
+.rank-row:last-child{ border-bottom:none; }
+.rank-row.is-me{ background:var(--jade-mist); }
+.rank-pos{ flex:0 0 auto; width:28px; text-align:center; font-weight:800; font-family:var(--font-title); color:var(--ink-soft); }
+.rank-name{ flex:1; min-width:0; font-weight:700; font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rank-value{ flex:0 0 auto; font-size:12px; color:var(--ink-soft); }
+.rank-mod-badge{
+  display:inline-block; background:#e8562f; color:#fff; font-size:9px; font-weight:800;
+  padding:1px 5px; border-radius:4px; vertical-align:middle; margin-left:3px;
+}
 .brand-mark{
   width:40px; height:40px; border-radius:50%;
   background:radial-gradient(circle at 32% 28%, var(--jade-light), var(--jade-deep) 72%);
@@ -251,6 +272,29 @@ main{flex:1; padding:6px 16px 100px; overflow-x:hidden;}
 .score-chip .sc-name{font-size:11.5px; color:var(--ink-soft); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .score-chip .sc-num{font-family:var(--font-title); font-weight:700; font-size:18px; color:var(--ink);}
 .score-chip.leading{border-color:var(--gold); box-shadow:0 0 0 1px var(--gold-soft);}
+/* 今の手番側を、光らせて一目でわかるようにする */
+.score-chip.is-turn{ border-color:var(--jade-deep); box-shadow:0 0 0 2px var(--jade-mist), var(--shadow-1); }
+.turn-banner.turn-black .who{ color:var(--ink); }
+.turn-banner.turn-white .who{ color:var(--jade-deep); }
+.turn-banner .who .dot.turn-pulse{ animation:turnDotPulse 1.4s ease-in-out infinite; }
+@keyframes turnDotPulse{ 0%,100%{ box-shadow:inset 0 0 0 1px rgba(0,0,0,.15), 0 0 0 0 rgba(47,138,98,.5);} 50%{ box-shadow:inset 0 0 0 1px rgba(0,0,0,.15), 0 0 0 5px rgba(47,138,98,0);} }
+/* 対局バー：黒白どちらがどれだけ押しているかが、一目でわかる */
+.stone-bar{
+  display:flex; height:9px; border-radius:5px; overflow:hidden; margin-bottom:10px;
+  box-shadow:inset 0 0 0 1px var(--line);
+}
+.stone-bar-black{ background:#161616; transition:width .35s ease; }
+.stone-bar-white{ background:#f2f2f2; transition:width .35s ease; }
+/* 競技モードの持ち時間（対局時計） */
+.match-clock-row{
+  display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:10px;
+}
+.match-clock{
+  font-family:var(--font-title); font-weight:700; font-size:15px; font-variant-numeric:tabular-nums;
+  padding:4px 10px; border-radius:8px; background:var(--panel); border:1px solid var(--line); color:var(--ink-soft);
+}
+.match-clock.is-turn{ color:var(--ink); border-color:var(--jade-deep); box-shadow:0 0 0 2px var(--jade-mist); }
+.match-clock-label{ font-size:11px; color:var(--ink-soft); }
 
 .board{
   --cell:12.5%;
@@ -701,9 +745,17 @@ html[data-theme="dark"] {
 /* マイページ */
 .mp-head{ display:flex; align-items:center; gap:14px; }
 .mp-icon{
+  position:relative;
   flex:0 0 auto; width:66px; height:66px; border-radius:50%; overflow:hidden;
   background:rgba(255,255,255,.92); display:flex; align-items:center; justify-content:center;
   box-shadow:0 2px 10px rgba(0,0,0,.18);
+}
+/* 「モデレーター」称号を持つ人のアイコンに出す管理者バッジ */
+.is-admin::after{
+  content:""; position:absolute; right:0; bottom:0;
+  width:38%; height:38%; min-width:13px; min-height:13px;
+  border-radius:50%; background:url('db/img/badge.png') center/contain no-repeat, #fff;
+  box-shadow:0 0 0 2px #fff; z-index:2;
 }
 .mp-icon img{ width:100%; height:100%; object-fit:cover; display:block; }
 .icon-none{ font-size:26px; opacity:.55; }
@@ -721,6 +773,7 @@ html[data-theme="dark"] {
 /* マッチ演出の顔 */
 .mf-faces{ display:flex; align-items:center; justify-content:center; gap:14px; margin:14px 0 10px; }
 .mf-face{
+  position:relative;
   width:64px; height:64px; border-radius:50%; overflow:hidden;
   background:rgba(255,255,255,.9); display:flex; align-items:center; justify-content:center;
   box-shadow:0 3px 14px rgba(0,0,0,.35);
@@ -734,6 +787,7 @@ html[data-theme="dark"] {
   padding:12px 14px; margin-bottom:12px;
 }
 .mp-home-icon{
+  position:relative;
   flex:0 0 auto; width:32px; height:32px; border-radius:50%; overflow:hidden;
   display:flex; align-items:center; justify-content:center; background:var(--paper-deep);
 }
@@ -741,6 +795,47 @@ html[data-theme="dark"] {
 .mp-home-icon .icon-none{ font-size:16px; }
 .mp-home-name{ flex:1; min-width:0; font-weight:800; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mp-home-go{ flex:0 0 auto; font-size:11.5px; color:var(--ink-soft); }
+
+/* ホーム：ダッシュボード風レイアウト */
+.home-hero-compact{ padding:14px 16px; }
+.home-hero-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.mp-home-compact{
+  position:relative; flex:0 0 auto; width:44px; height:44px; border-radius:50%; border:2px solid rgba(255,255,255,.6);
+  padding:0; cursor:pointer; background:rgba(255,255,255,.15); overflow:visible;
+}
+.mp-home-compact .mp-home-icon{ width:100%; height:100%; }
+.mp-home-badge{
+  position:absolute; top:-4px; right:-4px; background:var(--urushi); color:#fff; font-size:10px; font-weight:800;
+  min-width:16px; height:16px; border-radius:8px; display:flex; align-items:center; justify-content:center; padding:0 3px;
+  box-shadow:0 0 0 2px #fff;
+}
+.home-event-banner{
+  display:flex; align-items:center; justify-content:space-between; width:100%; border:none; cursor:pointer;
+  background:linear-gradient(135deg, #8e44ad, #4a235a); color:#fff; border-radius:14px; padding:12px 16px;
+  font-weight:800; font-size:13px; margin-bottom:10px;
+}
+.home-event-go{ font-size:11.5px; font-weight:600; opacity:.9; }
+.home-grid-4{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+.home-grid-btn{
+  border:none; border-radius:14px; cursor:pointer; color:#fff; padding:16px 8px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+}
+.home-grid-btn .hg-icon{ font-size:22px; }
+.home-grid-btn .hg-label{ font-weight:700; font-size:12.5px; }
+.home-stat-card{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:4px; background:var(--panel); border:1px solid var(--line);
+  border-radius:14px; padding:12px 6px; margin-bottom:10px; box-shadow:var(--shadow-1);
+}
+.home-stat{ text-align:center; }
+.home-stat-num{ font-size:18px; font-weight:800; font-family:var(--font-title); }
+.home-stat-label{ font-size:9.5px; color:var(--ink-soft); margin-top:2px; }
+.home-news-compact{
+  display:flex; align-items:center; gap:8px; width:100%; border:1px solid var(--line); background:var(--panel);
+  border-radius:12px; padding:10px 12px; cursor:pointer; margin-bottom:10px;
+}
+.hn-badge{ flex:0 0 auto; background:var(--jade-mist); color:var(--jade-deep); font-size:9.5px; font-weight:800; padding:3px 6px; border-radius:5px; }
+.hn-title{ flex:1; min-width:0; font-size:12px; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hn-go{ flex:0 0 auto; color:var(--ink-soft); }
 
 /* フレンド一覧のアイコン */
 .friend-icon{
@@ -1163,7 +1258,10 @@ body.flipside .board.illust .stone.white{ box-shadow:inset 0 0 0 3px #2f2f33, 0 
            onerror="this.classList.add('is-failed')">
       <h1 class="brand-fallback">O-LABO</h1>
     </div>
-    <div class="hanko" id="rankHanko"></div>
+    <div class="topbar-right">
+      <button class="settings-icon-btn" data-action="tab" data-tab="settings" aria-label="設定">⚙️</button>
+      <div class="hanko" id="rankHanko"></div>
+    </div>
   </div>
   <main id="view-root"></main>
   <nav class="bottom-tabs" id="bottomTabs"></nav>
@@ -1179,8 +1277,8 @@ const TAB_DEFS = [
   {id:'home', label:'ホーム', icon:'🏠'},
   {id:'basic', label:'ベーシック', icon:'🎮'},
   {id:'adventure', label:'アドベンチャー', icon:'🗺️'},
-  {id:'library', label:'ライブラリ', icon:'📚'},
-  {id:'settings', label:'設定', icon:'⚙️'},
+  {id:'ranker', label:'ランカー', icon:'🏆'},
+  {id:'mypage', label:'マイページ', icon:'👤'},
 ];
 
 const BASIC_TABS = [
@@ -1201,9 +1299,17 @@ const ADVENTURE_TABS = [
 const MYPAGE_TABS = [
   {id:'mp-profile', label:'マイページ', icon:'👤'},
   {id:'mp-friends', label:'フレンド', icon:'👥'},
+  {id:'mp-library', label:'ライブラリ', icon:'📚'},
   {id:'home-sub', label:'ホーム', icon:'🏠'},
 ];
-let currentMyPageMode = 'profile';   // profile | friends
+const RANKER_TABS = [
+  {id:'rk-ranking', label:'ランキング', icon:'🏆'},
+  {id:'rk-match', label:'競技', icon:'⚔️'},
+  {id:'rk-event', label:'イベント', icon:'🎪'},
+  {id:'home-sub', label:'ホーム', icon:'🏠'},
+];
+let currentMyPageMode = 'profile';   // profile | friends | library
+let currentRankerMode = 'ranking';   // ranking | match | event
 let friendAddMode = null;            // null | 'show' | 'scan'
 
 const RANK_LADDER = ['E','D','C','B-','B','B+','A-','A','A+','AA','AA+','AAA','AAA+','S','S+','SS','SS+','SSS','SSS+','X'];
@@ -1549,6 +1655,7 @@ const DEFAULT_STATE = {
     battleBgmEnabled:true, battleBgmVolume:50, // 対局中（FlipSide も含む）の BGM
     battleSeEnabled:true,  battleSeVolume:70,  // 対局中（FlipSide も含む）の 効果音
     volumeSplitMigrated:false,   // 旧設定を home/battle 両方へ一度だけコピーしたか
+    rankingShowModerators:false, // ランキングにモデレーターも表示するか（既定では非表示）
     stellaUnlocked:false,   // 解禁済みか（スキン選択に出るか）
     stellaCheckedV2:false,  // 旧方式の解禁を一度だけ解除するための印
     casualSkin:'default',   // 'default' | 'stella'
@@ -1565,6 +1672,7 @@ const DEFAULT_STATE = {
   battleHistory: [],
   online:{ lastName:'', history:[] },
   variety:{ history:[], customRules:{random:false, lucky_unlucky:false, warp:false, timer:false} },
+  match:{ history:[] },   // 競技モード（公式ルール準拠）の記録
   story:{}
 };
 
@@ -1700,6 +1808,13 @@ function applyMove(board,row,col,player,flips){
 function countStones(board){
   let b=0,w=0;
   for(const row of board) for(const v of row){ if(v===1)b++; else if(v===2)w++; }
+  return {black:b, white:w};
+}
+// 競技ルール用：終局時に空きマスがあれば、それは勝者の総取りになる（石差が多い方に加算）
+function countStonesMatch(board){
+  let b=0,w=0,e=0;
+  for(const row of board) for(const v of row){ if(v===1)b++; else if(v===2)w++; else e++; }
+  if(b>w) b+=e; else if(w>b) w+=e;
   return {black:b, white:w};
 }
 const CORNERS = [[0,0],[0,7],[7,0],[7,7]];
@@ -2196,7 +2311,7 @@ function flipAnimTotalMs(flipCount){
   const flipEnd = flipCount > 0 ? (flipCount - 1) * FLIP_STEP_MS + FLIP_DUR_MS : 0;
   return Math.max(DROP_DUR_MS, flipEnd) + 40;   // 気持ち余裕を持たせる
 }
-const sub={ battle:'home', training:'home', casual:'home', online:'lobby', library:'list', settings:'home', mypage:'main', flipside:'home' };
+const sub={ battle:'home', training:'home', casual:'home', online:'lobby', library:'list', settings:'home', mypage:'main', flipside:'home', ranker:'ranking', match:'setup', event:'vote' };
 let libTab='battle';
 let game=null; // active game session object
 
@@ -2250,6 +2365,7 @@ function renderTabs(){
   else if(activeTab === 'adventure') tabs = adventureTabs();
   else if(activeTab === 'flipside') tabs = (state.flipside && state.flipside.unlocked) ? FLIP_TABS : FLIPGATE_TABS;
   else if(activeTab === 'mypage') tabs = MYPAGE_TABS;
+  else if(activeTab === 'ranker') tabs = RANKER_TABS;
   else tabs = TAB_DEFS;
   
   const markup = tabs.map(t=>{
@@ -2258,6 +2374,7 @@ function renderTabs(){
     else if(activeTab === 'basic') isActive = (currentBasicMode === t.id);
     else if(activeTab === 'adventure') isActive = (currentAdventureMode === t.id);
     else if(activeTab === 'mypage') isActive = ('mp-' + currentMyPageMode === t.id);
+    else if(activeTab === 'ranker') isActive = ('rk-' + currentRankerMode === t.id);
     else if(activeTab === 'flipside') isActive = ('fs-' + currentFlipMode === t.id);
     else isActive = (activeTab === t.id);
     
@@ -2301,7 +2418,14 @@ function viewFor(tab){
   }
   if(tab==='mypage'){
     if(sub.mypage === 'other') return viewOtherPage();
-    return currentMyPageMode === 'friends' ? viewFriendsTab() : viewMyPage();
+    if(currentMyPageMode === 'friends') return viewFriendsTab();
+    if(currentMyPageMode === 'library') return viewLibrary();
+    return viewMyPage();
+  }
+  if(tab==='ranker'){
+    if(currentRankerMode === 'match') return viewRankerMatch();
+    if(currentRankerMode === 'event') return viewRankerEvent();
+    return viewRankerRanking();
   }
   if(tab==='library') return viewLibrary();
   if(tab==='settings') return viewSettings();
@@ -2693,70 +2817,66 @@ function inviteBannerMarkup(){
     </div>`).join('');
 }
 
+// ホームはダッシュボード的な配置にして、できるだけスクロールせずに全体を見渡せるようにしている
 function viewHome(){
   const loginDays = getConsecutiveLoginDays();
   const totalGames = state.totalGames || 0;
   const totalWins = state.totalWins || 0;
   const winRate = getWinRate();
-  
+  if(isSignedIn()) loadEventIfNeeded();
+  const eventOpen = eventData && ['vote','hunt','result'].includes(eventPhase(eventData));
+  const latestNews = (newsCache && newsCache.length) ? newsCache[0] : null;
+
   const bday = currentPageEvent();
   return `
-    <div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--sky) 75%);">
+    <div class="hero home-hero-compact" style="background:linear-gradient(150deg, var(--jade-light), var(--sky) 75%);">
       ${bday ? '<div class="event-confetti" aria-hidden="true"></div>' : ''}
-      <div class="hero-eyebrow">${bday ? 'HAPPY BIRTHDAY' : 'HOME'}</div>
-      <h2 style="margin-bottom:4px;">${bday ? '🎂 ' : ''}${escapeHtml(state.username)}${bday ? ' さん、お誕生日おめでとう！' : ''}</h2>
-      <p style="margin:0; font-size:13px; color:var(--ink-soft);">ランク: ${rankLabel(state.training.rankIndex, state.training.xNumber)}</p>
+      <div class="home-hero-row">
+        <div>
+          <div class="hero-eyebrow">${bday ? 'HAPPY BIRTHDAY' : 'HOME'}</div>
+          <h2 style="margin:2px 0;">${bday ? '🎂 ' : ''}${escapeHtml(state.username)}${bday ? ' さん' : ''}</h2>
+          <p style="margin:0; font-size:12.5px; color:var(--ink-soft);">ランク: ${rankLabel(state.training.rankIndex, state.training.xNumber)}</p>
+        </div>
+        ${isSignedIn() ? `<button class="mp-home-compact" data-action="open-mypage" aria-label="マイページ">
+          <span class="mp-home-icon ${hasModeratorTitle(myTitleIds)?'is-admin':''}">${iconMarkup(myProfile.icon)}</span>
+          ${friendRequests.length ? `<span class="mp-home-badge">${friendRequests.length}</span>` : ''}
+        </button>` : ''}
+      </div>
     </div>
-    
-    ${isSignedIn() ? `<button class="btn btn-soft mp-home" data-action="open-mypage">
-      <span class="mp-home-icon">${iconMarkup(myProfile.icon)}</span>
-      <span class="mp-home-name">${escapeHtml(profileName())}</span>
-      <span class="mp-home-go">マイページ${friendRequests.length ? ` ・ 申請${friendRequests.length}` : ''}</span>
-    </button>` : ''}
 
     ${inviteBannerMarkup()}
 
-    <div class="section-title">遊ぶ</div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
-      <button class="btn" style="background:linear-gradient(155deg, var(--jade-light), var(--jade-deep)); color:#fff; font-size:14px; padding:30px 12px; height:auto; line-height:1.3; flex-direction:column; white-space:normal; min-height:100px; display:flex; align-items:center; justify-content:center;" data-action="go-basic">
-        <div style="font-weight:700;">ベーシック</div>
-        <div style="font-size:11px; font-weight:400; opacity:0.9; margin-top:4px;">対戦・特訓・ゆる</div>
+    ${eventOpen ? `
+    <button class="home-event-banner" data-action="go-event">
+      <span>🎉 イベント開催中！</span><span class="home-event-go">詳しく見る ›</span>
+    </button>` : ''}
+
+    <div class="home-grid-4">
+      <button class="home-grid-btn" style="background:linear-gradient(155deg, var(--jade-light), var(--jade-deep));" data-action="go-basic">
+        <span class="hg-icon">🎮</span><span class="hg-label">ベーシック</span>
       </button>
-      <button class="btn" style="background:linear-gradient(155deg, var(--urushi-light), var(--urushi)); color:#fff; font-size:12px; padding:30px 10px; height:auto; line-height:1.3; flex-direction:column; white-space:normal; min-height:100px; display:flex; align-items:center; justify-content:center;" data-action="go-adventure">
-        <div style="font-weight:700;">アドベンチャー</div>
-        <div style="font-size:10px; font-weight:400; opacity:0.9; margin-top:4px;">ストーリー・カフェ</div>
+      <button class="home-grid-btn" style="background:linear-gradient(155deg, var(--urushi-light), var(--urushi));" data-action="go-adventure">
+        <span class="hg-icon">🗺️</span><span class="hg-label">アドベンチャー</span>
+      </button>
+      <button class="home-grid-btn" style="background:linear-gradient(155deg, #f2ac2b, #e8562f);" data-action="tab" data-tab="ranker">
+        <span class="hg-icon">🏆</span><span class="hg-label">ランカー</span>
+      </button>
+      <button class="home-grid-btn" style="background:linear-gradient(155deg, #4a9de8, #2a6bb0);" data-action="tab" data-tab="mypage">
+        <span class="hg-icon">👤</span><span class="hg-label">マイページ</span>
       </button>
     </div>
-    
-    <div id="news-section">${newsCache ? homeNewsMarkup(newsCache) : ''}</div>
-    <div class="card">
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-        <div style="text-align:center; padding:12px; background:var(--jade-mist); border-radius:10px;">
-          <div style="font-size:28px; font-weight:700; color:var(--jade-deep);">${loginDays}</div>
-          <div style="font-size:12px; color:var(--ink-soft); margin-top:4px;">日連続ログイン</div>
-        </div>
-        <div style="text-align:center; padding:12px; background:var(--sky-soft); border-radius:10px;">
-          <div style="font-size:28px; font-weight:700; color:var(--sky-deep);">${winRate}%</div>
-          <div style="font-size:12px; color:var(--ink-soft); margin-top:4px;">勝率</div>
-        </div>
-      </div>
+
+    <div class="home-stat-card">
+      <div class="home-stat"><div class="home-stat-num" style="color:var(--jade-deep);">${loginDays}</div><div class="home-stat-label">連続ログイン</div></div>
+      <div class="home-stat"><div class="home-stat-num" style="color:#2a6bb0;">${winRate}%</div><div class="home-stat-label">勝率</div></div>
+      <div class="home-stat"><div class="home-stat-num" style="color:var(--ink);">${totalGames}</div><div class="home-stat-label">総対局数</div></div>
+      <div class="home-stat"><div class="home-stat-num" style="color:var(--urushi);">${totalWins}</div><div class="home-stat-label">総勝数</div></div>
     </div>
-    
-    <div class="card">
-      <div style="text-align:center; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--line);">
-        <div style="font-size:14px; font-weight:700;">対局統計</div>
-      </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:center;">
-        <div>
-          <div style="font-size:20px; font-weight:700; color:var(--ink);">${totalGames}</div>
-          <div style="font-size:11px; color:var(--ink-soft);">総対局数</div>
-        </div>
-        <div>
-          <div style="font-size:20px; font-weight:700; color:var(--urushi);">${totalWins}</div>
-          <div style="font-size:11px; color:var(--ink-soft);">総勝数</div>
-        </div>
-      </div>
-    </div>
+
+    ${latestNews ? `
+    <button class="home-news-compact" data-action="open-news" data-file="${escapeHtml(latestNews.file||'')}">
+      <span class="hn-badge">NEWS</span><span class="hn-title">${escapeHtml(latestNews.title||'')}</span><span class="hn-go">›</span>
+    </button>` : ''}
   `;
 }
 
@@ -2932,6 +3052,51 @@ function handleFlipEnd(g, entry, black, white){
   g.lastResult = entry;
   sub.flipside = 'result';
   saveState();
+}
+
+// 競技モード（公式ルール準拠）の対局が終わったとき。通常の成績には混ぜず、専用の記録に残す
+function handleMatchEnd(g, entry, black, white){
+  entry.vsType = g.opts.vsType;            // 'ai' | 'offline' | 'online'
+  entry.timeLimitSec = g.opts.timeLimitSec;
+  entry.endReason = g.matchEndReason || 'normal';   // 'normal' | 'timeup' | 'resign'
+  entry.blackScore = black;
+  entry.whiteScore = white;
+  entry.winner = black > white ? 'black' : (white > black ? 'white' : 'draw');
+  if(g.opts.vsType === 'online'){
+    entry.myColor = g.opts.myColor;
+    entry.oppName = g.opts.oppName || '相手';
+    const myScore = g.opts.myColor === 1 ? black : white;
+    const oppScore = g.opts.myColor === 1 ? white : black;
+    entry.result = myScore > oppScore ? 'win' : (oppScore > myScore ? 'lose' : 'draw');
+  } else {
+    // 対AI・オフライン（対人）は、黒を基準に見る
+    entry.result = black > white ? 'win' : (white > black ? 'lose' : 'draw');
+  }
+  state.match = state.match || { history: [] };
+  state.match.history.unshift(entry);
+  g.lastResult = entry;
+  sub.ranker = 'result';
+  sub.match = 'result';
+  saveState();
+}
+
+// イベントのハント対局が終わったとき。勝てばポイントを獲得し、Firebase の参加記録に反映する
+function handleEventEnd(g, entry, black, white){
+  entry.myScore = black; entry.aiScore = white;
+  entry.result = black > white ? 'win' : (white > black ? 'lose' : 'draw');
+  entry.gainedPt = entry.result === 'win' ? (g.opts.eventPt || 0) : 0;
+  g.lastResult = entry;
+  eventHunting = false;
+  sub.event = 'result';
+  if(entry.gainedPt > 0 && fbDb && fbUid && eventParticipant){
+    eventParticipant.points = (eventParticipant.points || 0) + entry.gainedPt;
+    eventParticipant.huntCount = (eventParticipant.huntCount || 0) + 1;
+    const mine = (eventParticipantsAll||[]).find(e => e.uid === fbUid);
+    if(mine){ mine.points = eventParticipant.points; mine.huntCount = eventParticipant.huntCount; }
+    fbDb.ref('events/current/participants/' + fbUid).update({
+      points: eventParticipant.points, huntCount: eventParticipant.huntCount
+    }).catch(err => console.warn('ポイントの保存に失敗:', err));
+  }
 }
 
 // バラエティモードは v.2.5.0 で廃止。工事中の案内を表示する。
@@ -3447,6 +3612,33 @@ async function scanBgmFolder(folder, prefix){
   return names;
 }
 
+// BGM のメタデータ（曲名・サブタイトル）。カフェの MUSIC タブ用で、
+// カフェ自体が非公開の間はまだ画面には使わないが、読み込みだけ先に用意しておく。
+// 仕様は「カフェ会話ガイド」ではなく「BGM_SE実装ガイド」の meta.json の節を参照
+let bgmMetaCache = null;
+async function loadBgmMeta(){
+  if(bgmMetaCache !== null) return bgmMetaCache;
+  let tracks = [];
+  try{
+    const res = await fetch(`${AUDIO_BASE_URL}/bgm/meta.json`);
+    if(res.ok){
+      const j = await res.json();
+      if(Array.isArray(j.tracks)) tracks = j.tracks.filter(t => t && t.title && t.path);
+    }
+  }catch(err){ console.warn('meta.json の読み込みに失敗:', err); }
+  // FlipSide を解禁するまで、flipside/ の曲は「そもそも存在しない」ものとして扱う
+  if(!(state.flipside && state.flipside.unlocked)){
+    tracks = tracks.filter(t => !String(t.path).replace(/^\.\//, '').startsWith('flipside/'));
+  }
+  bgmMetaCache = tracks;
+  return bgmMetaCache;
+}
+// meta.json の path（"./home/ro1.mp3" など、bgm/ からの相対パス）を実URLに変換する
+function bgmMetaUrl(path){
+  const rel = String(path || '').replace(/^\.\//, '');
+  return `${AUDIO_BASE_URL}/bgm/${rel}`;
+}
+
 // いまのゾーンで流す曲の候補（行事版があれば先に、通常版をその次に）を1つずつ選ぶ
 async function pickZoneBgm(zone){
   const prefix = zone === 'home' ? 'ro' : (zone === 'flipside' ? 'fl' : 'vs');
@@ -3692,6 +3884,7 @@ let onlineState = {
   invitedName: '',
   oppUid: '',
   oppIcon: '',
+  oppTitleIds: [],
   waitStartedAt: 0
 };
 
@@ -4275,6 +4468,11 @@ function isPlayingBoard(){
   if(activeTab === 'flipside'){
     return game.mode === 'casual' && sub.flipside === 'play' && isFlipGame();
   }
+  if(activeTab === 'ranker'){
+    if(currentRankerMode === 'match') return game.mode === 'match' && sub.match === 'play';
+    if(currentRankerMode === 'event') return game.mode === 'event' && sub.event === 'play';
+    return false;
+  }
   if(activeTab === 'adventure'){
     // バラエティモードは v.2.5.0 で廃止（工事中）のため、ここに来ることはない
     return currentAdventureMode === 'variety' && game.mode === 'variety' && sub.variety === 'play';
@@ -4422,6 +4620,10 @@ function titleTone(hex){
   const v=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));
   return '#'+v.map(x=>Math.round(x+(255-x)*0.45).toString(16).padStart(2,'0')).join('');
 }
+// 「モデレーター」という名前の称号を持っているか（管理者バッジの表示に使う）
+function hasModeratorTitle(ids){
+  return (ids || []).some(id => titleCatalog[id] && titleCatalog[id].name === 'モデレーター');
+}
 function titleMarkup(ids){
   const list = (ids || []).filter(id => titleCatalog[id]);
   if(!list.length) return '<p style="margin:0; font-size:13px; color:var(--ink-soft);">なし</p>';
@@ -4499,6 +4701,30 @@ async function publishStats(){
       updatedAt: Date.now()
     });
   }catch(err){ console.warn('戦績の公開に失敗:', err); }
+  await publishLeaderboard();
+}
+// ランキングに使う最小限のデータを、専用の場所に公開する
+// （users/ 以下を全員分読むのはデータ量・プライバシーの両面で避けたいため）
+async function publishLeaderboard(){
+  if(!fbDb || !fbUid || !isSignedIn()) return;
+  const unlocked = CASUAL_DIFFS.filter(d => !d.locked || state.casual.unlocked[d.id]).length;
+  const fs = state.flipside || {};
+  const flipUnlocked = fs.flip && fs.flip.unlocked ? Object.keys(fs.flip.unlocked).filter(k => fs.flip.unlocked[k]).length : 0;
+  try{
+    await fbDb.ref('leaderboard/' + fbUid).set({
+      name: profileName() || 'プレイヤー',
+      rank: state.playerRank || 0,
+      games: state.totalGames || 0,
+      wins: state.totalWins || 0,
+      casualUnlocked: unlocked,
+      flipUnlocked,
+      trainingRankIndex: state.training.rankIndex || 0,
+      trainingXNumber: state.training.xNumber || 0,
+      consecutiveLoginDays: state.consecutiveLoginDays || 1,
+      isModerator: hasModeratorTitle(myTitleIds),
+      updatedAt: Date.now()
+    });
+  }catch(err){ console.warn('ランキングの公開に失敗:', err); }
 }
 
 /* ---------- 在席状態 ---------- */
@@ -4571,6 +4797,17 @@ async function fetchOpponentIcon(uid){
     return v;
   }catch(err){
     return '';
+  }
+}
+// 相手の称号ID一覧（管理者バッジの判定に使う）
+async function fetchOpponentTitleIds(uid){
+  if(!fbDb || !uid) return [];
+  try{
+    const snap = await fbDb.ref('users/' + uid + '/titles').once('value');
+    const titles = snap.val() || {};
+    return Object.keys(titles).filter(k => titles[k]);
+  }catch(err){
+    return [];
   }
 }
 
@@ -5778,9 +6015,10 @@ function onlineAttachRoom(id){
       if(onlineState.mode === 'random'){
         (async ()=>{
           const rid = onlineState.roomId;
-          const icon = await fetchOpponentIcon(newOppUid);
+          const [icon, titleIds] = await Promise.all([fetchOpponentIcon(newOppUid), fetchOpponentTitleIds(newOppUid)]);
           if(onlineState.oppUid !== newOppUid) return;   // 途中で相手が変わった
           onlineState.oppIcon = icon || '';
+          onlineState.oppTitleIds = titleIds;
           await preloadIcon(icon, 1500);
           // アイコンの読み込み中に対局が終わった・別の部屋に移った場合は出さない。
           // 同じ部屋の演出は1回だけ
@@ -5792,6 +6030,9 @@ function onlineAttachRoom(id){
       } else if(newOppUid){
         fetchOpponentIcon(newOppUid).then(icon => {
           if(onlineState.oppUid === newOppUid){ onlineState.oppIcon = icon || ''; render(); }
+        });
+        fetchOpponentTitleIds(newOppUid).then(titleIds => {
+          if(onlineState.oppUid === newOppUid) onlineState.oppTitleIds = titleIds;
         });
       }
     }
@@ -6196,13 +6437,15 @@ function showMatchFound(oppName){
   el.className = 'match-found';
   const myIcon = myProfile.icon || '';
   const oppIcon = onlineState.oppIcon || '';
+  const myAdmin = hasModeratorTitle(myTitleIds) ? ' is-admin' : '';
+  const oppAdmin = hasModeratorTitle(onlineState.oppTitleIds) ? ' is-admin' : '';
   el.innerHTML = `
     <div class="match-found-inner">
       <div class="match-found-label">MATCH!</div>
       <div class="mf-faces">
-        <div class="mf-face">${iconMarkup(myIcon)}</div>
+        <div class="mf-face${myAdmin}">${iconMarkup(myIcon)}</div>
         <div class="mf-vs">VS</div>
-        <div class="mf-face">${iconMarkup(oppIcon)}</div>
+        <div class="mf-face${oppAdmin}">${iconMarkup(oppIcon)}</div>
       </div>
       <div class="match-found-name">${escapeHtml(oppName||'相手')}</div>
       <div class="match-found-sub">とマッチしました！</div>
@@ -6219,16 +6462,19 @@ function friendSectionMarkup(){
       <button class="btn btn-ghost" data-action="go-account" style="width:100%;">アカウントを作る</button>
     </div>`;
   }
-  const rows = friendList.length ? friendList.map(f => `
+  const rows = friendList.length ? friendList.map(f => {
+    const p = presenceLabel(friendPresence[f.uid]);
+    return `
     <div class="friend-row">
-      <span class="friend-icon">${iconMarkup(friendIcons[f.uid])}</span>
+      <span class="friend-icon">${iconMarkup(friendIcons[f.uid])}<span class="pres-dot" style="background:${p.color};"></span></span>
       <div class="friend-info">
         <div class="friend-name">${escapeHtml(f.name || 'プレイヤー')}</div>
-        <div class="friend-code">${escapeHtml(f.code || '')}</div>
+        <div class="friend-code">${p.text}</div>
       </div>
       <button class="btn btn-soft friend-invite" data-action="friend-invite" data-uid="${f.uid}" data-name="${escapeHtml(f.name||'')}">招待</button>
       <button class="btn btn-ghost friend-del" data-action="friend-remove" data-uid="${f.uid}">×</button>
-    </div>`).join('')
+    </div>`;
+  }).join('')
     : '<p style="font-size:12px; color:var(--ink-soft); margin:0; text-align:center; padding:8px 0;">まだフレンドがいません</p>';
 
   return `
@@ -6576,6 +6822,13 @@ function makeGameSession(mode, opts){
     aiTimeoutPassed:false,
     statusNote:null, // 「AIがパスしました」などの一時的なお知らせ（次の着手で消える）
   };
+  if(mode === 'match'){
+    const t = opts.timeLimitSec || 600;
+    session.timeLeftBlack = t;
+    session.timeLeftWhite = t;
+    session.matchEndReason = null;
+    session.matchLoser = null;
+  }
   
   // バラエティモード用フィールド
   if(mode === 'variety'){
@@ -6603,6 +6856,9 @@ function turnColorMeta(g){
       name: mine ? (onlineState.myName || 'あなた') : (onlineState.oppName || '相手'),
       color: g.current===1 ? 'black' : 'white'
     };
+  }
+  if(g.mode==='match' && g.opts.vsType==='offline'){
+    return g.current===1 ? {name:'黒番', color:'black'} : {name:'白番', color:'white'};
   }
   return g.current===1 ? {name:'あなた', color:'black'} : {name:'AI', color:'white'};
 }
@@ -6728,18 +6984,33 @@ function renderBoardScreen(){
   
   // パスボタンの表示判定
   const showPassBtn = state.settings.allowPass && !g.over && !g.thinking && !g.pendingFlips && 
-                      (g.mode==='battle' || g.current===1) && !(g.opts && (g.opts.isFlip || g.opts.isFlipGate)) && g.mode!=='online';
+                      (g.mode==='battle' || (g.mode==='match' && g.opts.vsType==='offline') || g.current===1)
+                      && !(g.opts && (g.opts.isFlip || g.opts.isFlipGate)) && g.mode!=='online';
   
+  // 黒白どちらがどれだけ「押している」かを、一目でわかるバーで示す（現在置かれている石の比率）
+  const totalStones = black + white;
+  const blackPct = totalStones > 0 ? Math.round(black / totalStones * 100) : 50;
+  const turnIsBlack = g.current === 1;
   return `
     <div class="board-wrap">
-      <div class="turn-banner">
-        <div class="who"><span class="dot" style="background:${meta.color==='black'?'#111':'#fff'};"></span>${g.over? '対局終了':escapeHtml(meta.name)+'さんのターン'}</div>
+      <div class="turn-banner ${!g.over ? 'turn-'+(turnIsBlack?'black':'white') : ''}">
+        <div class="who"><span class="dot ${!g.over?'turn-pulse':''}" style="background:${meta.color==='black'?'#111':'#fff'};"></span>${g.over? '対局終了':escapeHtml(meta.name)+'さんの番です'}</div>
         ${timer}
       </div>
-      <div class="score-strip">
-        <div class="score-chip ${black>=white?'leading':''} ${g.mode==='online'&&onlineState.myColor===1?'is-me':''}"><span class="sc-stone" style="background:#111;"></span><span class="sc-name">${escapeHtml(leftName)}</span><span class="sc-num">${black}</span>${g.mode==='online'?reactionBubbleMarkup(1):''}</div>
-        <div class="score-chip ${white>black?'leading':''} ${g.mode==='online'&&onlineState.myColor===2?'is-me':''}"><span class="sc-stone" style="background:#eee; box-shadow:inset 0 0 0 1px #ccc;"></span><span class="sc-name">${escapeHtml(rightName)}</span><span class="sc-num">${white}</span>${g.mode==='online'?reactionBubbleMarkup(2):''}</div>
+      <div class="stone-bar" aria-hidden="true">
+        <div class="stone-bar-black" style="width:${blackPct}%"></div>
+        <div class="stone-bar-white" style="width:${100-blackPct}%"></div>
       </div>
+      <div class="score-strip">
+        <div class="score-chip ${black>=white?'leading':''} ${!g.over&&turnIsBlack?'is-turn':''} ${g.mode==='online'&&onlineState.myColor===1?'is-me':''}"><span class="sc-stone" style="background:#111;"></span><span class="sc-name">${escapeHtml(leftName)}</span><span class="sc-num">${black}</span>${g.mode==='online'?reactionBubbleMarkup(1):''}</div>
+        <div class="score-chip ${white>black?'leading':''} ${!g.over&&!turnIsBlack?'is-turn':''} ${g.mode==='online'&&onlineState.myColor===2?'is-me':''}"><span class="sc-stone" style="background:#eee; box-shadow:inset 0 0 0 1px #ccc;"></span><span class="sc-name">${escapeHtml(rightName)}</span><span class="sc-num">${white}</span>${g.mode==='online'?reactionBubbleMarkup(2):''}</div>
+      </div>
+      ${g.mode==='match' ? `
+      <div class="match-clock-row">
+        <span class="match-clock ${!g.over&&turnIsBlack?'is-turn':''}" id="matchClockBlack">${matchClockText(g.timeLeftBlack)}</span>
+        <span class="match-clock-label">持ち時間</span>
+        <span class="match-clock ${!g.over&&!turnIsBlack?'is-turn':''}" id="matchClockWhite">${matchClockText(g.timeLeftWhite)}</span>
+      </div>` : ''}
       <div class="board ${boardStyleClass()}" id="boardEl"${eventBoardStyle()}>${cells.join('')}</div>
       ${varietyEventMarkup}
       ${stellaChallengeActive ? '<div class="stella-banner">この対局に勝利すると Stella が解禁！</div>' : ''}
@@ -6750,7 +7021,9 @@ function renderBoardScreen(){
     <div class="btn-row" style="margin-top:14px;">
       ${g.mode==='online'
         ? (g.over ? '' : `<button class="btn btn-ghost" data-action="online-resign">${ruby('投了','とうりょう',1)}する</button>`)
-        : ((g.opts && (g.opts.isFlip || g.opts.isFlipGate)) ? '' : `<button class="btn btn-ghost" data-action="give-up">${ruby('投了','とうりょう',1)}してもどる</button>`)}
+        : g.mode==='match'
+          ? (g.over ? '' : `<button class="btn btn-ghost" data-action="give-up">${ruby('投了','とうりょう',1)}する</button>`)
+          : ((g.opts && (g.opts.isFlip || g.opts.isFlipGate)) ? '' : `<button class="btn btn-ghost" data-action="give-up">${ruby('投了','とうりょう',1)}してもどる</button>`)}
       ${g.over?'<button class="btn btn-primary" data-action="see-result">結果を見る</button>':''}
     </div>
   `;
@@ -6767,6 +7040,62 @@ function startLiveTimer(){
   },1000);
 }
 function stopLiveTimer(){ if(timerHandle){ clearInterval(timerHandle); timerHandle=null; } }
+
+/* ============================================================
+   競技モード：持ち時間（対局時計）
+   公式ルール 15 条・17 条にならい、時間切れ・投了は「勝者の2石差勝ち」で確定する
+   ============================================================ */
+let matchClockHandle = null;
+function startMatchClock(){
+  stopMatchClock();
+  matchClockHandle = setInterval(()=>{
+    const g = game;
+    if(!g || g.over || g.mode !== 'match' || g.thinking || g.pendingFlips) return;
+    const key = g.current === 1 ? 'timeLeftBlack' : 'timeLeftWhite';
+    g[key] = Math.max(0, (g[key]||0) - 1);
+    renderMatchClock();
+    if(g[key] <= 0){ matchTimeUp(g, g.current); return; }
+  }, 1000);
+}
+function stopMatchClock(){ if(matchClockHandle){ clearInterval(matchClockHandle); matchClockHandle=null; } }
+function matchClockText(s){
+  return String(Math.floor(Math.max(0,s||0)/60)).padStart(2,'0')+':'+String(Math.max(0,s||0)%60).padStart(2,'0');
+}
+function renderMatchClock(){
+  const g = game;
+  if(!g || g.mode !== 'match') return;
+  const elB = document.getElementById('matchClockBlack');
+  const elW = document.getElementById('matchClockWhite');
+  if(elB) elB.textContent = matchClockText(g.timeLeftBlack);
+  if(elW) elW.textContent = matchClockText(g.timeLeftWhite);
+}
+// 時間切れ・投了のとき、「勝者の2石差勝ち」として記録する石数を求める（公式ルール15条①・17条）。
+// 現在の石差が既に2以上あればそのまま。2未満（僅差・逆転していた場合を含む）なら、
+// 負けた側の石数は変えず、勝った側だけを「負けた側＋2」まで引き上げる
+function matchForcedScore(black, white, loserColor){
+  let finalBlack = black, finalWhite = white;
+  if(loserColor === 1){ if(white - black < 2) finalWhite = black + 2; }
+  else { if(black - white < 2) finalBlack = white + 2; }
+  return { black: finalBlack, white: finalWhite };
+}
+// 時間切れ：負けた側の相手を「2石差勝ち」として確定する
+function matchTimeUp(g, loserColor){
+  if(!g || g.over) return;
+  const {black, white} = countStones(g.board);
+  g.matchEndReason = 'timeup';
+  g.matchLoser = loserColor;
+  endGame(g, matchForcedScore(black, white, loserColor));
+  render();
+}
+// 投了：同様に「勝者の2石差勝ち」として確定する（公式ルール17条）
+function matchResign(g, resignerColor){
+  if(!g || g.over) return;
+  const {black, white} = countStones(g.board);
+  g.matchEndReason = 'resign';
+  g.matchLoser = resignerColor;
+  endGame(g, matchForcedScore(black, white, resignerColor));
+  render();
+}
 
 /* ---- interaction: placing stones ---- */
 function onCellClick(r,c){
@@ -7055,10 +7384,20 @@ function resultSubKey(g){
   if(g.opts && (g.opts.isFlip || g.opts.isFlipGate)) return 'flipside';
   return g.mode === 'training' ? 'training' : g.mode === 'casual' ? 'casual' : 'variety';
 }
-function endGame(g){
+// forcedScore を渡すと、実際の盤面の石数ではなく、その数値を最終スコアとして使う
+// （競技モードで、時間切れ・投了により石差を確定させるときに使う）
+function endGame(g, forcedScore){
   g.over=true;
   stopLiveTimer();
-  const {black,white} = countStones(g.board);
+  stopMatchClock();
+  let black, white;
+  if(forcedScore){
+    black = forcedScore.black; white = forcedScore.white;
+  } else if(g.mode === 'match'){
+    ({black, white} = countStonesMatch(g.board));   // 競技ルール：空きマスは勝者の総取り
+  } else {
+    ({black, white} = countStones(g.board));
+  }
   const durationSec = Math.floor((Date.now()-g.startedAt)/1000);
   const entry = {
     timestamp: Date.now(),
@@ -7068,6 +7407,10 @@ function endGame(g){
   };
   // FlipSide の対局は、通常の成績（通算・ランク・ゆるモードの記録）に混ぜない
   if(g.opts && (g.opts.isFlip || g.opts.isFlipGate)){ handleFlipEnd(g, entry, black, white); return; }
+  // 競技モードの対局は、専用の記録に残し、通常の成績には混ぜない
+  if(g.mode === 'match'){ handleMatchEnd(g, entry, black, white); return; }
+  // イベントのハント対局も、専用の処理に流す
+  if(g.mode === 'event'){ handleEventEnd(g, entry, black, white); return; }
   // 統計を更新
   state.totalGames = (state.totalGames || 0) + 1;
   if(g.mode==='battle'){
@@ -7446,7 +7789,7 @@ function statRowsMarkup(st){
 
 // 見出しの色。アイコンから取り出した色が分かっていればそれを使う
 let heroColorCache = {};   // アイコン画像 → 取り出した色
-function profileHeroMarkup(icon, name, code){
+function profileHeroMarkup(icon, name, code, isAdmin){
   const c = icon ? heroColorCache[icon] : null;
   const bg = c
     ? `background:linear-gradient(150deg, ${shade(c,1.18)}, ${shade(c,0.72)} 78%);`
@@ -7457,7 +7800,7 @@ function profileHeroMarkup(icon, name, code){
   return `
     <div class="hero" style="${bg} color:${fg};">
       <div class="mp-head">
-        <div class="mp-icon">${iconMarkup(icon)}</div>
+        <div class="mp-icon ${isAdmin?'is-admin':''}">${iconMarkup(icon)}</div>
         <div class="mp-head-text">
           <h2 style="margin:0; color:${fg}; ${sh}">${escapeHtml(name)}</h2>
           <p style="margin:4px 0 0; ${sub?`color:${sub};`:''} ${sh}">ID ${escapeHtml(code || '--------')}</p>
@@ -7526,7 +7869,7 @@ function viewMyPage(){
   ensureHeroColor(myProfile.icon);
   const bio = myProfile.bio || '';
   return `
-    ${profileHeroMarkup(myProfile.icon, profileName(), myUserCode())}
+    ${profileHeroMarkup(myProfile.icon, profileName(), myUserCode(), hasModeratorTitle(myTitleIds))}
 
     <div class="section-title">プロフィール</div>
     <div class="card">
@@ -7558,16 +7901,22 @@ function viewMyPage(){
       </div>
       <div class="field">
         <label>誕生日</label>
+        ${(myProfile.birthMonth && myProfile.birthDay) ? `
+        <p style="margin:0; font-size:15px; font-weight:700; color:var(--ink);">${myProfile.birthMonth}月${myProfile.birthDay}日</p>
+        <p style="font-size:11px; color:var(--ink-soft); margin:4px 0 0;">誕生日は一度設定すると変更できません。</p>
+        ` : `
         <div class="inline-row">
           <select id="mpBMonth" style="flex:1; padding:10px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px;">
             <option value="0">月</option>
-            ${Array.from({length:12},(_,k)=>`<option value="${k+1}" ${myProfile.birthMonth===k+1?'selected':''}>${k+1}月</option>`).join('')}
+            ${Array.from({length:12},(_,k)=>`<option value="${k+1}">${k+1}月</option>`).join('')}
           </select>
           <select id="mpBDay" style="flex:1; padding:10px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px;">
             <option value="0">日</option>
-            ${Array.from({length:31},(_,k)=>`<option value="${k+1}" ${myProfile.birthDay===k+1?'selected':''}>${k+1}日</option>`).join('')}
+            ${Array.from({length:31},(_,k)=>`<option value="${k+1}">${k+1}日</option>`).join('')}
           </select>
         </div>
+        <p style="font-size:11px; color:var(--urushi); margin:6px 0 0;">誕生日は一度設定すると、あとから変更できなくなります。よく確認してから保存してください。</p>
+        `}
         <div class="toggle-row" style="margin-top:8px;">
           <div class="trow-text"><b>誕生日を公開する</b><span>オンにすると、ほかの人のマイページから見えます</span></div>
           <label class="switch"><input type="checkbox" id="mpBPublic" ${myProfile.birthPublic?'checked':''}><span class="toggle-track"></span></label>
@@ -7601,6 +7950,492 @@ function viewMyPage(){
 }
 
 // フレンド画面（マイページのメニューから開く）
+/* ============================================================
+   ランカーモード：ランキング
+   ============================================================ */
+const RANKING_KINDS = [
+  {id:'total', label:'総合'},
+  {id:'winrate', label:'勝率'},
+  {id:'login', label:'連続ログイン日数'},
+  {id:'training', label:'特訓ランク'},
+  {id:'casual', label:'ゆる解放度'},
+];
+let rankingData = null;      // 取得したランキング一覧（キャッシュ）
+let rankingLoading = false;
+let rankingError = false;
+let rankingKind = 'total';
+
+function loadRankingIfNeeded(){
+  if(rankingData || rankingLoading || !fbDb) return;
+  rankingLoading = true; rankingError = false;
+  fbDb.ref('leaderboard').once('value').then(snap => {
+    const v = snap.val() || {};
+    rankingData = Object.entries(v).map(([uid, e]) => Object.assign({uid}, e));
+    rankingLoading = false;
+    render();
+  }).catch(err => {
+    console.warn('ランキングの取得に失敗:', err);
+    rankingLoading = false; rankingError = true;
+    render();
+  });
+}
+// 並べ替えに使う数値（ゆる解放度は、同数のときに FlipSide の解放度で細かく順位を付ける。
+// ただし画面には出さない＝「内訳として含む」）
+function rankingScoreFor(kind, e){
+  const games = e.games || 0;
+  const winrate = games > 0 ? (e.wins||0) / games : 0;
+  const trainingScore = ((e.trainingRankIndex||0) * 1000 + (e.trainingXNumber||0)) / (RANK_MAX_X + (RANK_LADDER.length)*1000);
+  const casualScore = (e.casualUnlocked||0) / 100;
+  const flipScore = (e.flipUnlocked||0) / 15;
+  const loginScore = Math.min(e.consecutiveLoginDays||0, 365) / 365;
+  switch(kind){
+    case 'winrate': return games > 0 ? winrate : -1;
+    case 'login': return e.consecutiveLoginDays || 0;
+    case 'training': return (e.trainingRankIndex||0) * 1000 + (e.trainingXNumber||0);
+    case 'casual': return (e.casualUnlocked||0) * 1000 + (e.flipUnlocked||0);
+    case 'total':
+    default: return trainingScore + casualScore + flipScore + winrate + loginScore;
+  }
+}
+function rankingValueText(kind, e){
+  switch(kind){
+    case 'winrate': { const g=e.games||0; return g>0 ? `${Math.round((e.wins||0)/g*100)}%（${g}戦）` : '対局なし'; }
+    case 'login': return `${e.consecutiveLoginDays||0}日`;
+    case 'training': return rankLabel(e.trainingRankIndex||0, e.trainingXNumber||0);
+    case 'casual': return `${e.casualUnlocked||0} / 100`;
+    case 'total':
+    default: return `ゆる ${e.casualUnlocked||0}/100・特訓 ${rankLabel(e.trainingRankIndex||0, e.trainingXNumber||0)}`;
+  }
+}
+function viewRankerRanking(){
+  if(!isSignedIn()){
+    return `
+      <div class="hero" style="background:linear-gradient(150deg, #f2ac2b, #e8562f 80%);">
+        <div class="hero-eyebrow">RANKING</div>
+        <h2>ランキング</h2>
+      </div>
+      <div class="card">
+        <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">ランキングを見るにはアカウントが必要です。設定から作成できます。</p>
+        <button class="btn btn-ghost" data-action="go-account" style="width:100%;">アカウントを作る</button>
+      </div>`;
+  }
+  loadRankingIfNeeded();
+  const showMod = !!state.settings.rankingShowModerators;
+  let list = (rankingData || []).filter(e => showMod || !e.isModerator);
+  list = list.slice().sort((a,b) => rankingScoreFor(rankingKind,b) - rankingScoreFor(rankingKind,a));
+  const myIdx = list.findIndex(e => e.uid === fbUid);
+  const rows = list.slice(0, 100).map((e, i) => `
+    <div class="rank-row ${e.uid===fbUid?'is-me':''}">
+      <span class="rank-pos">${i+1}</span>
+      <span class="rank-name">${escapeHtml(e.name||'プレイヤー')}${e.isModerator?' <span class="rank-mod-badge">MOD</span>':''}</span>
+      <span class="rank-value">${rankingValueText(rankingKind, e)}</span>
+    </div>`).join('');
+  const body = rankingLoading ? `<p style="text-align:center; padding:20px; color:var(--ink-soft);">読み込み中…</p>`
+    : rankingError ? `<p style="text-align:center; padding:20px; color:var(--ink-soft);">読み込めませんでした</p>`
+    : (rows || `<p style="text-align:center; padding:20px; color:var(--ink-soft);">まだ記録がありません</p>`);
+  return `
+    <div class="hero" style="background:linear-gradient(150deg, #f2ac2b, #e8562f 80%);">
+      <div class="hero-eyebrow">RANKING</div>
+      <h2>ランキング</h2>
+      <p>O-LABOの全プレイヤーが対象です。</p>
+    </div>
+    <div class="card">
+      <label class="f" for="rankingKindSelect">表示するランキング</label>
+      <select id="rankingKindSelect" data-action="ranking-kind-change">
+        ${RANKING_KINDS.map(k=>`<option value="${k.id}" ${rankingKind===k.id?'selected':''}>${k.label}</option>`).join('')}
+      </select>
+      <div class="toggle-row" style="margin-top:10px;">
+        <div class="trow-text"><b>モデレーターを含む</b><span>運営メンバーもランキングに表示します</span></div>
+        <label class="switch"><input type="checkbox" ${showMod?'checked':''} data-action="toggle-ranking-moderators"><span class="toggle-track"></span></label>
+      </div>
+    </div>
+    ${myIdx>=0 ? `<p style="margin:0 0 8px; font-size:12px; color:var(--ink-soft); text-align:center;">あなたの順位：${myIdx+1}位 / ${list.length}人中</p>` : ''}
+    <div class="card" style="padding:0;">${body}</div>
+  `;
+}
+
+/* ============================================================
+   ランカーモード：競技（日本オセロ連盟 競技ルール準拠）
+   ============================================================ */
+const MATCH_TIME_OPTIONS = [
+  {sec:180, label:'3分'},
+  {sec:300, label:'5分'},
+  {sec:600, label:'10分'},
+  {sec:1200, label:'20分'},
+];
+const MATCH_AI_LEVELS = [
+  {id:'easy', label:'やさしい', depth:4, rnd:0.12, boost:0},
+  {id:'normal', label:'ふつう', depth:8, rnd:0.02, boost:0},
+  {id:'hard', label:'むずかしい', depth:12, rnd:0, boost:3},
+];
+let matchVsType = 'ai';       // ai | offline | online
+let matchTimeSec = 600;
+let matchAiLevel = 'normal';
+
+function viewRankerMatch(){
+  if(sub.match === 'play' && game && game.mode === 'match') return renderBoardScreen();
+  if(sub.match === 'result') return renderMatchResultScreen();
+  return viewMatchSetup();
+}
+function viewMatchSetup(){
+  return `
+    <div class="hero" style="background:linear-gradient(150deg, #37465a, #1b232d 80%);">
+      <div class="hero-eyebrow">COMPETITION</div>
+      <h2>競技</h2>
+      <p>日本オセロ連盟の競技ルールに準拠した対局です。持ち時間を使い切ると、相手の2石差勝ちで確定します。終局時に空きマスがあれば、勝っている方の総取りになります。</p>
+    </div>
+    <div class="card">
+      <label class="f">対戦相手</label>
+      <div class="btn-row">
+        <button class="btn ${matchVsType==='ai'?'btn-accent':'btn-ghost'}" data-action="match-vstype" data-v="ai">対AI</button>
+        <button class="btn ${matchVsType==='offline'?'btn-accent':'btn-ghost'}" data-action="match-vstype" data-v="offline">オフライン</button>
+        <button class="btn ${matchVsType==='online'?'btn-accent':'btn-ghost'}" data-action="match-vstype" data-v="online">オンライン</button>
+      </div>
+      <p style="font-size:11px; color:var(--ink-soft); margin:8px 0 0;">
+        ${matchVsType==='ai' ? 'AIを相手に、一人で練習できます。' : matchVsType==='offline' ? 'この端末で、ふたりで交代しながら対局します。' : '離れた相手と対局します。'}
+      </p>
+    </div>
+    ${matchVsType==='ai' ? `
+    <div class="card">
+      <label class="f">AIの強さ</label>
+      <div class="btn-row">
+        ${MATCH_AI_LEVELS.map(l=>`<button class="btn ${matchAiLevel===l.id?'btn-accent':'btn-ghost'}" data-action="match-ailevel" data-v="${l.id}">${l.label}</button>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="card">
+      <label class="f">持ち時間（ひとり分）</label>
+      <div class="btn-row">
+        ${MATCH_TIME_OPTIONS.map(t=>`<button class="btn ${matchTimeSec===t.sec?'btn-accent':'btn-ghost'}" data-action="match-time" data-v="${t.sec}">${t.label}</button>`).join('')}
+      </div>
+    </div>
+    ${matchVsType==='online'
+      ? `<button class="btn btn-primary" data-action="match-online-start" style="width:100%;">相手をさがす</button>`
+      : `<button class="btn btn-primary" data-action="match-start" style="width:100%;">対局を始める</button>`}
+  `;
+}
+function startMatch(){
+  const level = MATCH_AI_LEVELS.find(l=>l.id===matchAiLevel) || MATCH_AI_LEVELS[1];
+  navigate(()=>{
+    game = makeGameSession('match', {
+      vsType: matchVsType, timeLimitSec: matchTimeSec,
+      aiDepth: level.depth, aiRnd: level.rnd, boost: level.boost||0, aiGreedy:0,
+      showHints:false, playerStarts:true,
+    });
+    sub.match = 'play';
+  }, ()=>{ startLiveTimer(); startMatchClock(); if(matchVsType==='ai' && game) maybeTriggerAI(game); });
+}
+function renderMatchResultScreen(){
+  const g = game, r = g && g.lastResult;
+  if(!r){
+    return `<div class="card"><p style="text-align:center; margin:0;">結果がありません。</p>
+      <button class="btn btn-ghost" data-action="match-setup-back" style="width:100%; margin-top:10px;">戻る</button></div>`;
+  }
+  const win = r.result === 'win', draw = r.result === 'draw';
+  const reasonText = r.endReason === 'timeup' ? '時間切れによる確定です。'
+    : r.endReason === 'resign' ? '投了による確定です。' : '';
+  return `
+    <div class="hero" style="background:linear-gradient(150deg, #37465a, #1b232d 80%);">
+      <div class="hero-eyebrow">RESULT</div>
+      <h2>${win?'勝利':(draw?'引き分け':'敗北')}</h2>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="display:flex; justify-content:center; align-items:baseline; gap:14px; margin:6px 0;">
+        <b style="font-size:40px; font-family:var(--font-title);">${r.blackScore}</b>
+        <span style="font-size:20px; color:var(--ink-soft);">-</span>
+        <b style="font-size:40px; font-family:var(--font-title);">${r.whiteScore}</b>
+      </div>
+      ${reasonText ? `<p style="font-size:12px; color:var(--ink-soft); margin:0 0 10px;">${reasonText}</p>` : ''}
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn btn-accent" data-action="match-again">もう一度</button>
+        <button class="btn btn-ghost" data-action="match-setup-back">設定に戻る</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ============================================================
+   ランカーモード：イベント（期間限定のハントイベント）
+   フェーズ：投票期間(1,2日目) → イベント期間(3,4,5日目) → 結果発表(6日目)
+   ============================================================ */
+const EVENT_AI_TIERS_DEFAULT = [
+  {depth:3, rnd:0.25, boost:0, pt:5},
+  {depth:5, rnd:0.1,  boost:0, pt:15},
+  {depth:7, rnd:0,    boost:0, pt:30},
+  {depth:9, rnd:0,    boost:1, pt:50},
+  {depth:11,rnd:0,    boost:2, pt:75},
+  {depth:12,rnd:0,    boost:4, pt:100},
+];
+let eventData = null;              // events/current のキャッシュ
+let eventParticipant = null;       // 自分の参加者データ（{name, groupId, points, huntCount}）
+let eventGroups = null;            // グループ一覧 {groupId: {...}}
+let eventParticipantsAll = null;   // 全参加者（ランキング用）
+let eventLoading = false;
+let eventJoinStep = null;          // null | 'choose' | 'create-group' | 'join-group' | 'join-password'
+let eventSelectedGroupId = null;
+let eventHunting = false;          // ハント中（連打防止）
+
+function eventDayMs(){ return 86400000; }
+// 今がどのフェーズか：none(開催なし) | vote(投票期間) | hunt(イベント期間) | result(結果発表) | ended(完全終了)
+function eventPhase(ev, now){
+  now = now || Date.now();
+  if(!ev || !ev.startAt) return 'none';
+  const day = eventDayMs();
+  const voteEnd = ev.startAt + (ev.voteDays||2)*day;
+  const huntEnd = voteEnd + (ev.huntDays||3)*day;
+  const resultEnd = huntEnd + (ev.resultDays||1)*day;
+  if(now < ev.startAt) return 'none';
+  if(now < voteEnd) return 'vote';
+  if(now < huntEnd) return 'hunt';
+  if(now < resultEnd) return 'result';
+  return 'ended';
+}
+function loadEventIfNeeded(){
+  if(eventData !== null || eventLoading || !fbDb) return;
+  eventLoading = true;
+  fbDb.ref('events/current').once('value').then(snap => {
+    eventData = snap.val() || false;   // 開催中イベントが無ければ false
+    eventLoading = false;
+    if(eventData && fbUid){
+      return Promise.all([
+        fbDb.ref('events/current/participants').once('value'),
+        fbDb.ref('events/current/groups').once('value'),
+      ]).then(([pSnap, gSnap]) => {
+        const all = pSnap.val() || {};
+        eventParticipantsAll = Object.entries(all).map(([uid,e]) => Object.assign({uid}, e));
+        eventParticipant = all[fbUid] || null;
+        eventGroups = gSnap.val() || {};
+        render();
+      });
+    }
+    render();
+  }).catch(err => { console.warn('イベント情報の取得に失敗:', err); eventLoading = false; eventData = false; render(); });
+}
+function viewRankerEvent(){
+  if(!isSignedIn()){
+    return `
+      <div class="hero" style="background:linear-gradient(150deg, #8e44ad, #4a235a 80%);">
+        <div class="hero-eyebrow">EVENT</div>
+        <h2>イベント</h2>
+      </div>
+      <div class="card">
+        <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">イベントに参加するにはアカウントが必要です。設定から作成できます。</p>
+        <button class="btn btn-ghost" data-action="go-account" style="width:100%;">アカウントを作る</button>
+      </div>`;
+  }
+  loadEventIfNeeded();
+  const hero = `
+    <div class="hero" style="background:linear-gradient(150deg, #8e44ad, #4a235a 80%);">
+      <div class="hero-eyebrow">EVENT</div>
+      <h2>イベント</h2>
+    </div>`;
+  if(eventLoading && eventData === null) return hero + `<div class="card"><p style="text-align:center; margin:0; color:var(--ink-soft);">読み込み中…</p></div>`;
+  if(!eventData) return hero + `<div class="card"><p style="text-align:center; margin:0; color:var(--ink-soft);">現在、開催中のイベントはありません。</p></div>`;
+  const phase = eventPhase(eventData);
+  if(phase === 'none') return hero + `<div class="card"><p style="text-align:center; margin:0; color:var(--ink-soft);">まもなくイベントが始まります。</p></div>`;
+  if(phase === 'ended') return hero + `<div class="card"><p style="text-align:center; margin:0; color:var(--ink-soft);">イベントは終了しました。</p></div>`;
+  if(phase === 'hunt' && sub.event === 'play' && game && game.mode === 'event') return renderBoardScreen();
+  if(phase === 'hunt' && sub.event === 'result') return hero + viewEventHuntResult();
+  if(phase === 'vote') return hero + viewEventVote();
+  if(phase === 'hunt') return hero + viewEventHunt();
+  return hero + viewEventResultPhase();   // 'result'
+}
+// ---- 投票期間（参加表明） ----
+function viewEventVote(){
+  if(eventParticipant) return viewEventWaiting();
+  if(eventJoinStep === 'create-group') return viewEventCreateGroup();
+  if(eventJoinStep === 'join-group') return viewEventJoinGroupList();
+  if(eventJoinStep === 'join-password') return viewEventJoinPassword();
+  if(eventJoinStep === 'choose'){
+    return `
+      <div class="card">
+        <p style="font-size:12.5px; color:var(--ink); line-height:1.8; margin:0 0 12px;">グループに参加する場合、参加したいグループを選び、そのグループの合言葉を入力してください。</p>
+        <div class="btn-row" style="flex-direction:column; gap:8px;">
+          <button class="btn btn-accent" data-action="event-create-group-start" style="width:100%;">グループを作る</button>
+          <button class="btn btn-ghost" data-action="event-join-group-start" style="width:100%;">グループに参加</button>
+          <button class="btn btn-ghost" data-action="event-join-solo" style="width:100%;">個人で参加</button>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">イベントマッチ</div>
+      <p style="font-size:12.5px; color:var(--ink); line-height:1.8; margin:0 0 12px;">イベントに参加します。イベントは、個人参加やグループを作ることもできます。</p>
+      <button class="btn btn-accent" data-action="event-join-begin" style="width:100%;">イベントに参加</button>
+    </div>`;
+}
+function viewEventCreateGroup(){
+  return `
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">グループを作る</div>
+      <label class="f">グループ名</label>
+      <input type="text" id="eventGroupName" maxlength="20" placeholder="グループ名">
+      <label class="f" style="margin-top:10px;">合言葉</label>
+      <input type="text" id="eventGroupPassword" maxlength="20" placeholder="合言葉">
+      <p style="font-size:11px; color:var(--ink-soft); margin:8px 0 0;">グループ名は、他のグループと同じ名前にはできません。</p>
+      <button class="btn btn-accent" data-action="event-create-group-submit" style="width:100%; margin-top:14px;">グループを作成</button>
+      <button class="btn btn-ghost" data-action="event-join-back" style="width:100%; margin-top:8px;">戻る</button>
+    </div>`;
+}
+function viewEventJoinGroupList(){
+  const groups = Object.entries(eventGroups || {});
+  const rows = groups.map(([gid, g]) => `
+    <div class="card" style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+      <span class="mp-icon" style="width:40px; height:40px;">${iconMarkup(g.icon)}</span>
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:700; font-size:13.5px;">${escapeHtml(g.name||'グループ')}</div>
+        <button class="btn-text" data-action="event-view-group-members" data-gid="${gid}" style="font-size:11px; color:var(--jade-deep); background:none; border:none; padding:0; cursor:pointer;">メンバーを見る</button>
+      </div>
+      <button class="btn btn-soft" data-action="event-pick-group" data-gid="${gid}">参加</button>
+    </div>`).join('');
+  return `
+    <div class="section-title">参加するグループを選んでください。</div>
+    ${rows || '<div class="card"><p style="text-align:center; margin:0; color:var(--ink-soft);">まだグループがありません。</p></div>'}
+    <button class="btn btn-ghost" data-action="event-join-back" style="width:100%; margin-top:8px;">戻る</button>`;
+}
+function viewEventJoinPassword(){
+  const g = (eventGroups||{})[eventSelectedGroupId] || {};
+  return `
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">${escapeHtml(g.name||'グループ')}に参加</div>
+      <label class="f">合言葉</label>
+      <input type="text" id="eventJoinPasswordInput" maxlength="20" placeholder="合言葉">
+      <button class="btn btn-accent" data-action="event-join-group-submit" style="width:100%; margin-top:14px;">参加</button>
+      <button class="btn btn-ghost" data-action="event-join-back" style="width:100%; margin-top:8px;">戻る</button>
+    </div>`;
+}
+function viewEventWaiting(){
+  const list = eventRankedParticipants();
+  const rows = list.map((e,i) => `
+    <div class="rank-row"><span class="rank-pos">-</span><span class="rank-name">${escapeHtml(e.name||'プレイヤー')}</span><span class="rank-value">0pt</span></div>`).join('');
+  return `
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">イベントマッチ</div>
+      <p style="font-size:12.5px; color:var(--ink); line-height:1.8; margin:0 0 12px;">イベント開始までお待ちください。</p>
+      <button class="btn btn-ghost" disabled style="width:100%; opacity:.5;">ハントする</button>
+    </div>
+    <div class="card" style="padding:0;">${rows || '<p style="text-align:center; padding:16px; color:var(--ink-soft); margin:0;">まだ参加者がいません</p>'}</div>`;
+}
+// ---- イベント期間（ハント） ----
+function viewEventHunt(){
+  if(!eventParticipant){
+    return `<div class="card"><p style="text-align:center; margin:0; color:var(--ink-soft);">このイベントには参加していません。次回のイベントをお待ちください。</p></div>`;
+  }
+  const list = eventRankedParticipants().slice(0, 50);
+  const rows = list.map((e,i) => `
+    <div class="rank-row ${e.uid===fbUid?'is-me':''}"><span class="rank-pos">${i+1}</span><span class="rank-name">${escapeHtml(e.name||'プレイヤー')}</span><span class="rank-value">${e.points||0}pt</span></div>`).join('');
+  return `
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">イベントマッチ</div>
+      <p style="font-size:12.5px; color:var(--ink); line-height:1.8; margin:0 0 12px;">イベント開催中です。AIと戦ってptを上げよう！</p>
+      <button class="btn btn-accent" data-action="event-hunt" ${eventHunting?'disabled':''} style="width:100%;">${eventHunting?'対局中…':'ハントする'}</button>
+    </div>
+    <div class="card" style="padding:0;">${rows || '<p style="text-align:center; padding:16px; color:var(--ink-soft); margin:0;">まだ記録がありません</p>'}</div>`;
+}
+// ---- 結果発表 ----
+function viewEventResultPhase(){
+  if(!eventParticipant){
+    return `<div class="card"><p style="text-align:center; margin:0; color:var(--ink-soft);">このイベントには参加していません。</p></div>`;
+  }
+  const claimed = !!eventParticipant.rewardClaimed;
+  return `
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">イベントマッチ</div>
+      <p style="font-size:13px; color:var(--ink); line-height:1.8; margin:0 0 6px;">イベントは終了しました！</p>
+      ${eventData.nextEventNote ? `<p style="font-size:12px; color:var(--ink-soft); margin:0 0 12px;">${escapeHtml(eventData.nextEventNote)}</p>` : ''}
+      <button class="btn btn-accent" data-action="event-claim-reward" ${claimed?'disabled':''} style="width:100%;">${claimed?'受け取り済み':'報酬を受け取る'}</button>
+    </div>`;
+}
+function viewEventHuntResult(){
+  const g = game, r = g && g.lastResult;
+  if(!r) return `<div class="card"><p style="text-align:center; margin:0;">結果がありません。</p><button class="btn btn-ghost" data-action="event-hunt-back" style="width:100%; margin-top:10px;">戻る</button></div>`;
+  const win = r.result === 'win';
+  return `
+    <div class="card" style="text-align:center;">
+      <div style="font-size:15px; font-weight:800; margin-bottom:6px;">${win ? `${r.gainedPt}pt 獲得！` : '捕まえられませんでした…'}</div>
+      <div style="display:flex; justify-content:center; align-items:baseline; gap:14px; margin:6px 0;">
+        <b style="font-size:36px; font-family:var(--font-title);">${r.myScore}</b>
+        <span style="font-size:18px; color:var(--ink-soft);">-</span>
+        <b style="font-size:36px; font-family:var(--font-title);">${r.aiScore}</b>
+      </div>
+      <button class="btn btn-accent" data-action="event-hunt-back" style="width:100%; margin-top:10px;">もどる</button>
+    </div>`;
+}
+// 参加者をポイント順に並べる（グループの場合は、グループ内で山分けした分が各自のポイントとして計算済みの想定）
+function eventRankedParticipants(){
+  const list = (eventParticipantsAll || []).slice();
+  list.sort((a,b) => (b.points||0) - (a.points||0) || (a.joinedAt||0) - (b.joinedAt||0));
+  return list;
+}
+
+async function eventJoinSolo(){
+  if(!fbDb || !fbUid) return;
+  const entry = { name: profileName()||'プレイヤー', groupId: null, joinedAt: Date.now(), points: 0, huntCount: 0 };
+  try{
+    await fbDb.ref('events/current/participants/'+fbUid).set(entry);
+    eventParticipant = entry;
+    eventParticipantsAll = (eventParticipantsAll||[]).concat([Object.assign({uid:fbUid}, entry)]);
+    eventJoinStep = null;
+    render();
+  }catch(err){ toast('参加できませんでした'); }
+}
+async function eventJoinWithGroup(gid){
+  if(!fbDb || !fbUid) return;
+  const entry = { name: profileName()||'プレイヤー', groupId: gid, joinedAt: Date.now(), points: 0, huntCount: 0 };
+  try{
+    await fbDb.ref('events/current/participants/'+fbUid).set(entry);
+    eventParticipant = entry;
+    eventParticipantsAll = (eventParticipantsAll||[]).concat([Object.assign({uid:fbUid}, entry)]);
+    eventJoinStep = null;
+    render();
+  }catch(err){ toast('参加できませんでした'); }
+}
+async function eventCreateGroup(){
+  const name = (document.getElementById('eventGroupName')||{}).value || '';
+  const pw = (document.getElementById('eventGroupPassword')||{}).value || '';
+  if(!name.trim()){ toast('グループ名を入力してください'); return; }
+  if(!pw.trim()){ toast('合言葉を入力してください'); return; }
+  const dup = Object.values(eventGroups||{}).some(g => g.name === name.trim());
+  if(dup){ toast('そのグループ名はすでに使われています'); return; }
+  const gid = 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+  const groupData = { name:name.trim(), password:pw.trim(), icon:myProfile.icon||'', ownerUid:fbUid, createdAt:Date.now() };
+  try{
+    await fbDb.ref('events/current/groups/'+gid).set(groupData);
+    eventGroups = eventGroups || {}; eventGroups[gid] = groupData;
+    await eventJoinWithGroup(gid);
+  }catch(err){ toast('グループを作成できませんでした'); }
+}
+async function eventJoinGroupSubmit(){
+  const pw = (document.getElementById('eventJoinPasswordInput')||{}).value || '';
+  const g = (eventGroups||{})[eventSelectedGroupId];
+  if(!g){ toast('グループが見つかりません'); return; }
+  if(pw.trim() !== g.password){ toast('合言葉が違います'); return; }
+  await eventJoinWithGroup(eventSelectedGroupId);
+}
+// ランダムな難易度の AI を相手に、ハント対局を始める
+function eventDoHunt(){
+  if(eventHunting || !eventParticipant) return;
+  const tiers = (eventData && eventData.aiTiers) || EVENT_AI_TIERS_DEFAULT;
+  const tierIdx = Math.floor(Math.random() * tiers.length);
+  const tier = tiers[tierIdx];
+  eventHunting = true;
+  navigate(()=>{
+    game = makeGameSession('event', {
+      aiDepth: tier.depth, aiRnd: tier.rnd, boost: tier.boost||0, aiGreedy:0,
+      showHints:false, playerStarts:true, eventTier:tierIdx, eventPt:tier.pt,
+    });
+    sub.event = 'play';
+  }, ()=>{ startLiveTimer(); if(game) maybeTriggerAI(game); });
+}
+async function eventClaimReward(){
+  if(!eventParticipant || eventParticipant.rewardClaimed || !fbDb || !fbUid) return;
+  try{
+    await fbDb.ref('events/current/participants/'+fbUid+'/rewardClaimed').set(true);
+    eventParticipant.rewardClaimed = true;
+    toast('報酬を受け取りました（ゲーム内通貨は後日のアップデートで使えるようになります）');
+    render();
+  }catch(err){ toast('受け取りに失敗しました'); }
+}
+
 function viewFriendsTab(){
   if(myBanned) return bannedNoticeMarkup();
   if(!isSignedIn()){
@@ -7704,7 +8539,7 @@ function viewOtherPage(){
   const isFriend = friendList.some(f => f.uid === p.uid);
   const sent = !!sentRequestTo[p.uid];
   return `
-    ${profileHeroMarkup(p.icon, p.name, p.code)}
+    ${profileHeroMarkup(p.icon, p.name, p.code, hasModeratorTitle(p.titleIds))}
 
     ${p.bio ? `<div class="section-title">自己紹介</div>
     <div class="card"><p class="bio-text">${bioToHtml(p.bio)}</p></div>` : ''}
@@ -7873,7 +8708,7 @@ function viewSettings(){
       <button class="btn btn-danger" data-action="delete-cache">キャッシュデータを${ruby('削除','さくじょ',2)}</button>
     </div>
     <div style="text-align:center; margin-top:20px; padding:10px; font-size:10px; color:var(--ink-soft);">
-      <span>ver. 2.6.2</span>
+      <span>ver. 2.7.0</span>
     </div>
     <input type="file" id="importFile" accept=".txt" style="display:none;">
   `;
@@ -8095,6 +8930,7 @@ document.addEventListener('change', (e)=>{
   const act = el && el.dataset && el.dataset.action;
   if(act === 'set-home-se-volume') previewSE('decision', (state.settings.homeSeVolume ?? 70) / 100);
   else if(act === 'set-battle-se-volume') previewSE('flip1', (state.settings.battleSeVolume ?? 70) / 100);
+  else if(act === 'ranking-kind-change'){ rankingKind = el.value; render(); }
 }, true);
 
 document.addEventListener('click', (e)=>{
@@ -8120,13 +8956,28 @@ document.addEventListener('click', (e)=>{
           currentBasicMode = tabId;
           activeTab = 'basic';
           checkStellaCommand(tabId);
-        } else if(tabId === 'mp-profile' || tabId === 'mp-friends'){
+        } else if(tabId === 'mp-profile' || tabId === 'mp-friends' || tabId === 'mp-library'){
           stopQRScan();
           friendAddMode = null;
-          currentMyPageMode = (tabId === 'mp-friends') ? 'friends' : 'profile';
+          currentMyPageMode = tabId === 'mp-friends' ? 'friends' : (tabId === 'mp-library' ? 'library' : 'profile');
           sub.mypage = 'main';
           otherProfile = null;
           activeTab = 'mypage';
+          if(tabId === 'mp-library') sub.library = 'list';
+        } else if(tabId === 'mypage'){
+          // 下部メニューの「マイページ」から入ったときは、必ず自分のプロフィールから始める
+          stopQRScan();
+          friendAddMode = null;
+          currentMyPageMode = 'profile';
+          sub.mypage = 'main';
+          otherProfile = null;
+          activeTab = 'mypage';
+        } else if(tabId === 'rk-ranking' || tabId === 'rk-match' || tabId === 'rk-event'){
+          currentRankerMode = tabId === 'rk-match' ? 'match' : (tabId === 'rk-event' ? 'event' : 'ranking');
+          activeTab = 'ranker';
+        } else if(tabId === 'ranker'){
+          currentRankerMode = 'ranking';
+          activeTab = 'ranker';
         } else if(tabId === 'fs-flip' || tabId === 'fs-library'){
           currentFlipMode = (tabId === 'fs-library') ? 'library' : 'flip';
           if(tabId === 'fs-library') sub.library = 'list';
@@ -8277,6 +9128,8 @@ document.addEventListener('click', (e)=>{
     }
     case 'flip-back': navigate(()=>{ game = null; sub.flipside = 'home'; }); break;
     case 'give-up':
+      // 競技モードの投了は、公式ルールに基づき「相手の2石差勝ち」として記録する
+      if(game && game.mode==='match' && !game.over){ matchResign(game, game.current); break; }
       // オンラインは専用の投了（online-resign）を使う。FlipSide の対局（番人戦も Flip も）は投了できない
       if(game && (game.mode==='online' || (game.opts && (game.opts.isFlip || game.opts.isFlipGate)))) break;
       navigate(()=>{ if(game){ game=null; } sub[activeTab]='home'; });
@@ -8504,8 +9357,15 @@ document.addEventListener('click', (e)=>{
     case 'profile-save': {
       const nm = (document.getElementById('mpName')||{}).value || '';
       const bi = (document.getElementById('mpBio')||{}).value || '';
-      const bm = parseInt((document.getElementById('mpBMonth')||{}).value, 10) || 0;
-      const bd = parseInt((document.getElementById('mpBDay')||{}).value, 10) || 0;
+      // 誕生日は一度決めたら変更できない。すでに設定済みなら、画面の表示にかかわらず
+      // 元の値をそのまま使う（フォームが固定表示になっていても、ここで必ず保証する）
+      let bm, bd;
+      if(myProfile.birthMonth && myProfile.birthDay){
+        bm = myProfile.birthMonth; bd = myProfile.birthDay;
+      } else {
+        bm = parseInt((document.getElementById('mpBMonth')||{}).value, 10) || 0;
+        bd = parseInt((document.getElementById('mpBDay')||{}).value, 10) || 0;
+      }
       const bp = !!(document.getElementById('mpBPublic')||{}).checked;
       if(bi.length > BIO_MAX){ toast('自己紹介は' + BIO_MAX + '文字までです'); break; }
       if((bm && !bd) || (!bm && bd)){ toast('誕生日は月と日の両方を選んでください'); break; }
@@ -8543,6 +9403,58 @@ document.addEventListener('click', (e)=>{
       state = structuredClone(DEFAULT_STATE);
       closeSheet(); toast('キャッシュを削除しました'); render(); break;
     case 'close-sheet': closeSheet(); break;
+    case 'toggle-ranking-moderators':
+      state.settings.rankingShowModerators = !state.settings.rankingShowModerators;
+      saveState(); render();
+      break;
+    case 'match-vstype': matchVsType = el.dataset.v; render(); break;
+    case 'match-ailevel': matchAiLevel = el.dataset.v; render(); break;
+    case 'match-time': matchTimeSec = parseInt(el.dataset.v, 10) || 600; render(); break;
+    case 'match-start': startMatch(); break;
+    case 'match-online-start':
+      toast('オンラインでの競技対局は、近日対応予定です。今しばらくお待ちください');
+      break;
+    case 'match-again':
+      navigate(()=>{ game = null; sub.match = 'setup'; }, ()=> startMatch());
+      break;
+    case 'match-setup-back':
+      navigate(()=>{ game = null; sub.match = 'setup'; });
+      break;
+    case 'event-join-begin': eventJoinStep = 'choose'; render(); break;
+    case 'event-create-group-start': eventJoinStep = 'create-group'; render(); break;
+    case 'event-join-group-start': eventJoinStep = 'join-group'; render(); break;
+    case 'event-join-back':
+      eventJoinStep = (eventJoinStep === 'join-password') ? 'join-group' : 'choose';
+      render();
+      break;
+    case 'event-join-solo': eventJoinSolo(); break;
+    case 'event-create-group-submit': eventCreateGroup(); break;
+    case 'event-pick-group':
+      eventSelectedGroupId = el.dataset.gid;
+      eventJoinStep = 'join-password';
+      render();
+      break;
+    case 'event-join-group-submit': eventJoinGroupSubmit(); break;
+    case 'event-hunt': eventDoHunt(); break;
+    case 'event-hunt-back':
+      navigate(()=>{ game = null; sub.event = 'hunt'; });
+      break;
+    case 'event-claim-reward': eventClaimReward(); break;
+    case 'go-event':
+      navigate(()=>{ activeTab = 'ranker'; currentRankerMode = 'event'; });
+      break;
+    case 'event-view-group-members': {
+      const g = (eventGroups||{})[el.dataset.gid];
+      const members = (eventParticipantsAll||[]).filter(e => e.groupId === el.dataset.gid);
+      showSheet(`
+        <h3>${escapeHtml((g&&g.name)||'グループ')}のメンバー</h3>
+        <div style="max-height:260px; overflow-y:auto;">
+          ${members.length ? members.map(m=>`<div class="rank-row"><span class="rank-name">${escapeHtml(m.name||'プレイヤー')}</span></div>`).join('') : '<p style="text-align:center; color:var(--ink-soft);">まだメンバーがいません</p>'}
+        </div>
+        <button class="btn btn-ghost" data-action="close-sheet" style="width:100%; margin-top:10px;">閉じる</button>
+      `);
+      break;
+    }
     case 'save-conflict-use-cloud':
       closeSheet();
       if(pendingSyncCloud){
