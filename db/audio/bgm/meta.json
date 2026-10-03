@@ -1,0 +1,252 @@
+{
+  "tracks": [
+    {
+      "title": "Midnight Coffee",
+      "path": "./home/ro1.mp3"
+    },
+    {
+      "title": "Rainy Sunday",
+      "path": "./home/ro2.mp3"
+    },
+    {
+      "title": "Neon Dreams",
+      "path": "./home/ro3.mp3"
+    },
+    {
+      "title": "Lost in Thought",
+      "path": "./home/ro4.mp3"
+    },
+    {
+      "title": "Velvet Dusk",
+      "path": "./home/r51.mp3"
+    },
+    {
+      "title": "City Lights",
+      "path": "./home/ro6.mp3"
+    },
+    {
+      "title": "Quiet Streets",
+      "path": "./home/ro7.mp3"
+    },
+    {
+      "title": "Vintage Soul",
+      "path": "./home/ro8.mp3"
+    },
+    {
+      "title": "Soft Whispers",
+      "path": "./home/ro9.mp3"
+    },
+    {
+      "title": "Autumn Breeze",
+      "path": "./home/ro10.mp3"
+    },
+    {
+      "title": "Bedroom Melodies",
+      "path": "./home/ro11.mp3"
+    },
+    {
+      "title": "Starry Drive",
+      "path": "./home/ro12.mp3"
+    },
+    {
+      "title": "Distant Echoes",
+      "path": "./home/ro13.mp3"
+    },
+    {
+      "title": "Lazy Afternoon",
+      "path": "./home/ro14.mp3"
+    },
+    {
+      "title": "Puddle Reflections",
+      "path": "./home/ro15.mp3"
+    },
+    {
+      "title": "Friendly Fire",
+      "path": "./battling/vs1.mp3"
+    },
+    {
+      "title": "Warm Combat",
+      "path": "./battling/vs2.mp3"
+    },
+    {
+      "title": "Pixel Rivalry",
+      "path": "./battling/vs3.mp3"
+    },
+    {
+      "title": "Gentle Duel",
+      "path": "./battling/vs4.mp3"
+    },
+    {
+      "title": "Cozy Arena",
+      "path": "./battling/vs5.mp3"
+    },
+    {
+      "title": "Soft Rival",
+      "path": "./battling/vs6.mp3"
+    },
+    {
+      "title": "Chill Clash",
+      "path": "./battling/vs7.mp3"
+    },
+    {
+      "title": "Calm Before Battle",
+      "path": "./battling/vs8.mp3"
+    },
+    {
+      "title": "Lo-Fight",
+      "path": "./battling/vs9.mp3"
+    },
+    {
+      "title": "Midnight Match",
+      "path": "./battling/vs10.mp3"
+    },
+    {
+      "title": "Playful Sparring",
+      "path": "./battling/vs11.mp3"
+    },
+    {
+      "title": "Retro Arcade Dreams",
+      "path": "./battling/vs12.mp3"
+    },
+    {
+      "title": "Sweet Victory",
+      "path": "./battling/vs13.mp3"
+    },
+    {
+      "title": "Peaceful Respawn",
+      "path": "./battling/vs14.mp3"
+    },
+    {
+      "title": "Game Over Bliss",
+      "path": "./battling/vs15.mp3"
+    },
+    {
+      "title": "Casual Match",
+      "path": "./battling/vs16.mp3"
+    },
+    {
+      "title": "Tactical Chill",
+      "path": "./battling/vs17.mp3"
+    },
+    {
+      "title": "Warm Counter",
+      "path": "./battling/vs18.mp3"
+    },
+    {
+      "title": "Pixel Peace",
+      "path": "./battling/vs19.mp3"
+    },
+    {
+      "title": "Late Night Combo",
+      "path": "./battling/vs20.mp3"
+    },
+    {
+      "title": "Gentle Clutch",
+      "path": "./battling/vs21.mp3"
+    },
+    {
+      "title": "Retro Standby",
+      "path": "./battling/vs22.mp3"
+    },
+    {
+      "title": "Soft Defense",
+      "path": "./battling/vs23.mp3"
+    },
+    {
+      "title": "Cozy Headshot",
+      "path": "./battling/vs24.mp3"
+    },
+    {
+      "title": "Sunset Arcade",
+      "path": "./battling/vs25.mp3"
+    },
+    {
+      "title": "Friendly Match",
+      "path": "./battling/vs26.mp3"
+    },
+    {
+      "title": "Melancholic MVP",
+      "path": "./battling/vs27.mp3"
+    },
+    {
+      "title": "Sweet Defeat",
+      "path": "./battling/vs28.mp3"
+    },
+    {
+      "title": "Slow Motion Rumble",
+      "path": "./battling/vs29.mp3"
+    },
+    {
+      "title": "Calm Win Streak",
+      "path": "./battling/vs30.mp3"
+    },
+    {
+      "title": "Midnight Gamer",
+      "path": "./battling/vs31.mp3"
+    },
+    {
+      "title": "Gentle Strategy",
+      "path": "./battling/vs32.mp3"
+    },
+    {
+      "title": "crystal break",
+      "path": "./flipside/fl1.mp3"
+    },
+    {
+      "title": "crystal clear",
+      "path": "./flipside/fl2.mp3"
+    },
+    {
+      "title": "shattered crystal",
+      "path": "./flipside/fl3.mp3"
+    },
+    {
+      "title": "crystal heart",
+      "path": "./flipside/fl4.mp3"
+    },
+    {
+      "title": "frozen crystal",
+      "path": "./flipside/fl5.mp3"
+    },
+    {
+      "title": "neon crystal",
+      "path": "./flipside/fl6.mp3"
+    },
+    {
+      "title": "flip the switch",
+      "path": "./flipside/fl7.mp3"
+    },
+    {
+      "title": "the flip side",
+      "path": "./flipside/fl8.mp3"
+    },
+    {
+      "title": "coin flip",
+      "path": "./flipside/fl9.mp3"
+    },
+    {
+      "title": "perfect backflip",
+      "path": "./flipside/fl10.mp3"
+    },
+    {
+      "title": "flip it over",
+      "path": "./flipside/fl11.mp3"
+    },
+    {
+      "title": "crystal flip",
+      "path": "./flipside/fl12.mp3"
+    },
+    {
+      "title": "liquid crystal",
+      "path": "./flipside/fl13.mp3"
+    },
+    {
+      "title": "mind flip",
+      "path": "./flipside/fl14.mp3"
+    },
+    {
+      "title": "crystal prism",
+      "path": "./flipside/fl15.mp3"
+    }
+  ]
+}
