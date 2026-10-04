@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <style>
 :root{
+  color-scheme:light dark;
   --leaf:#0f7a3f;        /* ロゴの緑 */
   --leaf-soft:#e3f1e8;
   --ink:#16201a;
@@ -64,8 +65,10 @@ h2{ font-size:20px; margin:0 0 4px; }
 .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .grow{ flex:1; min-width:180px; }
 
-input[type=text],input[type=email],input[type=password],select,textarea{
-  width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; background:var(--panel);
+input[type=text],input[type=email],input[type=password],input[type=number],
+input[type=datetime-local],input[type=date],input[type=time],input[type=url],select,textarea{
+  width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px;
+  background:var(--panel); color:var(--ink); color-scheme:light dark;
 }
 textarea{ resize:vertical; min-height:70px; }
 input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{ outline:2px solid var(--leaf); outline-offset:2px; }
