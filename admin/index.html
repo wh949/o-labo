@@ -74,6 +74,8 @@ label.f{ display:block; font-size:12px; color:var(--ink-soft); margin:10px 0 4px
 .btn{ border:1px solid var(--line); background:var(--panel); padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:700; font-size:13px; white-space:nowrap; }
 .btn.primary{ background:var(--leaf); border-color:var(--leaf); color:#fff; }
 .btn.danger{ background:var(--danger); border-color:var(--danger); color:#fff; }
+.modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:500; padding:20px; }
+.modal-box{ background:var(--panel); border-radius:12px; padding:20px; max-width:420px; width:100%; max-height:80vh; overflow-y:auto; }
 .tiers{ width:100%; border-collapse:collapse; margin-top:6px; }
 .tiers th, .tiers td{ padding:4px 6px; text-align:center; font-size:12px; }
 .tiers th{ color:var(--ink-soft); font-weight:600; }
@@ -165,6 +167,7 @@ tbody tr:hover{ background:var(--leaf-soft); }
 <body>
 <div id="app"></div>
 <div class="toast" id="toast"></div>
+<div id="modalRoot"></div>
 <script>
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyD3481HlMki4kgq7m3puHrLfY6Rsh7tZ8c",
@@ -184,9 +187,14 @@ const db = firebase.database();
 
 let me = null;            // ログイン中の利用者
 let isOwner = false;      // 大元の管理者か
-let view = 'users';       // users | user | titles | rooms | admins | events
+let view = 'users';       // users | user | titles | rooms | admins | events | tournaments
 let currentEvent = null;  // events/current のキャッシュ
 let eventEditing = false; // イベント編集フォームを開いているか
+let currentTournament = null;   // tournaments/current のキャッシュ
+let tournamentEditing = false;
+let tournamentParticipantsAdmin = null;   // 大会の参加者一覧（組み合わせ生成用）
+let tournamentGamesAdmin = null;          // 大会の対局記録（棋譜含む。モデレーター閲覧用）
+let tournamentGameViewing = null;         // 今開いている対局の key
 let users = {};           // uid → 利用者
 let titles = {};          // 称号の一覧
 let presence = {};
@@ -199,6 +207,13 @@ let busy = false;
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove('on'),2400); }
+function showModal(html){
+  $('#modalRoot').innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this) closeModal();">
+      <div class="modal-box">${html}<button class="btn" style="width:100%; margin-top:14px;" onclick="closeModal()">閉じる</button></div>
+    </div>`;
+}
+function closeModal(){ $('#modalRoot').innerHTML = ''; }
 function fmtDate(ms){ if(!ms) return '-'; const d=new Date(ms); return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
 function iconSrc(u){ return u && u.profile && u.profile.icon && u.profile.icon.startsWith('data:') ? u.profile.icon : ''; }
 function nameOf(u){ return (u && ((u.profile && u.profile.displayName) || u.name)) || '(名前なし)'; }
@@ -274,24 +289,26 @@ auth.getRedirectResult().catch(()=>{});
 
 /* ---------- データの読み込み ---------- */
 async function loadAll(){
-  const [u, t, p, a, ev] = await Promise.all([
+  const [u, t, p, a, ev, tour] = await Promise.all([
     db.ref('users').once('value'),
     db.ref('titles').once('value'),
     db.ref('presence').once('value'),
     db.ref('admins').once('value').catch(()=>({ val:()=>({}) })),
-    db.ref('events/current').once('value').catch(()=>({ val:()=>null }))
+    db.ref('events/current').once('value').catch(()=>({ val:()=>null })),
+    db.ref('tournaments/current').once('value').catch(()=>({ val:()=>null }))
   ]);
   users = u.val() || {};
   titles = mergeTitles(t.val() || {});
   presence = p.val() || {};
   admins = a.val() || {};
   currentEvent = ev.val() || null;
+  currentTournament = tour.val() || null;
 }
 
 /* ---------- 画面 ---------- */
 function render(){
   const tabs = [
-    ['users','利用者'], ['titles','称号'], ['rooms','対局の部屋'], ['events','イベント'],
+    ['users','利用者'], ['titles','称号'], ['rooms','対局の部屋'], ['events','イベント'], ['tournaments','競技大会'],
     ...(isOwner ? [['admins','管理者']] : [])
   ];
   $('#app').innerHTML = `
@@ -310,11 +327,12 @@ function render(){
         view==='titles'? viewTitles():
         view==='rooms' ? viewRooms() :
         view==='events'? viewEvents():
+        view==='tournaments'? viewTournamentsAdmin():
         view==='admins'? viewAdmins(): ''
       }</main>
     </div>`;
 }
-function go(v){ view = v; selectedUid = null; detail = null; render(); if(v==='rooms') loadRooms(); }
+function go(v){ view = v; selectedUid = null; detail = null; render(); if(v==='rooms') loadRooms(); if(v==='tournaments'){ loadTournamentParticipants(); loadTournamentGames(); } }
 async function reloadAll(){ await loadAll(); if(view==='user' && selectedUid) await openUser(selectedUid, true); render(); toast('最新の情報にしました'); }
 
 /* 利用者の一覧 */
@@ -762,6 +780,227 @@ async function deleteEvent(){
     currentEvent = null;
     eventEditing = false;
     toast('イベントを削除しました');
+    render();
+  }catch(err){ toast('削除に失敗しました: ' + err.message); }
+}
+
+/* O-LABO競技大会の管理 */
+const TOUR_DAY_MS = 86400000;
+function tourPhaseOf(t, now){
+  now = now || Date.now();
+  if(!t || t.status !== 'published') return 'none（非公開）';
+  if(now < t.announceAt) return 'none（公開待ち）';
+  if(now < t.entryStartAt) return 'announced（予告中）';
+  if(now < t.entryEndAt) return 'entry（エントリー受付中）';
+  if(now < t.day1At) return 'bracket（組合せ公開・開催前）';
+  if(now < t.day2At) return 'day1（開催1日目）';
+  if(now < t.day3At) return 'day2（開催2日目）';
+  if(now < t.endAt) return 'day3（開催3日目・決勝）';
+  return 'ended（終了）';
+}
+// 本体（index.html）と同じロジック。不戦勝が同じ組に重ならないよう、各組の1人目から順に参加者を詰める
+function generateBracketAdmin(uids){
+  let size = 1;
+  while(size < uids.length) size *= 2;
+  size = Math.max(size, 2);
+  const shuffled = uids.slice().sort(() => Math.random() - 0.5);
+  const slots = new Array(size).fill(null);
+  let si = 0;
+  for(let i=0;i<size && si<shuffled.length;i+=2) slots[i] = shuffled[si++];
+  for(let i=1;i<size && si<shuffled.length;i+=2) slots[i] = shuffled[si++];
+  const round1 = [];
+  for(let i=0;i<size;i+=2){
+    const p1 = slots[i], p2 = slots[i+1];
+    const winner = (p2===null && p1!==null) ? p1 : (p1===null && p2!==null) ? p2 : null;
+    round1.push({p1, p2, winner, black:null, white:null, playedAt:null});
+  }
+  const rounds = [round1];
+  let roundSize = size/2;
+  while(roundSize >= 1){
+    const r = [];
+    for(let i=0;i<roundSize;i++) r.push({p1:null, p2:null, winner:null, black:null, white:null, playedAt:null});
+    rounds.push(r);
+    if(roundSize === 1) break;
+    roundSize = roundSize/2;
+  }
+  return {size, rounds};
+}
+function viewTournamentsAdmin(){
+  const t = currentTournament;
+  return `
+    <h2>O-LABO競技大会</h2>
+    <p class="lead">公式ルールに則った正式な大会を作成・編集・削除できます。情報公開は基本的にお知らせで行ってください（画像は db/news/img/ に置いて ![説明](ファイル名) で挿入できます）。</p>
+    ${t ? `<div class="box">
+      <h3>現在の大会</h3>
+      <p style="margin:0 0 4px;"><b>${esc(t.title||'（名前未設定）')}</b></p>
+      <p style="margin:0 0 4px; font-size:12px; color:var(--ink-soft);">今のフェーズ：${tourPhaseOf(t)}</p>
+      <p style="margin:0 0 10px; font-size:12px; color:var(--ink-soft);">
+        予告：${dtLocal(t.announceAt)} / エントリー：${dtLocal(t.entryStartAt)}〜${dtLocal(t.entryEndAt)}<br>
+        開催：${dtLocal(t.day1At)} 〜 ${dtLocal(t.day3At)} / 持ち時間：${Math.round((t.timeLimitSec||0)/60)}分
+      </p>
+      <div class="row">
+        <button class="btn" onclick="tournamentEditing=true; render();">編集する</button>
+        <button class="btn" onclick="generateTournamentBracket()">組み合わせを作る（${t.bracket?'作り直す':'今すぐ'}）</button>
+        <button class="btn danger" onclick="deleteTournament()">削除する</button>
+      </div>
+    </div>
+    <div class="box">
+      <h3>エントリー済みの参加者</h3>
+      <div id="tourParticipantsList">読み込み中…</div>
+    </div>
+    ${t.bracket ? `<div class="box"><h3>トーナメント表</h3>${tourBracketAdminMarkup(t)}</div>` : ''}
+    <div class="box">
+      <h3>対局記録（モデレーター閲覧用・棋譜含む）</h3>
+      <div id="tourGamesList">読み込み中…</div>
+    </div>
+    ` : `<div class="box"><p style="margin:0; color:var(--ink-soft);">現在、登録されている大会はありません。</p></div>`}
+    ${(!t || tournamentEditing) ? `
+    <div class="box">
+      <h3>${t ? '大会を編集' : '大会を作る'}</h3>
+      <label class="f" for="tTitle">大会名</label>
+      <input type="text" id="tTitle" maxlength="40" value="${esc((t&&t.title)||'')}">
+      <label class="f" for="tAnnounce">予告公開（開催1ヶ月前の目安）</label>
+      <input type="datetime-local" id="tAnnounce" value="${t?dtLocal(t.announceAt):''}">
+      <label class="f" for="tEntryStart">エントリー開始（開催2週間前の目安）</label>
+      <input type="datetime-local" id="tEntryStart" value="${t?dtLocal(t.entryStartAt):''}">
+      <label class="f" for="tEntryEnd">エントリー締切（開催3日前の目安）</label>
+      <input type="datetime-local" id="tEntryEnd" value="${t?dtLocal(t.entryEndAt):''}">
+      <label class="f" for="tDay1">開催1日目</label>
+      <input type="datetime-local" id="tDay1" value="${t?dtLocal(t.day1At):''}">
+      <label class="f" for="tDay2">開催2日目</label>
+      <input type="datetime-local" id="tDay2" value="${t?dtLocal(t.day2At):''}">
+      <label class="f" for="tDay3">開催3日目（決勝・配信）</label>
+      <input type="datetime-local" id="tDay3" value="${t?dtLocal(t.day3At):''}">
+      <label class="f" for="tEnd">大会終了（結果発表の区切り）</label>
+      <input type="datetime-local" id="tEnd" value="${t?dtLocal(t.endAt):''}">
+      <label class="f" for="tTimeLimit">対局の持ち時間（分）</label>
+      <input type="number" id="tTimeLimit" min="5" max="120" value="${t?Math.round((t.timeLimitSec||1500)/60):25}">
+      <label class="f" for="tLiveUrl">ライブ配信URL（3日目用、任意）</label>
+      <input type="text" id="tLiveUrl" value="${esc((t&&t.liveUrl)||'')}">
+      <label class="f" for="tNextNote">終了後に出す「次回予告」の文（任意）</label>
+      <input type="text" id="tNextNote" maxlength="80" value="${esc((t&&t.nextNote)||'')}">
+      <label class="f" for="tStatus">公開状態</label>
+      <select id="tStatus">
+        <option value="draft" ${(!t||t.status==='draft')?'selected':''}>非公開（準備中）</option>
+        <option value="published" ${t&&t.status==='published'?'selected':''}>公開する</option>
+      </select>
+      <div class="row" style="margin-top:14px;">
+        <button class="btn primary" onclick="saveTournament()">${t?'変更を保存':'作る'}</button>
+        ${t ? '<button class="btn" onclick="tournamentEditing=false; render();">やめる</button>' : ''}
+      </div>
+    </div>` : ''}
+  `;
+}
+function tourBracketAdminMarkup(t){
+  if(!t.bracket) return '';
+  const nameOf = uid => uid ? ((tournamentParticipantsAdmin && tournamentParticipantsAdmin[uid] && tournamentParticipantsAdmin[uid].name) || uid.slice(0,8)) : '―';
+  return `<div style="display:flex; gap:10px; overflow-x:auto;">${t.bracket.rounds.map((round,ri)=>`
+    <div style="flex:0 0 auto; width:150px;">
+      <div style="font-size:11px; font-weight:800; text-align:center; margin-bottom:6px;">Round ${ri+1}</div>
+      ${round.map(m=>`<div style="border:1px solid var(--line); border-radius:8px; margin-bottom:10px; font-size:11px;">
+        <div style="padding:4px 6px; ${m.winner&&m.winner===m.p1?'font-weight:800;background:var(--jade-mist);':''}">${esc(nameOf(m.p1))}</div>
+        <div style="padding:4px 6px; border-top:1px solid var(--line); ${m.winner&&m.winner===m.p2?'font-weight:800;background:var(--jade-mist);':''}">${esc(nameOf(m.p2))}</div>
+      </div>`).join('')}
+    </div>`).join('')}</div>`;
+}
+async function loadTournamentGames(){
+  if(!currentTournament) return;
+  try{
+    const snap = await db.ref('tournaments/current/games').once('value');
+    tournamentGamesAdmin = snap.val() || {};
+    const el = document.getElementById('tourGamesList');
+    if(el) el.innerHTML = tourGamesListMarkup();
+  }catch(err){ console.warn(err); }
+}
+function tourGamesListMarkup(){
+  const games = tournamentGamesAdmin || {};
+  const keys = Object.keys(games).sort();
+  if(!keys.length) return '<p style="margin:0; color:var(--ink-soft);">まだ対局記録がありません</p>';
+  return keys.map(k => {
+    const g = games[k];
+    const reasonLabel = g.endReason === 'timeup' ? '（時間切れ）' : g.endReason === 'resign' ? '（投了）' : '';
+    return `<div class="row" style="justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line);">
+      <span style="font-size:12px;">${esc(g.blackName||'黒')} ${g.black} - ${g.white} ${esc(g.whiteName||'白')}${reasonLabel}</span>
+      <button class="btn" style="padding:4px 10px; font-size:11px;" onclick="viewTournamentGame('${k}')">棋譜を見る</button>
+    </div>`;
+  }).join('');
+}
+function viewTournamentGame(key){
+  tournamentGameViewing = key;
+  const g = (tournamentGamesAdmin || {})[key];
+  if(!g) return;
+  const movesText = (g.boardStates || []).length + ' 手まで記録（最終局面の石数：黒' + g.black + ' / 白' + g.white + '）';
+  showModal(`
+    <h3>対局の詳細</h3>
+    <p style="font-size:12.5px; color:var(--ink-soft); margin:0 0 10px;">${esc(g.blackName||'黒')}（黒） vs ${esc(g.whiteName||'白')}（白）</p>
+    <p style="font-size:12.5px; margin:0 0 6px;">結果：${g.black} - ${g.white}　${g.endReason==='timeup'?'（時間切れによる確定）':g.endReason==='resign'?'（投了による確定）':''}</p>
+    <p style="font-size:12.5px; margin:0 0 10px;">${movesText}</p>
+    <p style="font-size:11px; color:var(--ink-soft); margin:0;">日時：${dtLocal(g.playedAt)}</p>
+  `);
+}
+async function loadTournamentParticipants(){
+  if(!currentTournament) return;
+  try{
+    const snap = await db.ref('tournaments/current/participants').once('value');
+    tournamentParticipantsAdmin = snap.val() || {};
+    const el = document.getElementById('tourParticipantsList');
+    if(el){
+      const list = Object.entries(tournamentParticipantsAdmin);
+      el.innerHTML = list.length
+        ? `<p style="margin:0 0 6px; font-size:12px; color:var(--ink-soft);">${list.length}人がエントリーしています</p>` +
+          list.map(([uid,e])=>`<div class="row" style="justify-content:space-between; padding:4px 0;"><span>${esc(e.name||'プレイヤー')}</span><span style="font-size:11px; color:var(--ink-soft);">${uid.slice(0,8)}</span></div>`).join('')
+        : '<p style="margin:0; color:var(--ink-soft);">まだエントリーがありません</p>';
+    }
+  }catch(err){ console.warn(err); }
+}
+async function saveTournament(){
+  const title = ($('#tTitle')||{}).value || '';
+  if(!title.trim()){ toast('大会名を入力してください'); return; }
+  const dates = ['tAnnounce','tEntryStart','tEntryEnd','tDay1','tDay2','tDay3','tEnd'].map(id => {
+    const v = ($('#'+id)||{}).value;
+    return v ? new Date(v).getTime() : 0;
+  });
+  if(dates.some(d => !d)){ toast('日時をすべて入力してください'); return; }
+  const data = {
+    title: title.trim(),
+    announceAt: dates[0], entryStartAt: dates[1], entryEndAt: dates[2],
+    day1At: dates[3], day2At: dates[4], day3At: dates[5], endAt: dates[6],
+    timeLimitSec: (parseInt(($('#tTimeLimit')||{}).value, 10) || 25) * 60,
+    liveUrl: ($('#tLiveUrl')||{}).value || '',
+    nextNote: ($('#tNextNote')||{}).value || '',
+    status: ($('#tStatus')||{}).value || 'draft',
+  };
+  if(currentTournament && currentTournament.bracket) data.bracket = currentTournament.bracket;
+  try{
+    await db.ref('tournaments/current').update(data);
+    currentTournament = Object.assign({}, currentTournament, data);
+    tournamentEditing = false;
+    toast('大会を保存しました');
+    render();
+    loadTournamentParticipants();
+  }catch(err){ toast('保存に失敗しました: ' + err.message); }
+}
+async function generateTournamentBracket(){
+  if(!currentTournament) return;
+  await loadTournamentParticipants();
+  const uids = Object.keys(tournamentParticipantsAdmin || {});
+  if(uids.length < 2){ toast('参加者が2人未満のため、組み合わせを作れません'); return; }
+  if(currentTournament.bracket && !confirm('すでに組み合わせがあります。作り直すと今の進行状況は消えます。よろしいですか？')) return;
+  const bracket = generateBracketAdmin(uids);
+  try{
+    await db.ref('tournaments/current/bracket').set(bracket);
+    currentTournament.bracket = bracket;
+    toast('組み合わせを作成しました');
+    render();
+  }catch(err){ toast('作成に失敗しました: ' + err.message); }
+}
+async function deleteTournament(){
+  if(!confirm('大会を削除します。参加者の記録もすべて消えます。よろしいですか？')) return;
+  try{
+    await db.ref('tournaments/current').remove();
+    currentTournament = null;
+    tournamentEditing = false;
+    toast('大会を削除しました');
     render();
   }catch(err){ toast('削除に失敗しました: ' + err.message); }
 }
