@@ -101,6 +101,24 @@ rt{font-size:.58em; font-weight:500; color:var(--ink-soft); opacity:.72; letter-
   display:inline-block; background:#e8562f; color:#fff; font-size:9px; font-weight:800;
   padding:1px 5px; border-radius:4px; vertical-align:middle; margin-left:3px;
 }
+/* O-LABO競技大会 */
+.tournament-banner{
+  display:flex; align-items:center; justify-content:space-between; width:100%; border:none; cursor:pointer;
+  background:linear-gradient(135deg, #b8860b, #5c4408); color:#fff; border-radius:14px; padding:12px 16px;
+  font-weight:800; font-size:13px; margin-bottom:12px;
+}
+.tournament-banner-phase{ font-size:11px; font-weight:600; opacity:.9; }
+.tournament-sched{ display:flex; flex-direction:column; gap:8px; }
+.tournament-sched > div{ display:flex; justify-content:space-between; font-size:12.5px; padding:6px 0; border-bottom:1px solid var(--line-soft); }
+.tournament-sched > div:last-child{ border-bottom:none; }
+.bracket-wrap{ display:flex; gap:10px; overflow-x:auto; padding-bottom:10px; }
+.bracket-round{ flex:0 0 auto; width:140px; }
+.bracket-round-title{ font-size:11px; font-weight:800; color:var(--ink-soft); text-align:center; margin-bottom:8px; }
+.bracket-match{ background:var(--panel); border:1px solid var(--line); border-radius:10px; margin-bottom:14px; overflow:hidden; }
+.bracket-p{ padding:7px 8px; font-size:11.5px; border-bottom:1px solid var(--line-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bracket-p:last-child{ border-bottom:none; }
+.bracket-p.is-winner{ font-weight:800; color:var(--jade-deep); background:var(--jade-mist); }
+.bracket-p.is-me{ color:var(--urushi); }
 .brand-mark{
   width:40px; height:40px; border-radius:50%;
   background:radial-gradient(circle at 32% 28%, var(--jade-light), var(--jade-deep) 72%);
@@ -2779,7 +2797,13 @@ function markdownToHtml(md){
   
   // イタリック (*text*)
   html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  
+
+  // 画像 ![alt](ファイル名) - db/news/img/ に置いたファイルを指す（リンクより先に処理する）
+  html = html.replace(/!\[(.*?)\]\((.*?)\)/g, (m, alt, path) => {
+    const src = /^https?:\/\//.test(path) ? path : `db/news/img/${path}`;
+    return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" style="max-width:100%; border-radius:10px; display:block; margin:10px 0;" loading="lazy">`;
+  });
+
   // リンク [text](url)
   html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" style="color:var(--jade);">$1</a>');
   
@@ -2791,7 +2815,7 @@ function markdownToHtml(md){
   // 段落の改行
   html = html.split('\n').map(line => {
     if(line.trim() === '') return '';
-    if(line.startsWith('<h') || line.startsWith('<a')) return line;
+    if(line.startsWith('<h') || line.startsWith('<a') || line.startsWith('<img')) return line;
     return `<p style="margin:8px 0;">${line}</p>`;
   }).join('');
   
@@ -3875,7 +3899,13 @@ let onlineState = {
   oppUid: '',
   oppIcon: '',
   oppTitleIds: [],
-  waitStartedAt: 0
+  waitStartedAt: 0,
+  isMatch: false,          // 競技モード（公式ルール）のオンライン対局か
+  matchTimeLimitSec: 600,
+  timeUpReported: false,   // 自分の時間切れを、もうサーバーに報告したか（二重送信防止）
+  isTournament: false,     // O-LABO競技大会の対局か
+  tournamentRound: undefined,
+  tournamentIdx: undefined
 };
 
 
@@ -5639,10 +5669,10 @@ async function onlineClaimRoom(roomId, myName){
   }
 }
 
-async function onlineTryJoinWaiting(myName){
+async function onlineTryJoinWaiting(myName, isMatch){
   let snap;
   try{
-    snap = await fbDb.ref('waiting').limitToFirst(20).once('value');
+    snap = await fbDb.ref('waiting').limitToFirst(40).once('value');
   }catch(err){
     onlineDebug.lastError = '受付一覧を読めません: ' + (err && err.code ? err.code : err);
     onlineLog(onlineDebug.lastError);
@@ -5665,6 +5695,8 @@ async function onlineTryJoinWaiting(myName){
     const e = list[roomId];
     if(!e || e.uid === fbUid) continue;
     if(roomId === onlineState.roomId) continue;
+    // 競技モードと通常対戦は、別の待機列として扱う（混ざらないようにする）
+    if(!!e.isMatch !== !!isMatch) continue;
     // 古い受付は掃除して次へ
     if(!e.createdAt || now - e.createdAt > ONLINE_QUEUE_TTL){
       fbDb.ref('waiting/'+roomId).remove().catch(()=>{});
@@ -5686,11 +5718,17 @@ async function onlineTryJoinWaiting(myName){
   return null;
 }
 
-async function onlineRandomMatch(myName){
+// matchOpts: { isMatch:true, timeLimitSec:600 } を渡すと、競技モード（公式ルール）の対局になる
+async function onlineRandomMatch(myName, matchOpts){
   if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
+  const isMatch = !!(matchOpts && matchOpts.isMatch);
+  const timeLimitSec = (matchOpts && matchOpts.timeLimitSec) || 600;
   // 押した瞬間に画面を切り替える
   onlineState.myName = myName;
   onlineState.mode = 'random';
+  onlineState.isMatch = isMatch;
+  onlineState.matchTimeLimitSec = timeLimitSec;
+  onlineState.timeUpReported = false;
   onlineState.phase = 'connecting';
   sub.online = 'room';
   render();
@@ -5706,7 +5744,7 @@ async function onlineRandomMatch(myName){
 
   try{
     // まず、すでに待っている人がいないか探す
-    const found = await onlineTryJoinWaiting(myName);
+    const found = await onlineTryJoinWaiting(myName, isMatch);
     if(found){
       onlineState.myColor = 2;
       onlineState.roomId = found;
@@ -5716,15 +5754,22 @@ async function onlineRandomMatch(myName){
 
     // いなければ自分が待ち役になる
     const myRoomId = 'r' + Math.random().toString(36).slice(2,10);
+    const roomData = {
+      status:'waiting', createdAt: Date.now(),
+      host:{uid:fbUid, name:myName},
+      board: boardToStr(newBoard()), turn:1, passStreak:0, moveCount:0
+    };
+    if(isMatch){
+      roomData.isMatch = true;
+      roomData.timeLimitSec = timeLimitSec;
+      roomData.timeLeftBlack = timeLimitSec;
+      roomData.timeLeftWhite = timeLimitSec;
+    }
     // 2つの書き込みを同時に投げる（順番に待つと、その分だけ遅くなる）
     await Promise.all([
-      fbDb.ref('rooms/'+myRoomId).set({
-        status:'waiting', createdAt: Date.now(),
-        host:{uid:fbUid, name:myName},
-        board: boardToStr(newBoard()), turn:1, passStreak:0, moveCount:0
-      }),
+      fbDb.ref('rooms/'+myRoomId).set(roomData),
       fbDb.ref('waiting/'+myRoomId).set({
-        uid: fbUid, name: myName, createdAt: Date.now()
+        uid: fbUid, name: myName, createdAt: Date.now(), isMatch
       })
     ]);
     fbDb.ref('waiting/'+myRoomId).onDisconnect().remove();
@@ -5993,11 +6038,30 @@ function onlineAttachRoom(id){
 
     if(firstTime){
       onlineState.phase = 'playing';
-      game = makeGameSession('online', {
-        playerStarts: onlineState.myColor === 1,
-        myColor: onlineState.myColor,
-        showHints: true
-      });
+      const isMatch = !!room.isMatch;
+      onlineState.isMatch = isMatch;
+      onlineState.timeUpReported = false;
+      if(isMatch){
+        game = makeGameSession('match', {
+          playerStarts: onlineState.myColor === 1,
+          myColor: onlineState.myColor,
+          vsType: 'online',
+          oppName: newOpp,
+          timeLimitSec: room.timeLimitSec || 600,
+          showHints: false
+        });
+        game.timeLeftBlack = room.timeLeftBlack ?? room.timeLimitSec ?? 600;
+        game.timeLeftWhite = room.timeLeftWhite ?? room.timeLimitSec ?? 600;
+        game.lastMoveAt = Date.now();
+        sub.match = 'play';
+        startMatchClock();
+      } else {
+        game = makeGameSession('online', {
+          playerStarts: onlineState.myColor === 1,
+          myColor: onlineState.myColor,
+          showHints: true
+        });
+      }
       sub.online = 'play';
       onlineState.lastChangeAt = Date.now();
       onlineStopQueueHeartbeat();
@@ -6040,6 +6104,14 @@ function onlineAttachRoom(id){
     game.passStreak = room.passStreak || 0;
     game.moveCount = room.moveCount || 0;
     game.over = (room.status === 'finished');
+    if(game.mode === 'match'){
+      // 相手が消費した時間も含めて、サーバー側の値に合わせる。
+      // 新しく自分の手番が回ってきたら、その瞬間から経過時間を測り直す
+      if(room.timeLeftBlack !== undefined) game.timeLeftBlack = room.timeLeftBlack;
+      if(room.timeLeftWhite !== undefined) game.timeLeftWhite = room.timeLeftWhite;
+      if(game.moveCount > prevMoves || firstTime) game.lastMoveAt = Date.now();
+      renderMatchClock();
+    }
     // 手が進んだら、その時点の盤面をリプレイ用に控える
     if(game.moveCount > prevMoves){
       game.boardStates = game.boardStates || [];
@@ -6071,7 +6143,8 @@ function onlineAttachRoom(id){
       onlineState.phase = 'finished';
       onlineStopIdleWatch();
       onlineFinish(room);
-      sub.online = 'room';
+      // 競技モードは handleMatchEnd が sub.match/sub.ranker を設定するので、ここでは上書きしない
+      if(!onlineState.isMatch) sub.online = 'room';
     }
     render();
   });
@@ -6090,7 +6163,7 @@ function onlineStartQueueHeartbeat(){
     }
     // 通信が一瞬切れると受付が消えることがあるので、丸ごと書き直して復活させる
     fbDb.ref('waiting/'+onlineState.roomId).set({
-      uid: fbUid, name: onlineState.myName || '', createdAt: Date.now()
+      uid: fbUid, name: onlineState.myName || '', createdAt: Date.now(), isMatch: !!onlineState.isMatch
     }).catch(()=>{});
     requestRender();   // 経過時間の表示を更新する
   }, 10000);
@@ -6310,16 +6383,34 @@ async function onlineSendMove(r, c){
     nextTurn = opp; finished = true;
   }
 
+  const update = {
+    board: boardToStr(nb),
+    turn: nextTurn,
+    passStreak,
+    moveCount: (game.moveCount||0) + 1,
+    lastMove: {row:r, col:c, by:me},
+    status: finished ? 'finished' : 'playing',
+    updatedAt: firebase.database.ServerValue.TIMESTAMP
+  };
+
+  if(game.mode === 'match'){
+    // 自分が今の手番で消費した時間を差し引いて、サーバーに記録する
+    const key = me === 1 ? 'timeLeftBlack' : 'timeLeftWhite';
+    const elapsedSec = Math.floor((Date.now() - (game.lastMoveAt || game.startedAt)) / 1000);
+    const newTime = Math.max(0, (game[key] || 0) - elapsedSec);
+    update[key] = newTime;
+    game[key] = newTime;
+    game.lastMoveAt = Date.now();
+    if(finished){
+      // 競技ルール：終局時に空きマスがあれば、勝っている方の総取りになる
+      const ms = countStonesMatch(nb);
+      update.matchBlack = ms.black;
+      update.matchWhite = ms.white;
+    }
+  }
+
   try{
-    await onlineRoomRef.update({
-      board: boardToStr(nb),
-      turn: nextTurn,
-      passStreak,
-      moveCount: (game.moveCount||0) + 1,
-      lastMove: {row:r, col:c, by:me},
-      status: finished ? 'finished' : 'playing',
-      updatedAt: firebase.database.ServerValue.TIMESTAMP
-    });
+    await onlineRoomRef.update(update);
   }catch(err){
     console.error(err);
     toast('通信に失敗しました');
@@ -6379,6 +6470,8 @@ function onlineFinish(room){
     if(onlineState.recordedRoomId === rid) return;
     onlineState.recordedRoomId = rid;
   }
+  // 競技モードは、通常のオンライン対局とは別の記録方法（state.match.history）に流す
+  if(game.mode === 'match'){ onlineMatchFinish(room); return; }
   const {black, white} = countStones(game.board);
   const mine = onlineState.myColor === 1 ? black : white;
   const theirs = onlineState.myColor === 1 ? white : black;
@@ -6422,6 +6515,69 @@ function onlineFinish(room){
   trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
   saveState();
   game.lastResult = {result, myScore:mine, aiScore:theirs};
+}
+// 競技モード（オンライン）の終局処理。公式ルールの「空きマス総取り」「2石差勝ち」を適用し、
+// 通常のオンライン対局とは別に state.match.history に記録する
+function onlineMatchFinish(room){
+  let black, white;
+  if(room && room.matchBlack !== undefined && room.matchWhite !== undefined){
+    black = room.matchBlack; white = room.matchWhite;
+  } else {
+    ({black, white} = countStonesMatch(game.board));
+  }
+  let endReason = 'normal', loserColor = null;
+  if(room && room.resignedBy){ endReason = 'resign'; loserColor = room.resignedBy; }
+  else if(room && room.matchTimeUpBy){ endReason = 'timeup'; loserColor = room.matchTimeUpBy; }
+  else if(room && room.abandonedBy){ endReason = 'resign'; loserColor = room.abandonedBy; }
+  if(loserColor){
+    const sc = matchForcedScore(black, white, loserColor);
+    black = sc.black; white = sc.white;
+  }
+  game.matchEndReason = endReason;
+  game.matchLoser = loserColor;
+  if(onlineState.isTournament) tournamentRecordResult(black, white, room);
+  const entry = {
+    timestamp: Date.now(),
+    moves: game.moveCount || 0,
+    durationSec: Math.max(0, Math.floor((Date.now() - (game.startedAt || Date.now())) / 1000)),
+    boardStates: Array.isArray(game.boardStates) ? game.boardStates.slice() : []
+  };
+  handleMatchEnd(game, entry, black, white);
+}
+// 大会の対局が終わったら、トーナメント表に結果を書き込み、勝者を次のラウンドへ進める
+async function tournamentRecordResult(black, white, room){
+  const t = tournamentData;
+  if(!t || !fbDb || onlineState.tournamentRound === undefined) return;
+  const roundIdx = onlineState.tournamentRound, idx = onlineState.tournamentIdx;
+  const myColor = game.opts.myColor;
+  const myWon = myColor === 1 ? black > white : white > black;
+  const hostUid = room && room.host && room.host.uid;
+  const guestUid = room && room.guest && room.guest.uid;
+  const oppUid = hostUid === fbUid ? guestUid : hostUid;
+  const winnerUid = myWon ? fbUid : oppUid;
+  try{
+    await fbDb.ref(`tournaments/current/bracket/rounds/${roundIdx}/${idx}`).update({
+      winner: winnerUid, black, white, playedAt: Date.now()
+    });
+    if(t.bracket && t.bracket.rounds[roundIdx+1]){
+      const nextIdx = Math.floor(idx/2);
+      const slotKey = (idx % 2 === 0) ? 'p1' : 'p2';
+      await fbDb.ref(`tournaments/current/bracket/rounds/${roundIdx+1}/${nextIdx}/${slotKey}`).set(winnerUid);
+    }
+    // 大会の対局は、モデレーターが管理者ページから見られるよう、棋譜まで含めて公開データとして残す。
+    // どちらのプレイヤーが書き込んでも同じ内容になるので、二重に書いても実害はない
+    await fbDb.ref(`tournaments/current/games/${roundIdx}_${idx}`).set({
+      blackUid: myColor === 1 ? fbUid : oppUid,
+      whiteUid: myColor === 1 ? oppUid : fbUid,
+      blackName: tournamentNameOf(t, myColor === 1 ? fbUid : oppUid, false),
+      whiteName: tournamentNameOf(t, myColor === 1 ? oppUid : fbUid, false),
+      black, white, winner: winnerUid,
+      endReason: game.matchEndReason || 'normal',
+      moves: game.moveCount || 0,
+      boardStates: Array.isArray(game.boardStates) ? game.boardStates.map(b => boardToStr(b)) : [],
+      playedAt: Date.now()
+    });
+  }catch(err){ console.warn('トーナメント結果の記録に失敗:', err); }
 }
 
 // ランダムマッチが成立したときの演出
@@ -7047,8 +7203,29 @@ function startMatchClock(){
     const key = g.current === 1 ? 'timeLeftBlack' : 'timeLeftWhite';
     g[key] = Math.max(0, (g[key]||0) - 1);
     renderMatchClock();
-    if(g[key] <= 0){ matchTimeUp(g, g.current); return; }
+    if(g[key] <= 0){
+      if(g.opts.vsType === 'online'){
+        // 自分の手番が時間切れになったときだけ、自分からサーバーへ報告する。
+        // 相手の手番が時間切れの場合は、相手からの報告を待つ
+        if(g.current === onlineState.myColor) onlineMatchTimeUp();
+      } else {
+        matchTimeUp(g, g.current);
+      }
+      return;
+    }
   }, 1000);
+}
+// オンライン競技対局で、自分の持ち時間が切れたことをサーバーに報告する
+async function onlineMatchTimeUp(){
+  if(!onlineRoomRef || onlineState.timeUpReported) return;
+  onlineState.timeUpReported = true;
+  try{
+    await onlineRoomRef.update({
+      status: 'finished',
+      matchTimeUpBy: onlineState.myColor,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP
+    });
+  }catch(err){ console.warn('時間切れの報告に失敗:', err); }
 }
 function stopMatchClock(){ if(matchClockHandle){ clearInterval(matchClockHandle); matchClockHandle=null; } }
 function matchClockText(s){
@@ -8081,7 +8258,26 @@ let matchAiLevel = 'normal';
 function viewRankerMatch(){
   if(sub.match === 'play' && game && game.mode === 'match') return renderBoardScreen();
   if(sub.match === 'result') return renderMatchResultScreen();
+  if(sub.match === 'online-wait' && ['connecting','waiting','joining'].includes(onlineState.phase)) return viewMatchOnlineWaiting();
+  if(sub.match === 'tournament') return viewTournament();
   return viewMatchSetup();
+}
+// 進行中の大会があれば、競技セットアップ画面の上部に小さく知らせる
+function tournamentBannerMarkup(){
+  if(!fbUid) return '';
+  loadTournamentIfNeeded();
+  if(!tournamentData) return '';
+  const phase = tournamentPhase(tournamentData);
+  if(phase === 'none' || phase === 'ended') return '';
+  const labels = {
+    announced:'予告中', entry:'エントリー受付中', bracket:'組み合わせ公開中',
+    day1:'開催1日目', day2:'開催2日目', day3:'開催3日目（決勝）'
+  };
+  return `
+    <button class="tournament-banner" data-action="go-tournament">
+      <span>🏆 ${escapeHtml(tournamentData.title||'O-LABO競技大会')}</span>
+      <span class="tournament-banner-phase">${labels[phase]||''} ›</span>
+    </button>`;
 }
 function viewMatchSetup(){
   return `
@@ -8090,6 +8286,7 @@ function viewMatchSetup(){
       <h2>競技</h2>
       <p>日本オセロ連盟の競技ルールに準拠した対局です。持ち時間を使い切ると、相手の2石差勝ちで確定します。終局時に空きマスがあれば、勝っている方の総取りになります。</p>
     </div>
+    ${tournamentBannerMarkup()}
     <div class="card">
       <label class="f">対戦相手</label>
       <div class="btn-row">
@@ -8129,6 +8326,28 @@ function startMatch(){
     });
     sub.match = 'play';
   }, ()=>{ startLiveTimer(); startMatchClock(); if(matchVsType==='ai' && game) maybeTriggerAI(game); });
+}
+// オンラインで競技（公式ルール）の対戦相手をさがす
+async function startMatchOnline(){
+  if(!(await ensureFirebase())){ toast(fbInitError); return; }
+  const myName = onlineDefaultName();
+  sub.match = 'online-wait';
+  render();
+  onlineRandomMatch(myName, { isMatch:true, timeLimitSec: matchTimeSec });
+}
+function viewMatchOnlineWaiting(){
+  const phase = onlineState.phase;
+  const label = phase === 'joining' ? '対局相手が見つかりました…' : '対戦相手をさがしています…';
+  return `
+    <div class="hero" style="background:linear-gradient(150deg, #37465a, #1b232d 80%);">
+      <div class="hero-eyebrow">COMPETITION</div>
+      <h2>${label}</h2>
+    </div>
+    <div class="card" style="text-align:center;">
+      <p style="color:var(--ink-soft); font-size:13px; margin:0 0 12px;">持ち時間 ${matchClockText(matchTimeSec)} で対局したい人を探しています。</p>
+      <button class="btn btn-ghost" data-action="match-online-cancel" style="width:100%;">やめる</button>
+    </div>
+  `;
 }
 function renderMatchResultScreen(){
   const g = game, r = g && g.lastResult;
@@ -8215,6 +8434,77 @@ function loadEventIfNeeded(){
     }
     render();
   }).catch(err => { console.warn('イベント情報の取得に失敗:', err); eventLoading = false; eventData = false; render(); });
+}
+/* ============================================================
+   O-LABO競技大会（公式ルール準拠のトーナメント大会）
+   予告(1ヶ月前) → エントリー開始(2週間前) → 締切(3日前) → 組み合わせ公開(前日)
+   → 1日目・2日目・3日目(決勝・配信) → 終了(報酬配布、結果は残る)
+   ============================================================ */
+let tournamentData = null;      // tournaments/current のキャッシュ（false = 大会なし）
+let tournamentLoading = false;
+let tournamentParticipants = null;   // {uid: {name, joinedAt}}
+let tournamentMatchInfo = null;      // 今の自分の対局（{round, idx, opp...}）がある場合
+
+function tournamentDayMs(){ return 86400000; }
+// フェーズ：none(未公開) | announced(予告のみ) | entry(受付中) | bracket(組合せ公開・開催前)
+//          | day1 | day2 | day3 | ended
+function tournamentPhase(t, now){
+  now = now || Date.now();
+  if(!t || t.status !== 'published') return 'none';
+  if(now < t.announceAt) return 'none';
+  if(now < t.entryStartAt) return 'announced';
+  if(now < t.entryEndAt) return 'entry';
+  if(now < t.day1At) return 'bracket';
+  if(now < t.day2At) return 'day1';
+  if(now < t.day3At) return 'day2';
+  if(now < t.endAt) return 'day3';
+  return 'ended';
+}
+function loadTournamentIfNeeded(){
+  if(tournamentData !== null || tournamentLoading || !fbDb) return;
+  tournamentLoading = true;
+  fbDb.ref('tournaments/current').once('value').then(snap => {
+    tournamentData = snap.val() || false;
+    tournamentLoading = false;
+    if(tournamentData && fbUid){
+      return fbDb.ref('tournaments/current/participants').once('value').then(pSnap => {
+        tournamentParticipants = pSnap.val() || {};
+        render();
+      });
+    }
+    render();
+  }).catch(err => { console.warn('大会情報の取得に失敗:', err); tournamentLoading = false; tournamentData = false; render(); });
+}
+// 参加者 uid の配列から、シングルエリミネーションのトーナメント表を作る。
+// 人数が2の累乗に満たない分は「不戦勝（null）」で埋める
+function generateBracket(uids, names){
+  let size = 1;
+  while(size < uids.length) size *= 2;
+  size = Math.max(size, 2);
+  const shuffled = uids.slice().sort(() => Math.random() - 0.5);
+  // 不戦勝（null）が同じ組に2つ入らないよう、各組の1人目（偶数位置）から順に
+  // 参加者を詰めていく。参加者数は必ず size/2 より多いので、これで両方不戦勝の組は作られない
+  const slots = new Array(size).fill(null);
+  let si = 0;
+  for(let i=0;i<size && si<shuffled.length;i+=2) slots[i] = shuffled[si++];
+  for(let i=1;i<size && si<shuffled.length;i+=2) slots[i] = shuffled[si++];
+  const round1 = [];
+  for(let i=0;i<size;i+=2){
+    const p1 = slots[i], p2 = slots[i+1];
+    // 片方が不戦勝（相手がいない）なら、もう片方が自動的に勝ち上がる
+    const winner = (p2===null && p1!==null) ? p1 : (p1===null && p2!==null) ? p2 : null;
+    round1.push({p1, p2, winner, black:null, white:null, playedAt:null});
+  }
+  const rounds = [round1];
+  let roundSize = size/2;
+  while(roundSize >= 1){
+    const r = [];
+    for(let i=0;i<roundSize;i++) r.push({p1:null, p2:null, winner:null, black:null, white:null, playedAt:null});
+    rounds.push(r);
+    if(roundSize === 1) break;
+    roundSize = roundSize/2;
+  }
+  return {size, rounds, names: names||{}};
 }
 function viewRankerEvent(){
   if(!isSignedIn()){
@@ -8440,6 +8730,187 @@ async function eventClaimReward(){
     toast('報酬を受け取りました（ゲーム内通貨は後日のアップデートで使えるようになります）');
     render();
   }catch(err){ toast('受け取りに失敗しました'); }
+}
+
+function fmtTournamentDate(ms){
+  if(!ms) return '';
+  const d = new Date(ms);
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+}
+function tournamentMyEntry(){
+  return tournamentParticipants && fbUid ? tournamentParticipants[fbUid] : null;
+}
+// 自分が今のラウンドで対局すべき相手を、トーナメント表から探す
+function tournamentFindMyMatch(t, roundIdx){
+  if(!t || !t.bracket || !t.bracket.rounds || !t.bracket.rounds[roundIdx]) return null;
+  const round = t.bracket.rounds[roundIdx];
+  for(let i=0;i<round.length;i++){
+    const m = round[i];
+    if(m.winner) continue;   // 既に決着済み
+    if(m.p1 === fbUid || m.p2 === fbUid) return { round: roundIdx, idx: i, match: m };
+  }
+  return null;
+}
+function tournamentNameOf(t, uid, isFirstRound){
+  if(!uid) return isFirstRound ? '不戦勝' : '勝者未定';
+  if(t.bracket && t.bracket.names && t.bracket.names[uid]) return t.bracket.names[uid];
+  if(tournamentParticipants && tournamentParticipants[uid]) return tournamentParticipants[uid].name || 'プレイヤー';
+  return 'プレイヤー';
+}
+function tournamentRoundLabel(total, idx){
+  const fromEnd = total - 1 - idx;
+  if(fromEnd === 0) return '決勝';
+  if(fromEnd === 1) return '準決勝';
+  if(fromEnd === 2) return '準々決勝';
+  return `${idx+1}回戦`;
+}
+function bracketMarkup(t){
+  if(!t.bracket) return '';
+  const rounds = t.bracket.rounds;
+  return `<div class="bracket-wrap">${rounds.map((round, ri) => `
+    <div class="bracket-round">
+      <div class="bracket-round-title">${tournamentRoundLabel(rounds.length, ri)}</div>
+      ${round.map(m => {
+        const p1Win = m.winner && m.winner === m.p1, p2Win = m.winner && m.winner === m.p2;
+        return `
+        <div class="bracket-match">
+          <div class="bracket-p ${p1Win?'is-winner':''} ${m.p1===fbUid?'is-me':''}">${escapeHtml(tournamentNameOf(t, m.p1, ri===0))}</div>
+          <div class="bracket-p ${p2Win?'is-winner':''} ${m.p2===fbUid?'is-me':''}">${escapeHtml(tournamentNameOf(t, m.p2, ri===0))}</div>
+        </div>`;
+      }).join('')}
+    </div>`).join('')}</div>`;
+}
+function viewTournament(){
+  const hero = `
+    <div class="hero" style="background:linear-gradient(150deg, #b8860b, #3a2c0a 80%);">
+      <div class="hero-eyebrow">O-LABO TOURNAMENT</div>
+      <h2>${escapeHtml((tournamentData && tournamentData.title) || 'O-LABO競技大会')}</h2>
+    </div>`;
+  if(!tournamentData) return hero + `<div class="card"><p style="text-align:center; margin:0; color:var(--ink-soft);">現在、開催中の大会はありません。</p></div>`;
+  const t = tournamentData;
+  const phase = tournamentPhase(t);
+  const myEntry = tournamentMyEntry();
+
+  if(phase === 'announced'){
+    return hero + `
+      <div class="card">
+        <p style="font-size:13px; line-height:1.9; margin:0 0 10px;">公式ルールに則った、O-LABO内の正式な大会です。1〜3位には豪華報酬、4・5位には報酬、それ以外の参加者にも参加賞が贈られます。</p>
+        <div class="tournament-sched">
+          <div><b>エントリー開始</b><span>${fmtTournamentDate(t.entryStartAt)}</span></div>
+          <div><b>エントリー締切</b><span>${fmtTournamentDate(t.entryEndAt)}</span></div>
+          <div><b>開催日</b><span>${fmtTournamentDate(t.day1At)} 〜 ${fmtTournamentDate(t.day3At)}</span></div>
+        </div>
+      </div>`;
+  }
+  if(phase === 'entry'){
+    return hero + `
+      <div class="card">
+        <p style="font-size:13px; line-height:1.9; margin:0 0 10px;">エントリー受付中です。締切：${fmtTournamentDate(t.entryEndAt)}</p>
+        ${myEntry
+          ? `<p style="text-align:center; color:var(--jade-deep); font-weight:700;">エントリー済みです</p>`
+          : `<button class="btn btn-accent" data-action="tournament-enter" style="width:100%;">エントリーする</button>`}
+      </div>`;
+  }
+  if(phase === 'bracket'){
+    return hero + `
+      <div class="card"><p style="font-size:13px; margin:0;">組み合わせが決まりました。開催日：${fmtTournamentDate(t.day1At)} 〜</p></div>
+      ${bracketMarkup(t)}`;
+  }
+  if(phase === 'day1' || phase === 'day2' || phase === 'day3'){
+    const roundIdx = phase === 'day1' ? 0 : phase === 'day2' ? 1 : (t.bracket ? t.bracket.rounds.length - 1 : 0);
+    const myMatch = myEntry ? tournamentFindMyMatch(t, roundIdx) : null;
+    return hero + `
+      <div class="card">
+        ${phase === 'day3' && t.liveUrl ? `<p style="font-size:12px; margin:0 0 8px;"><a href="${escapeHtml(t.liveUrl)}" target="_blank" style="color:var(--jade-deep);">▶ ライブ配信を見る</a></p>` : ''}
+        ${myMatch
+          ? `<p style="font-size:13px; margin:0 0 10px;">相手：<b>${escapeHtml(tournamentNameOf(t, myMatch.match.p1===fbUid ? myMatch.match.p2 : myMatch.match.p1))}</b></p>
+             <button class="btn btn-accent" data-action="tournament-play" style="width:100%;">対局する</button>`
+          : `<p style="font-size:13px; color:var(--ink-soft); margin:0;">${myEntry ? '今日の対局はありません。結果をお待ちください。' : 'このラウンドの対局はありません。'}</p>`}
+      </div>
+      ${bracketMarkup(t)}`;
+  }
+  // ended
+  const claimed = !!(myEntry && myEntry.rewardClaimed);
+  return hero + `
+    <div class="card">
+      <p style="font-size:13px; margin:0 0 10px;">大会は終了しました！${t.nextNote ? `<br>${escapeHtml(t.nextNote)}` : ''}</p>
+      ${myEntry ? `<button class="btn btn-accent" data-action="tournament-claim-reward" ${claimed?'disabled':''} style="width:100%;">${claimed?'受け取り済み':'結果を確認する'}</button>` : ''}
+    </div>
+    ${bracketMarkup(t)}`;
+}
+async function tournamentEnter(){
+  if(!fbDb || !fbUid || !tournamentData) return;
+  const entry = { name: profileName() || 'プレイヤー', joinedAt: Date.now() };
+  try{
+    await fbDb.ref('tournaments/current/participants/' + fbUid).set(entry);
+    tournamentParticipants = tournamentParticipants || {};
+    tournamentParticipants[fbUid] = entry;
+    toast('大会にエントリーしました');
+    render();
+  }catch(err){ toast('エントリーできませんでした'); }
+}
+// 大会の対局を開始する（オンライン対局として、合言葉形式の専用部屋を使う）
+async function tournamentStartMatch(){
+  const t = tournamentData;
+  if(!t) return;
+  const phase = tournamentPhase(t);
+  const roundIdx = phase === 'day1' ? 0 : phase === 'day2' ? 1 : (t.bracket ? t.bracket.rounds.length - 1 : 0);
+  const found = tournamentFindMyMatch(t, roundIdx);
+  if(!found) return;
+  if(!(await ensureFirebase())){ toast(fbInitError); return; }
+  const oppUid = found.match.p1 === fbUid ? found.match.p2 : found.match.p1;
+  const roomId = 'tour_' + (t.id || 'current') + '_' + roundIdx + '_' + found.idx;
+  const myName = profileName() || 'プレイヤー';
+  onlineState.myName = myName;
+  onlineState.mode = 'code';
+  onlineState.isMatch = true;
+  onlineState.matchTimeLimitSec = t.timeLimitSec || 1500;
+  onlineState.isTournament = true;
+  onlineState.tournamentRound = roundIdx;
+  onlineState.tournamentIdx = found.idx;
+  sub.match = 'play';
+  render();
+  try{
+    const ref = fbDb.ref('rooms/' + roomId);
+    const res = await ref.transaction(room => {
+      if(room === null){
+        return {
+          status:'waiting', createdAt: Date.now(),
+          host:{uid:fbUid, name:myName},
+          board: boardToStr(newBoard()), turn:1, passStreak:0, moveCount:0,
+          isMatch:true, isTournament:true, timeLimitSec: t.timeLimitSec||1500,
+          timeLeftBlack: t.timeLimitSec||1500, timeLeftWhite: t.timeLimitSec||1500
+        };
+      }
+      if(room.host && room.host.uid === fbUid) return room;
+      if(room.guest && room.guest.uid === fbUid) return room;
+      if(room.status === 'waiting' && !room.guest){
+        room.guest = {uid:fbUid, name:myName};
+        room.status = 'playing';
+        room.startedAt = Date.now();
+        return room;
+      }
+      return room;
+    });
+    const room = res.snapshot.val();
+    onlineState.myColor = (room.host && room.host.uid === fbUid) ? 1 : 2;
+    onlineState.roomId = roomId;
+    onlineAttachRoom(roomId);
+  }catch(err){
+    console.error(err);
+    toast('対局を開始できませんでした');
+    navigate(()=>{ sub.match = 'tournament'; });
+  }
+}
+async function tournamentClaimReward(){
+  const myEntry = tournamentMyEntry();
+  if(!myEntry || myEntry.rewardClaimed || !fbDb || !fbUid) return;
+  try{
+    await fbDb.ref('tournaments/current/participants/' + fbUid + '/rewardClaimed').set(true);
+    myEntry.rewardClaimed = true;
+    toast('結果を確認しました（報酬の受け取りは今後のアップデートで対応します）');
+    render();
+  }catch(err){ toast('処理に失敗しました'); }
 }
 
 function viewFriendsTab(){
@@ -9135,7 +9606,11 @@ document.addEventListener('click', (e)=>{
     case 'flip-back': navigate(()=>{ game = null; sub.flipside = 'home'; }); break;
     case 'give-up':
       // 競技モードの投了は、公式ルールに基づき「相手の2石差勝ち」として記録する
-      if(game && game.mode==='match' && !game.over){ matchResign(game, game.current); break; }
+      if(game && game.mode==='match' && !game.over){
+        if(game.opts.vsType === 'online') onlineResign();
+        else matchResign(game, game.current);
+        break;
+      }
       // オンラインは専用の投了（online-resign）を使う。FlipSide の対局（番人戦も Flip も）は投了できない
       if(game && (game.mode==='online' || (game.opts && (game.opts.isFlip || game.opts.isFlipGate)))) break;
       navigate(()=>{ if(game){ game=null; } sub[activeTab]='home'; });
@@ -9417,9 +9892,17 @@ document.addEventListener('click', (e)=>{
     case 'match-ailevel': matchAiLevel = el.dataset.v; render(); break;
     case 'match-time': matchTimeSec = parseInt(el.dataset.v, 10) || 600; render(); break;
     case 'match-start': startMatch(); break;
-    case 'match-online-start':
-      toast('オンラインでの競技対局は、近日対応予定です。今しばらくお待ちください');
+    case 'match-online-start': startMatchOnline(); break;
+    case 'match-online-cancel':
+      onlineLeave();
+      navigate(()=>{ sub.match = 'setup'; onlineState.isMatch = false; });
       break;
+    case 'go-tournament':
+      navigate(()=>{ activeTab='ranker'; currentRankerMode='match'; sub.match = 'tournament'; });
+      break;
+    case 'tournament-enter': tournamentEnter(); break;
+    case 'tournament-play': tournamentStartMatch(); break;
+    case 'tournament-claim-reward': tournamentClaimReward(); break;
     case 'match-again':
       navigate(()=>{ game = null; sub.match = 'setup'; }, ()=> startMatch());
       break;
