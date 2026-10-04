@@ -746,18 +746,19 @@ html[data-theme="dark"] {
 .mp-head{ display:flex; align-items:center; gap:14px; }
 .mp-icon{
   position:relative;
-  flex:0 0 auto; width:66px; height:66px; border-radius:50%; overflow:hidden;
+  flex:0 0 auto; width:66px; height:66px; border-radius:50%; overflow:visible;
   background:rgba(255,255,255,.92); display:flex; align-items:center; justify-content:center;
   box-shadow:0 2px 10px rgba(0,0,0,.18);
 }
-/* 「モデレーター」称号を持つ人のアイコンに出す管理者バッジ */
+/* 「モデレーター」称号を持つ人のアイコンに出す管理者バッジ。
+   丸いアイコンの枠は超えてよく、右下に少しはみ出す形で、バッジ画像の透過をそのまま活かす */
 .is-admin::after{
-  content:""; position:absolute; right:0; bottom:0;
-  width:38%; height:38%; min-width:13px; min-height:13px;
-  border-radius:50%; background:url('db/img/badge.png') center/contain no-repeat, #fff;
-  box-shadow:0 0 0 2px #fff; z-index:2;
+  content:""; position:absolute; right:-8%; bottom:-8%;
+  width:40%; height:40%; min-width:14px; min-height:14px;
+  background:url('db/img/badge.png') center/contain no-repeat;
+  z-index:2; pointer-events:none;
 }
-.mp-icon img{ width:100%; height:100%; object-fit:cover; display:block; }
+.mp-icon img{ width:100%; height:100%; object-fit:cover; display:block; border-radius:50%; }
 .icon-none{ font-size:26px; opacity:.55; }
 .mp-head-text{ min-width:0; }
 /* アイコンの編集 */
@@ -774,11 +775,11 @@ html[data-theme="dark"] {
 .mf-faces{ display:flex; align-items:center; justify-content:center; gap:14px; margin:14px 0 10px; }
 .mf-face{
   position:relative;
-  width:64px; height:64px; border-radius:50%; overflow:hidden;
+  width:64px; height:64px; border-radius:50%; overflow:visible;
   background:rgba(255,255,255,.9); display:flex; align-items:center; justify-content:center;
   box-shadow:0 3px 14px rgba(0,0,0,.35);
 }
-.mf-face img{ width:100%; height:100%; object-fit:cover; display:block; }
+.mf-face img{ width:100%; height:100%; object-fit:cover; display:block; border-radius:50%; }
 .mf-vs{ font-family:var(--font-title); font-weight:900; font-size:17px; color:#ffe9a8; }
 .pres-dot{ flex:0 0 auto; width:9px; height:9px; border-radius:50%; }
 /* ホームのマイページ入口 */
@@ -788,10 +789,10 @@ html[data-theme="dark"] {
 }
 .mp-home-icon{
   position:relative;
-  flex:0 0 auto; width:32px; height:32px; border-radius:50%; overflow:hidden;
+  flex:0 0 auto; width:32px; height:32px; border-radius:50%; overflow:visible;
   display:flex; align-items:center; justify-content:center; background:var(--paper-deep);
 }
-.mp-home-icon img{ width:100%; height:100%; object-fit:cover; display:block; }
+.mp-home-icon img{ width:100%; height:100%; object-fit:cover; display:block; border-radius:50%; }
 .mp-home-icon .icon-none{ font-size:16px; }
 .mp-home-name{ flex:1; min-width:0; font-weight:800; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mp-home-go{ flex:0 0 auto; font-size:11.5px; color:var(--ink-soft); }
@@ -829,13 +830,6 @@ html[data-theme="dark"] {
 .home-stat{ text-align:center; }
 .home-stat-num{ font-size:18px; font-weight:800; font-family:var(--font-title); }
 .home-stat-label{ font-size:9.5px; color:var(--ink-soft); margin-top:2px; }
-.home-news-compact{
-  display:flex; align-items:center; gap:8px; width:100%; border:1px solid var(--line); background:var(--panel);
-  border-radius:12px; padding:10px 12px; cursor:pointer; margin-bottom:10px;
-}
-.hn-badge{ flex:0 0 auto; background:var(--jade-mist); color:var(--jade-deep); font-size:9.5px; font-weight:800; padding:3px 6px; border-radius:5px; }
-.hn-title{ flex:1; min-width:0; font-size:12px; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.hn-go{ flex:0 0 auto; color:var(--ink-soft); }
 
 /* フレンド一覧のアイコン */
 .friend-icon{
@@ -1259,8 +1253,8 @@ body.flipside .board.illust .stone.white{ box-shadow:inset 0 0 0 3px #2f2f33, 0 
       <h1 class="brand-fallback">O-LABO</h1>
     </div>
     <div class="topbar-right">
-      <button class="settings-icon-btn" data-action="tab" data-tab="settings" aria-label="設定">⚙️</button>
       <div class="hanko" id="rankHanko"></div>
+      <button class="settings-icon-btn" data-action="tab" data-tab="settings" aria-label="設定">⚙️</button>
     </div>
   </div>
   <main id="view-root"></main>
@@ -2825,7 +2819,6 @@ function viewHome(){
   const winRate = getWinRate();
   if(isSignedIn()) loadEventIfNeeded();
   const eventOpen = eventData && ['vote','hunt','result'].includes(eventPhase(eventData));
-  const latestNews = (newsCache && newsCache.length) ? newsCache[0] : null;
 
   const bday = currentPageEvent();
   return `
@@ -2873,10 +2866,7 @@ function viewHome(){
       <div class="home-stat"><div class="home-stat-num" style="color:var(--urushi);">${totalWins}</div><div class="home-stat-label">総勝数</div></div>
     </div>
 
-    ${latestNews ? `
-    <button class="home-news-compact" data-action="open-news" data-file="${escapeHtml(latestNews.file||'')}">
-      <span class="hn-badge">NEWS</span><span class="hn-title">${escapeHtml(latestNews.title||'')}</span><span class="hn-go">›</span>
-    </button>` : ''}
+    <div id="news-section">${newsCache ? homeNewsMarkup(newsCache) : ''}</div>
   `;
 }
 
@@ -4228,7 +4218,7 @@ function makeCloudPayload(){
 }
 
 async function cloudSaveNow(){
-  if(!fbDb || !isSignedIn()) return false;
+  if(!fbDb || !fbUid) return false;
   try{
     await fbDb.ref('saves/' + fbUid).set(makeCloudPayload());
     return true;
@@ -4240,7 +4230,7 @@ async function cloudSaveNow(){
 
 // 何度も書き込まないよう、少し待ってからまとめて保存する
 function cloudSaveSoon(){
-  if(!isSignedIn()) return;
+  if(!fbUid) return;
   if(cloudSyncTimer) clearTimeout(cloudSyncTimer);
   cloudSyncTimer = setTimeout(()=>{ cloudSaveNow(); cloudSyncTimer = null; }, 1500);
 }
@@ -4248,7 +4238,7 @@ function cloudSaveSoon(){
 // ログイン直後：端末とクラウドを比べ、進んでいるほうを使う
 let pendingSyncCloud = null;   // 選択待ちのクラウドデータ（差が大きいときだけ使う）
 async function syncAfterLogin(){
-  if(!fbDb || !isSignedIn()) return;
+  if(!fbDb || !fbUid) return;
   try{
     const snap = await fbDb.ref('saves/' + fbUid).once('value');
     const cloud = snap.val();
@@ -4688,7 +4678,7 @@ async function saveMyProfile(patch){
 
 // 公開する戦績（相手のマイページでも見えるもの）
 async function publishStats(){
-  if(!fbDb || !fbUid || !isSignedIn()) return;
+  if(!fbDb || !fbUid) return;
   const unlocked = CASUAL_DIFFS.filter(d => !d.locked || state.casual.unlocked[d.id]).length;
   try{
     await fbDb.ref('users/' + fbUid + '/stats').set({
@@ -4706,7 +4696,7 @@ async function publishStats(){
 // ランキングに使う最小限のデータを、専用の場所に公開する
 // （users/ 以下を全員分読むのはデータ量・プライバシーの両面で避けたいため）
 async function publishLeaderboard(){
-  if(!fbDb || !fbUid || !isSignedIn()) return;
+  if(!fbDb || !fbUid) return;
   const unlocked = CASUAL_DIFFS.filter(d => !d.locked || state.casual.unlocked[d.id]).length;
   const fs = state.flipside || {};
   const flipUnlocked = fs.flip && fs.flip.unlocked ? Object.keys(fs.flip.unlocked).filter(k => fs.flip.unlocked[k]).length : 0;
@@ -4722,6 +4712,8 @@ async function publishLeaderboard(){
       trainingXNumber: state.training.xNumber || 0,
       consecutiveLoginDays: state.consecutiveLoginDays || 1,
       isModerator: hasModeratorTitle(myTitleIds),
+      isGuest: isGuest(),
+      lastLoginDate: state.lastLoginDate || '',
       updatedAt: Date.now()
     });
   }catch(err){ console.warn('ランキングの公開に失敗:', err); }
@@ -5467,7 +5459,8 @@ async function ensureFirebase(){
           watchFriends();
           watchInvites();
           watchFriendRequests();
-          if(!user.isAnonymous){ await syncAfterLogin(); publishStats(); }
+          // ゲスト（匿名）でも、クラウド保存・ランキングへの反映は行う
+          await syncAfterLogin(); publishStats();
         } else {
           unwatchFriends(); unwatchInvites(); unwatchFriendRequests();
           friendList = []; pendingInvites = []; friendRequests = []; myUserRecord = null;
@@ -7264,7 +7257,8 @@ function finishPly(g, flipCount){
 function maybeTriggerAI(g){
   try{
     if(g.over) return;
-    const isAiTurn = (g.mode==='training'||g.mode==='casual'||g.mode==='variety') && g.current===2;
+    const isAiTurn = ((g.mode==='training'||g.mode==='casual'||g.mode==='variety') && g.current===2)
+      || (g.mode==='match' && g.opts && g.opts.vsType==='ai' && g.current===2);
     if(!isAiTurn) return;
     const moves = validMoves(g.board,2);
     if(moves.length===0){
@@ -7382,6 +7376,8 @@ function maybeTriggerAI(g){
 // 対局が終わったとき、結果画面を出すための sub のキー
 function resultSubKey(g){
   if(g.opts && (g.opts.isFlip || g.opts.isFlipGate)) return 'flipside';
+  if(g.mode === 'match') return 'match';   // handleMatchEnd が sub.ranker も合わせて設定する
+  if(g.mode === 'event') return 'event';
   return g.mode === 'training' ? 'training' : g.mode === 'casual' ? 'casual' : 'variety';
 }
 // forcedScore を渡すと、実際の盤面の石数ではなく、その数値を最終スコアとして使う
@@ -8007,21 +8003,31 @@ function rankingValueText(kind, e){
     default: return `ゆる ${e.casualUnlocked||0}/100・特訓 ${rankLabel(e.trainingRankIndex||0, e.trainingXNumber||0)}`;
   }
 }
+// ゲストで、5日以上ログインしていない場合は「非アクティブ」としてランキングに出さない
+// （アカウントがある人は対象外。ずっと表示する）
+function isStaleGuest(e){
+  if(!e || !e.isGuest) return false;
+  if(!e.lastLoginDate) return true;
+  const last = new Date(e.lastLoginDate + 'T00:00:00');
+  if(isNaN(last.getTime())) return true;
+  // 時刻は無視して、カレンダー上の日付の差（日数）で判定する
+  const now = new Date();
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((todayMidnight.getTime() - last.getTime()) / 86400000);
+  return diffDays > 5;
+}
 function viewRankerRanking(){
-  if(!isSignedIn()){
+  if(!fbUid){
     return `
       <div class="hero" style="background:linear-gradient(150deg, #f2ac2b, #e8562f 80%);">
         <div class="hero-eyebrow">RANKING</div>
         <h2>ランキング</h2>
       </div>
-      <div class="card">
-        <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:0 0 10px;">ランキングを見るにはアカウントが必要です。設定から作成できます。</p>
-        <button class="btn btn-ghost" data-action="go-account" style="width:100%;">アカウントを作る</button>
-      </div>`;
+      <div class="card"><p style="text-align:center; color:var(--ink-soft); margin:0;">読み込み中…</p></div>`;
   }
   loadRankingIfNeeded();
   const showMod = !!state.settings.rankingShowModerators;
-  let list = (rankingData || []).filter(e => showMod || !e.isModerator);
+  let list = (rankingData || []).filter(e => (showMod || !e.isModerator) && !isStaleGuest(e));
   list = list.slice().sort((a,b) => rankingScoreFor(rankingKind,b) - rankingScoreFor(rankingKind,a));
   const myIdx = list.findIndex(e => e.uid === fbUid);
   const rows = list.slice(0, 100).map((e, i) => `
