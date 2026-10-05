@@ -220,6 +220,13 @@ function closeModal(){ $('#modalRoot').innerHTML = ''; }
 function fmtDate(ms){ if(!ms) return '-'; const d=new Date(ms); return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
 function iconSrc(u){ return u && u.profile && u.profile.icon && u.profile.icon.startsWith('data:') ? u.profile.icon : ''; }
 function nameOf(u){ return (u && ((u.profile && u.profile.displayName) || u.name)) || '(名前なし)'; }
+function banElapsedDays(bannedAt){ return Math.floor((Date.now() - bannedAt) / 86400000); }
+function banElapsedText(bannedAt){
+  if(!bannedAt) return '';
+  const days = banElapsedDays(bannedAt);
+  const overLimit = days >= 60;
+  return ` <span style="font-size:11px; color:${overLimit?'var(--danger)':'var(--ink-soft)'};">（停止から${days}日${overLimit?'・保持期限の目安(2ヶ月)を過ぎています':''}）</span>`;
+}
 function presenceOf(uid){
   const p = presence[uid];
   const fresh = p && p.at && (Date.now() - p.at < 5*60*1000);
@@ -345,10 +352,11 @@ function viewUsers(){
     .filter(([uid,u]) => !q || nameOf(u).toLowerCase().includes(q) || String(u.code||'').toLowerCase().includes(q) || uid.toLowerCase().includes(q))
     .sort((a,b) => ((b[1].lastSeen||0) - (a[1].lastSeen||0)));
   const total = Object.keys(users).length;
-  const banned = Object.values(users).filter(u => u.banned).length;
+  const bannedUsers = Object.values(users).filter(u => u.banned);
+  const overLimitCount = bannedUsers.filter(u => u.bannedAt && banElapsedDays(u.bannedAt) >= 60).length;
   return `
     <h2>利用者</h2>
-    <p class="lead">登録 ${total}人 ／ 停止中 ${banned}人。行を押すと詳しく見られます。</p>
+    <p class="lead">登録 ${total}人 ／ 停止中 ${bannedUsers.length}人${overLimitCount ? `（うち保持期限超過 ${overLimitCount}人）` : ''}。行を押すと詳しく見られます。</p>
     <div class="box">
       <input type="text" placeholder="名前・ID で探す" value="${esc(query)}" oninput="query=this.value; render(); this.focus(); this.setSelectionRange(this.value.length,this.value.length);">
     </div>
@@ -429,7 +437,7 @@ function viewUser(){
         <dt>登録日</dt><dd>${fmtDate(u.createdAt)}</dd>
         <dt>最終アクセス</dt><dd>${fmtDate(u.lastSeen)}</dd>
         <dt>種類</dt><dd>${u.guest?'ゲスト':'アカウント'}${isAdm?'（管理者）':''}</dd>
-        <dt>停止</dt><dd>${u.banned ? `<span class="tag ban">停止中</span> ${esc(u.banReason||'')}` : 'なし'}</dd>
+        <dt>停止</dt><dd>${u.banned ? `<span class="tag ban">停止中</span> ${esc(u.banReason||'')}${banElapsedText(u.bannedAt)}` : 'なし'}</dd>
         <dt>誕生日</dt><dd>${d && d.priv.birthMonth ? `${d.priv.birthMonth}月${d.priv.birthDay}日（${d.priv.birthPublic?'公開':'非公開'}）` : '未設定'}</dd>
       </dl>
     </div>
@@ -496,10 +504,11 @@ function viewUser(){
     <div class="box danger-zone">
       <h3>取り扱い注意</h3>
       ${u.banned ? `
-        <p style="margin:0 0 10px; font-size:13px;">停止を解除すると、オンライン対局などが再び使えるようになります。</p>
-        <button class="btn" onclick="setBan(false)">停止を解除</button>
+        <p style="margin:0 0 6px; font-size:13px;">停止中は、本人はセーブデータを含めて一切アクセスできません。データ自体は残っているので、解除すればそのまま使える状態に戻ります。</p>
+        <p style="margin:0 0 10px; font-size:12px; color:var(--ink-soft);">${u.bannedAt ? `停止してから${banElapsedDays(u.bannedAt)}日経過しています。保持期限の目安は2ヶ月です。` : ''}</p>
+        <button class="btn" onclick="setBan(false)">停止を解除（データを復元）</button>
       ` : `
-        <p style="margin:0 0 8px; font-size:13px;">停止すると、この利用者はオンライン対局とフレンド機能を使えなくなります。</p>
+        <p style="margin:0 0 8px; font-size:13px;">停止すると、この利用者はセーブデータを含めて一切使えなくなります。データ自体は2ヶ月ほど残るので、期限内であれば解除して元に戻せます。</p>
         <input type="text" id="banReason" maxlength="200" placeholder="停止の理由（本人に表示されます）">
         <button class="btn danger" style="margin-top:10px;" onclick="setBan(true)">利用を停止する</button>
       `}
@@ -602,13 +611,16 @@ async function setBan(on){
   if(u.code === OWNER_CODE){ toast('大元の管理者は停止できません'); return; }
   if(on){
     const reason = ($('#banReason') ? $('#banReason').value.trim() : '');
-    if(!confirm(`「${nameOf(u)}」の利用を停止しますか？`)) return;
-    await db.ref('users/'+uid).update({ banned:true, banReason: reason });
-    toast('利用を停止しました');
+    if(!confirm(`「${nameOf(u)}」の利用を停止しますか？\n本人はセーブデータに一切アクセスできなくなります（データ自体は2ヶ月ほど残り、その間は復元できます）。`)) return;
+    await db.ref('users/'+uid).update({ banned:true, banReason: reason, bannedAt: Date.now() });
+    // ランキングにも出さない（本人が次に使えるようになったとき、自然にまた載る）
+    await db.ref('leaderboard/'+uid).remove().catch(()=>{});
+    toast('利用を停止しました（本人からのセーブデータへのアクセスも止め、ランキングからも外しました）');
   } else {
     await db.ref('users/'+uid+'/banned').remove();
     await db.ref('users/'+uid+'/banReason').remove();
-    toast('停止を解除しました');
+    await db.ref('users/'+uid+'/bannedAt').remove();
+    toast('停止を解除しました。セーブデータへのアクセスも元に戻ります');
   }
   await loadAll(); render();
 }
@@ -625,16 +637,19 @@ async function wipeUser(){
     const fr = await db.ref('friends/'+uid).once('value');
     const tasks = Object.keys(fr.val()||{}).map(fu => db.ref('friends/'+fu+'/'+uid).remove().catch(()=>{}));
     await Promise.all(tasks);
-    await Promise.all([
-      db.ref('friends/'+uid).remove(),
-      db.ref('friendRequests/'+uid).remove(),
-      db.ref('saves/'+uid).remove(),
-      db.ref('private/'+uid).remove(),
-      db.ref('presence/'+uid).remove().catch(()=>{}),
-      db.ref('invites/'+uid).remove().catch(()=>{}),
+    // ひとつが失敗しても他は続けて消す（どこで失敗したかは後でまとめて伝える）
+    const results = await Promise.all([
+      db.ref('friends/'+uid).remove().then(()=>null).catch(err=>'フレンド一覧: '+err.message),
+      db.ref('friendRequests/'+uid).remove().then(()=>null).catch(err=>'フレンド申請: '+err.message),
+      db.ref('saves/'+uid).remove().then(()=>null).catch(err=>'セーブデータ: '+err.message),
+      db.ref('private/'+uid).remove().then(()=>null).catch(err=>'非公開情報: '+err.message),
+      db.ref('presence/'+uid).remove().then(()=>null).catch(err=>'オンライン状態: '+err.message),
+      db.ref('invites/'+uid).remove().then(()=>null).catch(err=>'招待: '+err.message),
     ]);
-    if(code) await db.ref('userCodes/'+code).remove().catch(()=>{});
+    if(code) await db.ref('userCodes/'+code).remove().catch(err => results.push('ID登録: '+err.message));
     await db.ref('users/'+uid).remove();
+    const failed = results.filter(Boolean);
+    if(failed.length){ toast('一部消せませんでした: ' + failed.join(' / ')); await loadAll(); render(); go('users'); return; }
     await loadAll();
     toast('データを消しました');
     go('users');
