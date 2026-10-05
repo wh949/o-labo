@@ -2347,6 +2347,10 @@ function requestRender(){
 }
 function render(){
   renderQueued = false;
+  if(myBanned){
+    renderBannedScreen();
+    return;
+  }
   document.body.classList.toggle('gfx-light', state.settings.graphics==='light');
   document.body.classList.toggle('anim-flip', state.settings.animFlip);
   document.body.classList.toggle('furigana-on', state.settings.furigana);
@@ -4462,6 +4466,8 @@ let profileBusy = false;
 let iconPickerOpen = false;
 let presenceRef = null;
 let friendPresence = {};        // uid → 状態
+let friendBanned = {};          // uid → 利用停止中かどうか（停止中はプレイヤー側からは完全に見えなくする）
+let bannedWatch = {};           // uid → {ref, cb}（監視中のもの）
 let presenceWatch = {};
 
 function isValidDate(m, d){
@@ -4554,8 +4560,14 @@ async function loadTitlesAndStatus(){
     const u = me.val() || {};
     myTitleIds = titleIdsOf(u);
     myTitlesRevoked = u.titlesRevoked || {};
+    const wasBanned = myBanned;
     myBanned = !!u.banned;
     myBanReason = u.banReason || '';
+    // BANされたと分かった端末では、この端末に残っているセーブデータそのものを消す
+    if(myBanned && !wasBanned){
+      try{ localStorage.removeItem('genseki_othello_save_v1'); }catch(err){}
+      state = structuredClone(DEFAULT_STATE);
+    }
   }catch(err){ console.warn('称号の読み込みに失敗:', err); }
 }
 function bannedNoticeMarkup(){
@@ -4564,6 +4576,22 @@ function bannedNoticeMarkup(){
       <p style="margin:0; font-weight:800; color:#b3261e;">このアカウントは利用が停止されています</p>
       ${myBanReason ? `<p style="margin:8px 0 0; font-size:13px;">理由：${escapeHtml(myBanReason)}</p>` : ''}
       <p style="margin:8px 0 0; font-size:12px; color:var(--ink-soft);">オンライン対局とフレンド機能は使えません。ひとりで遊ぶモードは今までどおり使えます。</p>
+    </div>`;
+}
+// BANされたアカウントでは、通常の画面は一切出さず、この通知だけを表示する。
+// この端末に残っていたセーブデータは loadTitlesAndStatus() の時点で既に削除済み
+function renderBannedScreen(){
+  const tabs = document.getElementById('bottomTabs');
+  if(tabs) tabs.innerHTML = '';
+  const root = document.getElementById('view-root');
+  if(!root) return;
+  root.innerHTML = `
+    <div class="card" style="border:2px solid #b3261e; text-align:center; margin-top:16vh;">
+      <div style="font-size:42px; margin-bottom:10px;">🚫</div>
+      <h2 style="color:#b3261e; margin:0 0 10px;">BANされました</h2>
+      <p style="margin:0 0 10px; font-size:14px; line-height:1.7;">このアカウントは利用停止の処分を受けました。</p>
+      ${myBanReason ? `<p style="margin:0 0 10px; font-size:13px; color:var(--ink-soft);">理由：${escapeHtml(myBanReason)}</p>` : ''}
+      <p style="margin:14px 0 0; font-size:11.5px; color:var(--ink-soft);">この端末に保存されていたデータは削除されました。</p>
     </div>`;
 }
 // 以前は1つだけ（title）、今は何個でも（titles）持てる。両方を読む
@@ -4796,6 +4824,28 @@ function watchFriendPresence(){
     presenceWatch[uid] = {ref, cb};
   }
 }
+// フレンドが利用停止になっていないかを監視する。停止中の人は、あたかもデータが消えたかのように
+// フレンド一覧から完全に見えなくする（フレンド関係のデータ自体は残すので、解除されれば自然に戻る）
+function watchFriendBanned(){
+  const want = {};
+  friendList.forEach(f => { want[f.uid] = true; });
+  for(const uid of Object.keys(bannedWatch)){
+    if(!want[uid]){ bannedWatch[uid].ref.off('value', bannedWatch[uid].cb); delete bannedWatch[uid]; delete friendBanned[uid]; }
+  }
+  for(const uid of Object.keys(want)){
+    if(bannedWatch[uid]) continue;
+    const ref = fbDb.ref('users/' + uid + '/banned');
+    const cb = ref.on('value', s => {
+      friendBanned[uid] = !!s.val();
+      requestRender();
+    });
+    bannedWatch[uid] = {ref, cb};
+  }
+}
+// 一覧に出してよいフレンドだけを残す（利用停止中は除く）
+function visibleFriendList(){
+  return friendList.filter(f => !friendBanned[f.uid]);
+}
 function presenceLabel(st){
   switch(st){
     case 'online': return {text:'オンライン', color:'#22a45d'};
@@ -4854,6 +4904,12 @@ async function openOtherProfile(uid, fallbackName){
   try{
     const snap = await fbDb.ref('users/' + uid).once('value');
     const u = snap.val() || {};
+    // 利用停止中は、あたかもそんな人はいなかったかのように扱う
+    if(u.banned){
+      otherProfile = { uid, loading:false, notFound:true };
+      render();
+      return;
+    }
     otherProfile = {
       uid, loading:false,
       name: (u.profile && u.profile.displayName) || u.name || fallbackName || 'プレイヤー',
@@ -5318,6 +5374,7 @@ function watchFriends(){
     const v = snap.val() || {};
     friendList = Object.keys(v).map(uid => ({ uid, code: v[uid].code, name: v[uid].name }));
     watchFriendPresence();
+    watchFriendBanned();
     fetchFriendIcons();
     requestRender();
   });
@@ -5341,6 +5398,8 @@ async function fetchFriendIcons(){
 function unwatchFriends(){
   if(friendsRef && friendsCb) friendsRef.off('value', friendsCb);
   friendsRef = null; friendsCb = null;
+  for(const uid of Object.keys(bannedWatch)){ bannedWatch[uid].ref.off('value', bannedWatch[uid].cb); }
+  bannedWatch = {}; friendBanned = {};
 }
 
 // フレンドを対局に招待する（自分が部屋を用意して待つ）
@@ -5484,13 +5543,17 @@ async function ensureFirebase(){
           await ensureUserRecord();
           await loadMyProfile();
           await loadTitlesAndStatus();
-          startPresence();
-          setTimeout(checkAutoTitles, 1500);
-          watchFriends();
-          watchInvites();
-          watchFriendRequests();
-          // ゲスト（匿名）でも、クラウド保存・ランキングへの反映は行う
-          await syncAfterLogin(); publishStats();
+          // 停止中は、セーブデータへのアクセスがルール側で拒否されるため、
+          // 同期やオンライン関連の処理自体を行わない（エラーの原因にもなるため）
+          if(!myBanned){
+            startPresence();
+            setTimeout(checkAutoTitles, 1500);
+            watchFriends();
+            watchInvites();
+            watchFriendRequests();
+            // ゲスト（匿名）でも、クラウド保存・ランキングへの反映は行う
+            await syncAfterLogin(); publishStats();
+          }
         } else {
           unwatchFriends(); unwatchInvites(); unwatchFriendRequests();
           friendList = []; pendingInvites = []; friendRequests = []; myUserRecord = null;
@@ -6611,7 +6674,7 @@ function friendSectionMarkup(){
       <button class="btn btn-ghost" data-action="go-account" style="width:100%;">アカウントを作る</button>
     </div>`;
   }
-  const rows = friendList.length ? friendList.map(f => {
+  const rows = visibleFriendList().length ? visibleFriendList().map(f => {
     const p = presenceLabel(friendPresence[f.uid]);
     return `
     <div class="friend-row">
@@ -8024,7 +8087,7 @@ function viewMyPage(){
     </div>`).join('')
     : '<p style="font-size:12px; color:var(--ink-soft); margin:0; text-align:center; padding:8px 0;">届いている申請はありません</p>';
 
-  const friendRows = friendList.length ? friendList.map(f => {
+  const friendRows = visibleFriendList().length ? visibleFriendList().map(f => {
     const p = presenceLabel(friendPresence[f.uid]);
     return `
     <div class="friend-row">
@@ -8969,7 +9032,7 @@ function viewFriendsTab(){
       </div>`;
   }
 
-  const rows = friendList.length ? friendList.map(f => {
+  const rows = visibleFriendList().length ? visibleFriendList().map(f => {
     const p = presenceLabel(friendPresence[f.uid]);
     return `
     <div class="friend-row">
@@ -8998,7 +9061,7 @@ function viewFriendsTab(){
         <button class="btn btn-ghost friend-del" data-action="req-reject" data-uid="${r.uid}">×</button>
       </div>`).join('')}</div>` : ''}
 
-    <div class="section-title">フレンド一覧（${friendList.length}人）</div>
+    <div class="section-title">フレンド一覧（${visibleFriendList().length}人）</div>
     <div class="card">${rows}</div>
   `;
 }
@@ -9007,6 +9070,7 @@ function viewFriendsTab(){
 function viewOtherPage(){
   const p = otherProfile;
   if(!p) return '<div class="card"><p>読み込めませんでした</p></div>';
+  if(p.notFound) return '<div class="card"><p style="text-align:center; margin:0; color:var(--ink-soft);">このユーザーは見つかりませんでした</p></div>';
   if(p.loading){
     return `<div class="hero" style="background:linear-gradient(150deg, var(--jade-light), var(--jade-deep) 75%);">
       <div class="hero-eyebrow">PROFILE</div><h2>読み込み中…</h2></div>
