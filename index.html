@@ -4230,26 +4230,46 @@ function makeUserCode(){
 }
 
 // 利用者の登録情報を用意する（無ければ作る）
-async function ensureUserRecord(){
-  if(!fbDb || !fbUid) return null;
+// users/<自分> の記録を用意する（なければ作り、IDがなければ付ける）。同時に何度呼ばれても、動くのは1回だけ
+let ensureUserRecordPromise = null, ensureUserRecordUid = '', myUserRecordUid = '';
+function ensureUserRecord(){
+  if(!fbDb || !fbUid) return Promise.resolve(null);
+  if(ensureUserRecordPromise && ensureUserRecordUid === fbUid) return ensureUserRecordPromise;
+  ensureUserRecordUid = fbUid;
+  const p = ensureUserRecordInner().finally(() => { if(ensureUserRecordPromise === p) ensureUserRecordPromise = null; });
+  ensureUserRecordPromise = p;
+  return p;
+}
+// 自分の記録（ID付き）が用意できているか。users/<自分> の下に何かを書く前に確かめる。
+// 先に別の項目だけが書かれると、IDのない記録が残ってしまうため
+function userRecordReady(){
+  return !!(myUserRecord && myUserRecord.code && myUserRecordUid && myUserRecordUid === fbUid);
+}
+// 重複しないIDが取れるまで数回試す
+async function allocateUserCode(uid){
+  for(let i=0;i<6;i++){
+    const cand = makeUserCode();
+    const res = await fbDb.ref('userCodes/' + cand).transaction(cur => (cur === null) ? uid : undefined);
+    if(res.committed) return cand;
+  }
+  return uid.slice(0,8).toUpperCase();
+}
+async function ensureUserRecordInner(){
+  const uid = fbUid;
   try{
-    const ref = fbDb.ref('users/' + fbUid);
+    const ref = fbDb.ref('users/' + uid);
     const snap = await ref.once('value');
     let rec = snap.val();
     // 停止中で、データを削除済みの人：記録を書き足して「復活」させない（停止の記録だけが残っている状態）
-    if(rec && rec.banned && rec.deletedAt){ myUserRecord = rec; return rec; }
+    if(rec && rec.banned && rec.deletedAt){
+      if(fbUid === uid){ myUserRecord = rec; myUserRecordUid = uid; }
+      return rec;
+    }
     // データ削除済みのあと、停止が解除された人：新しいアカウントとして作り直す
     const reborn = !!(rec && rec.deletedAt && !rec.banned);
     if(!rec || reborn){
-      // 重複しないIDが取れるまで数回試す
-      let code = null;
-      for(let i=0;i<6 && !code;i++){
-        const cand = makeUserCode();
-        const res = await fbDb.ref('userCodes/' + cand).transaction(cur => (cur === null) ? fbUid : undefined);
-        if(res.committed) code = cand;
-      }
       rec = {
-        code: code || fbUid.slice(0,8).toUpperCase(),
+        code: await allocateUserCode(uid),
         name: state.username || 'プレイヤー',
         guest: !!(fbUser && fbUser.isAnonymous),
         createdAt: Date.now()
@@ -4262,6 +4282,11 @@ async function ensureUserRecord(){
     } else {
       // 名前やゲスト状態が変わっていたら更新する
       const patch = {};
+      // 何かの拍子にIDのない記録ができていたら、ここでIDを付け直す
+      if(!rec.code){
+        patch.code = await allocateUserCode(uid);
+        if(!rec.createdAt) patch.createdAt = Date.now();
+      }
       const nm = state.username || 'プレイヤー';
       if(rec.name !== nm) patch.name = nm;
       const g = !!(fbUser && fbUser.isAnonymous);
@@ -4270,7 +4295,7 @@ async function ensureUserRecord(){
       await ref.update(patch);
       Object.assign(rec, patch);
     }
-    myUserRecord = rec;
+    if(fbUid === uid){ myUserRecord = rec; myUserRecordUid = uid; }
     return rec;
   }catch(err){
     console.warn('利用者情報の用意に失敗:', err);
@@ -4671,7 +4696,7 @@ function emailAuthDaysLeft(){
   return Math.ceil((myEmailVerifiedAt + EMAIL_REVERIFY_MS - Date.now()) / 86400000);
 }
 function persistEmailVerifiedAt(){
-  if(!fbDb || !fbUid || !myEmailVerifiedAt) return;
+  if(!fbDb || !fbUid || !myEmailVerifiedAt || !userRecordReady()) return;
   fbDb.ref('users/' + fbUid + '/emailVerifiedAt').set(myEmailVerifiedAt).catch(()=>{});
 }
 // 認証が有効かどうかを、いまの状態から決め直す
@@ -4782,7 +4807,7 @@ async function refreshEmailAuth(showToast){
 }
 // 管理者が見られるよう、Firebase上で確認済みかどうかも控えておく
 function syncEmailVerifiedFlag(){
-  if(fbDb && fbUid && emailAuthApplies()){
+  if(fbDb && fbUid && emailAuthApplies() && userRecordReady()){
     fbDb.ref('users/' + fbUid + '/emailVerified').set(!!fbUser.emailVerified).catch(()=>{});
   }
 }
@@ -4883,7 +4908,7 @@ function casualMastery(){
 // 完封で制覇したら、ふつうの制覇者は外して「真」に置き換える。
 let masteryChecking = false;
 async function checkAutoTitles(){
-  if(masteryChecking || !fbDb || !fbUid || !isSignedIn()) return;
+  if(masteryChecking || !fbDb || !fbUid || !isSignedIn() || !userRecordReady()) return;
   const m = casualMastery();
   let want = null;
   if(m.allPerfect) want = 'auto_casual_master_true';
@@ -4977,6 +5002,7 @@ async function loadMyProfile(){
 
 async function saveMyProfile(patch){
   if(!fbDb || !fbUid || !isSignedIn()) return false;
+  if(!userRecordReady()){ await ensureUserRecord(); if(!userRecordReady()) return false; }   // 自分の記録（ID）を先に用意する
   Object.assign(myProfile, patch || {});
   try{
     await fbDb.ref('users/' + fbUid + '/profile').update({
@@ -5010,7 +5036,7 @@ async function saveMyProfile(patch){
 
 // 公開する戦績（相手のマイページでも見えるもの）
 async function publishStats(){
-  if(!fbDb || !fbUid) return;
+  if(!fbDb || !fbUid || !userRecordReady()) return;
   const unlocked = CASUAL_DIFFS.filter(d => !d.locked || state.casual.unlocked[d.id]).length;
   try{
     await fbDb.ref('users/' + fbUid + '/stats').set({
@@ -5875,7 +5901,7 @@ async function ensureFirebase(opts){
           }
         } else {
           unwatchFriends(); unwatchInvites(); unwatchFriendRequests();
-          friendList = []; pendingInvites = []; friendRequests = []; myUserRecord = null;
+          friendList = []; pendingInvites = []; friendRequests = []; myUserRecord = null; myUserRecordUid = '';
         }
         render();
       });
