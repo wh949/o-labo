@@ -1691,6 +1691,8 @@ const DEFAULT_STATE = {
   online:{ lastName:'', history:[] },
   variety:{ history:[], customRules:{random:false, lucky_unlucky:false, warp:false, timer:false} },
   match:{ history:[] },   // 競技モード（公式ルール準拠）の記録
+  owner:{ uid:'', anon:true },   // この端末のデータの持ち主（最後にこのデータを使ったアカウント）。別のアカウントのデータを引き継がないために使う
+  lineageId:'',                  // データの系統ID。同じデータから複製されたアカウントを見分け、ランキングで1つにまとめるために使う
   story:{}
 };
 
@@ -1764,7 +1766,7 @@ function trimHistories(historyLimit, replayLimit){
     }
   }
 }
-function saveState(){
+function saveState(opts){
   trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
   try{
     localStorage.setItem('genseki_othello_save_v1', JSON.stringify(state));
@@ -1786,7 +1788,7 @@ function saveState(){
     }
   }
   renderHanko();
-  cloudSaveSoon();   // ログイン中ならクラウドにも保存する
+  if(!(opts && opts.noCloud)) cloudSaveSoon();   // ログイン中ならクラウドにも保存する（初期化の直後などは、空のデータで上書きしないよう保存しない）
 }
 
 /* ============================================================
@@ -2682,7 +2684,7 @@ async function resolveMention(code){
   if(mentionCache[code] !== undefined) return;
   mentionCache[code] = 'loading';
   try{
-    if(!fbDb && !(await ensureFirebase())){ mentionCache[code] = false; requestRender(); return; }
+    if(!fbDb && !(await ensureFirebase({passive:true}))){ mentionCache[code] = false; requestRender(); return; }
     const snap = await fbDb.ref('userCodes/' + code).once('value');
     const uid = snap.val();
     if(!uid){ mentionCache[code] = false; requestRender(); return; }
@@ -3941,6 +3943,7 @@ let accountReady = false;       // 認証の初期化が済んだか
 let accountBusy = false;        // 処理中（二重実行を防ぐ）
 let accountError = '';
 let cloudSyncTimer = null;
+let cloudSaveSuspended = false;   // ログアウト中など、クラウドへの保存を止めておく間だけ true
 
 function isSignedIn(){ return !!(fbUser && !fbUser.isAnonymous); }
 function isGuest(){ return !!(fbUser && fbUser.isAnonymous); }
@@ -3983,7 +3986,7 @@ async function accountSignUpEmail(email, password){
   if(accountBusy) return;
   accountBusy = true; accountError = ''; render();
   try{
-    if(!(await ensureFirebase())) throw new Error(fbInitError);
+    if(!(await ensureFirebase({passive:true}))) throw new Error(fbInitError);
     const cred = firebase.auth.EmailAuthProvider.credential(email, password);
     const cur = firebase.auth().currentUser;
     if(cur && cur.isAnonymous){
@@ -4021,11 +4024,17 @@ async function accountSignUpEmail(email, password){
   }
 }
 
+// 別のアカウントに切り替える前に、いまのアカウント（ゲストでない場合）へ最新の記録を保存しておく
+async function saveBeforeSwitchingAccount(){
+  const cur = firebase.auth().currentUser;
+  if(cur && !cur.isAnonymous){ try{ await cloudSaveNow(); }catch(e){} }
+}
 async function accountLoginEmail(email, password){
   if(accountBusy) return;
   accountBusy = true; accountError = ''; render();
   try{
-    if(!(await ensureFirebase())) throw new Error(fbInitError);
+    if(!(await ensureFirebase({passive:true}))) throw new Error(fbInitError);
+    await saveBeforeSwitchingAccount();
     await firebase.auth().signInWithEmailAndPassword(email, password);
     toast('ログインしました');
     sub.settings = 'home';
@@ -4051,7 +4060,7 @@ async function accountLoginGoogle(){
     }
   }, 45000);
   try{
-    if(!(await ensureFirebase())) throw new Error(fbInitError);
+    if(!(await ensureFirebase({passive:true}))) throw new Error(fbInitError);
     const provider = new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     const cur = firebase.auth().currentUser;
@@ -4107,6 +4116,7 @@ function isPopupProblem(code){
 }
 async function googleSignInWithFallback(provider){
   try{
+    await saveBeforeSwitchingAccount();
     await firebase.auth().signInWithPopup(provider);
   }catch(err){
     if(isPopupProblem(err && err.code)){
@@ -4120,7 +4130,7 @@ async function googleSignInWithFallback(provider){
 
 async function accountResetPassword(email){
   try{
-    if(!(await ensureFirebase())) throw new Error(fbInitError);
+    if(!(await ensureFirebase({passive:true}))) throw new Error(fbInitError);
     await firebase.auth().sendPasswordResetEmail(email);
     toast('再設定メールを送りました');
   }catch(err){
@@ -4129,13 +4139,78 @@ async function accountResetPassword(email){
   }
 }
 
+/* ============================================================
+   端末のデータの「持ち主」の管理
+   ログアウトしても端末にデータが残っていると、次に作ったアカウントやゲストに、
+   前のアカウントのデータがそのまま入ってしまう（ランキングに同じ内容が並ぶ原因）。
+   そこで、端末のデータに持ち主を記録し、別の登録アカウントのデータは引き継がないようにする
+   ============================================================ */
+function newLineageId(){ return 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function ensureLineage(){
+  if(state.lineageId) return false;
+  state.lineageId = newLineageId();
+  return true;
+}
+function currentOwnerStamp(){
+  return fbUser ? { uid: fbUser.uid, anon: !!fbUser.isAnonymous } : { uid:'', anon:true };
+}
+function stampLocalOwner(){ state.owner = currentOwnerStamp(); }
+// 端末のデータを初期状態に戻す。音量など、端末ごとの設定だけは残す
+function resetLocalSaveForNewOwner(){
+  const keep = {};
+  for(const k of DEVICE_ONLY_SETTINGS) keep[k] = state.settings[k];
+  state = structuredClone(DEFAULT_STATE);
+  Object.assign(state.settings, keep);
+  state.lineageId = newLineageId();
+}
+// ログイン（ゲスト含む）が確定したとき、端末のデータの持ち主を確かめる。
+// 別の登録アカウントのデータが残っていたら、引き継がずに初期化する。戻り値：初期化したかどうか
+function reconcileLocalOwner(user){
+  if(!user) return false;
+  const own = state.owner || {};
+  let wiped = false;
+  if(own.uid && own.uid !== user.uid && own.anon === false){
+    resetLocalSaveForNewOwner();
+    wiped = true;
+  }
+  const cur = { uid: user.uid, anon: !!user.isAnonymous };
+  const changed = wiped || !state.owner || state.owner.uid !== cur.uid || state.owner.anon !== cur.anon || !state.lineageId;
+  state.owner = cur;
+  ensureLineage();
+  if(changed) saveState({ noCloud:true });   // このあと同期の処理が、クラウドと見比べて正しく保存する
+  return wiped;
+}
+function loggedOutFlag(){ try{ return localStorage.getItem('olabo_logged_out') === '1'; }catch(e){ return false; } }
+function setLoggedOutFlag(on){ try{ if(on) localStorage.setItem('olabo_logged_out','1'); else localStorage.removeItem('olabo_logged_out'); }catch(e){} }
+
+function showLogoutConfirm(){
+  showSheet(`
+    <h3>ログアウトしますか？</h3>
+    <p>ログアウトすると、この端末に保存されている記録は消えます。記録はアカウントに保存されているので、次にログインすると元に戻ります。</p>
+    <div class="btn-row">
+      <button class="btn btn-ghost" data-action="close-sheet">キャンセル</button>
+      <button class="btn btn-danger" data-action="confirm-logout" style="border:1px solid var(--urushi);">ログアウトする</button>
+    </div>
+  `);
+}
 async function accountLogout(){
+  closeSheet();
+  // 先に最新の記録をアカウントへ保存する。保存できなかったときは、記録が消えてよいか確かめる
+  const saved = await cloudSaveNow();
+  if(!saved && !window.confirm('最新の記録をアカウントに保存できませんでした。このままログアウトすると、この端末にある新しい記録は失われます。それでもログアウトしますか？')) return;
   try{
-    await cloudSaveNow();            // 念のため最後に保存する
+    cloudSaveSuspended = true;   // 消したあとの空のデータで、アカウント側を上書きしてしまわないよう止めておく
+    if(cloudSyncTimer){ clearTimeout(cloudSyncTimer); cloudSyncTimer = null; }
     await firebase.auth().signOut();
+    // この端末のデータは消す（次にここで作られるアカウントやゲストに、引き継がれないようにする）
+    resetLocalSaveForNewOwner();
+    state.owner = { uid:'', anon:true };
+    saveState({ noCloud:true });
+    setLoggedOutFlag(true);   // 次に開いたときも、勝手にゲストを作らない
     toast('ログアウトしました');
     sub.settings = 'home';
   }catch(err){
+    cloudSaveSuspended = false;
     console.error(err);
     toast('ログアウトに失敗しました');
   }
@@ -4252,6 +4327,8 @@ function applyCloudSave(cloud){
   for(const k of DEVICE_ONLY_SETTINGS) myDeviceSettings[k] = state.settings[k];
   state = deepMerge(structuredClone(DEFAULT_STATE), cloud.data);
   Object.assign(state.settings, myDeviceSettings);
+  stampLocalOwner();
+  ensureLineage();
   trimHistories(HISTORY_LIMIT, REPLAY_LIMIT);
   saveState();
 }
@@ -4279,7 +4356,7 @@ function makeCloudPayload(){
 }
 
 async function cloudSaveNow(){
-  if(!fbDb || !fbUid) return false;
+  if(!fbDb || !fbUid || cloudSaveSuspended) return false;
   try{
     await fbDb.ref('saves/' + fbUid).set(makeCloudPayload());
     return true;
@@ -4291,7 +4368,7 @@ async function cloudSaveNow(){
 
 // 何度も書き込まないよう、少し待ってからまとめて保存する
 function cloudSaveSoon(){
-  if(!fbUid) return;
+  if(!fbUid || cloudSaveSuspended) return;
   if(cloudSyncTimer) clearTimeout(cloudSyncTimer);
   cloudSyncTimer = setTimeout(()=>{ cloudSaveNow(); cloudSyncTimer = null; }, 1500);
 }
@@ -4947,6 +5024,7 @@ async function publishStats(){
 async function publishLeaderboard(){
   if(!fbDb || !fbUid) return;
   if(!myEmailVerified) return;   // メール認証が済んでいない間は、ランキングに載せない
+  if((state.totalGames || 0) <= 0) return;   // まだ1度も対局していない人（ログアウト後に自動で作られた空のゲストなど）は載せない
   const unlocked = CASUAL_DIFFS.filter(d => !d.locked || state.casual.unlocked[d.id]).length;
   const fs = state.flipside || {};
   const flipUnlocked = fs.flip && fs.flip.unlocked ? Object.keys(fs.flip.unlocked).filter(k => fs.flip.unlocked[k]).length : 0;
@@ -4964,6 +5042,8 @@ async function publishLeaderboard(){
       isModerator: hasModeratorTitle(myTitleIds),
       isGuest: isGuest(),
       lastLoginDate: state.lastLoginDate || '',
+      lineageId: state.lineageId || '',
+      accountCreatedAt: (myUserRecord && myUserRecord.createdAt) || 0,
       updatedAt: Date.now()
     });
   }catch(err){ console.warn('ランキングの公開に失敗:', err); }
@@ -5722,8 +5802,23 @@ function firebaseConfigured(){
   return !!(FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.apiKey);
 }
 
-async function ensureFirebase(){
-  if(fbReady) return true;
+// ゲスト（匿名）としての接続を、必要になったときに作る
+let guestSignInPromise = null;
+async function ensureGuestSession(){
+  try{
+    if(firebase.auth().currentUser) return;
+    if(!guestSignInPromise) guestSignInPromise = firebase.auth().signInAnonymously().finally(()=>{ guestSignInPromise = null; });
+    await guestSignInPromise;
+    fbUser = firebase.auth().currentUser; fbUid = fbUser ? fbUser.uid : null;
+  }catch(err){ console.warn('ゲストとしての接続に失敗:', err); }
+}
+// opts.passive：開いただけ・ログイン画面を見ただけのときに使う。ログアウト中なら、勝手にゲストを作らない
+async function ensureFirebase(opts){
+  const passive = !!(opts && opts.passive);
+  if(fbReady){
+    if(!passive) await ensureGuestSession();   // 実際に機能を使うときは、ゲストとして接続する
+    return true;
+  }
   if(!firebaseConfigured()){ fbInitError = 'Firebase の設定が入力されていません'; return false; }
   if(typeof firebase === 'undefined'){ fbInitError = 'Firebase の読み込みに失敗しました（通信環境を確認してください）'; return false; }
   try{
@@ -5733,6 +5828,7 @@ async function ensureFirebase(){
         fbUser = user;
         fbUid = user ? user.uid : null;
         accountReady = true;
+        cloudSaveSuspended = false;
         // 1ヶ月ごとの再認証メールのリンクから戻ってきた場合は、ここで認証を済ませる
         if(user && !emailLinkHandled){
           const res = await handleEmailLinkReturn(user);
@@ -5750,6 +5846,9 @@ async function ensureFirebase(){
         if(!user){ myEmailVerifiedAt = 0; myEmailVerified = true; }
         if(user){
           onlineDebug.myUid = user.uid;
+          // この端末のデータの持ち主を確かめる（別の登録アカウントのデータが残っていれば、引き継がない）
+          reconcileLocalOwner(fbUser || user);
+          setLoggedOutFlag(false);
           await ensureUserRecord();
           await loadMyProfile();
           await loadTitlesAndStatus();
@@ -5787,7 +5886,7 @@ async function ensureFirebase(){
     }
 
     // まだ誰もログインしていなければ、ゲストとして接続する
-    if(!firebase.auth().currentUser){
+    if(!firebase.auth().currentUser && !(passive && loggedOutFlag())){
       await firebase.auth().signInAnonymously();
     }
     fbUser = firebase.auth().currentUser;
@@ -6931,7 +7030,7 @@ function viewOnline(){
   }
   // ロビーを開いた時点で接続を済ませておく。
   // （押してから接続すると、その待ち時間がそのまま体感の遅さになる）
-  if(firebaseConfigured() && !fbReady) ensureFirebase();
+  if(firebaseConfigured() && !fbReady) ensureFirebase({passive:true});
 
   const name = onlineState.myName || onlineDefaultName();
   const notReady = !firebaseConfigured();
@@ -8432,6 +8531,41 @@ function loadRankingIfNeeded(){
     render();
   });
 }
+// 同じデータから複製されたアカウントが、ランキングに何件も並ばないようにする。
+// 「同じ系統のデータ」または「成績がすべて同じ（対局20回以上）」のものは同一とみなし、1件だけ残す。
+// 残すのは、ゲストでないほう → 先にアカウントを作ったほう（元のアカウント）の順
+function rankingFingerprint(e){
+  if((e.games || 0) < 20) return '';
+  return [e.games, e.wins, e.casualUnlocked, e.flipUnlocked, e.trainingRankIndex, e.trainingXNumber, e.consecutiveLoginDays].join('|');
+}
+function dedupeRankingEntries(list){
+  const parent = list.map((_, i) => i);
+  const find = i => { while(parent[i] !== i){ parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const firstSeen = new Map();
+  list.forEach((e, i) => {
+    const keys = [];
+    if(e.lineageId) keys.push('L:' + e.lineageId);
+    const fp = rankingFingerprint(e);
+    if(fp) keys.push('F:' + fp);
+    for(const k of keys){
+      if(firstSeen.has(k)) parent[find(i)] = find(firstSeen.get(k));
+      else firstSeen.set(k, i);
+    }
+  });
+  const better = (a, b) => {
+    if(!!a.isGuest !== !!b.isGuest) return !a.isGuest;
+    const ca = a.accountCreatedAt || Infinity, cb = b.accountCreatedAt || Infinity;
+    if(ca !== cb) return ca < cb;
+    return String(a.uid) < String(b.uid);
+  };
+  const best = new Map();
+  list.forEach((e, i) => {
+    const r = find(i);
+    if(!best.has(r) || better(e, list[best.get(r)])) best.set(r, i);
+  });
+  const keep = new Set(best.values());
+  return list.filter((e, i) => keep.has(i));
+}
 // 並べ替えに使う数値（ゆる解放度は、同数のときに FlipSide の解放度で細かく順位を付ける。
 // ただし画面には出さない＝「内訳として含む」）
 // 勝率のランキング用の点数。対局数が少ないほど「たまたま勝っただけ」の可能性が高いので、
@@ -8485,6 +8619,7 @@ function isStaleGuest(e){
 }
 function viewRankerRanking(){
   if(!fbUid){
+    if(firebaseConfigured()) ensureFirebase();   // ランキングを見るには接続が必要（ログアウト中なら、ここでゲストとして接続する）
     return `
       <div class="hero" style="background:linear-gradient(150deg, #f2ac2b, #e8562f 80%);">
         <div class="hero-eyebrow">RANKING</div>
@@ -8494,7 +8629,8 @@ function viewRankerRanking(){
   }
   loadRankingIfNeeded();
   const showMod = !!state.settings.rankingShowModerators;
-  let list = (rankingData || []).filter(e => (showMod || !e.isModerator) && !isStaleGuest(e));
+  let list = (rankingData || []).filter(e => (showMod || !e.isModerator) && !isStaleGuest(e) && (e.games || 0) > 0);
+  list = dedupeRankingEntries(list);
   list = list.slice().sort((a,b) => rankingScoreFor(rankingKind,b) - rankingScoreFor(rankingKind,a));
   const myIdx = list.findIndex(e => e.uid === fbUid);
   const rows = list.slice(0, 100).map((e, i) => `
@@ -9567,6 +9703,8 @@ function importSave(scope){
         } else {
           toast('この画面のデータ形式ではありません'); return;
         }
+        stampLocalOwner();
+        ensureLineage();
         saveState();
         toast('セーブデータを読み込みました');
         render();
@@ -10036,7 +10174,7 @@ document.addEventListener('click', (e)=>{
     case 'account-open':
       accountFormMode = el.dataset.mode === 'login' ? 'login' : 'signup';
       accountError = '';
-      ensureFirebase();
+      ensureFirebase({passive:true});
       navigate(()=>{ sub.settings = 'account'; });
       break;
     case 'account-switch':
@@ -10069,7 +10207,8 @@ document.addEventListener('click', (e)=>{
       accountResetPassword(em3.trim());
       break;
     }
-    case 'account-logout': accountLogout(); break;
+    case 'account-logout': showLogoutConfirm(); break;
+    case 'confirm-logout': accountLogout(); break;
     case 'toggle-event-skins':
       state.settings.eventSkins = !(state.settings.eventSkins !== false);
       saveState();
@@ -10081,7 +10220,7 @@ document.addEventListener('click', (e)=>{
       break;
     case 'go-account':
       accountFormMode = 'signup';
-      ensureFirebase();
+      ensureFirebase({passive:true});
       navigate(()=>{ activeTab = 'settings'; sub.settings = 'account'; });
       break;
     case 'friend-add': {
@@ -10363,7 +10502,7 @@ if(dedupeOnlineHistory() > 0) saveState();
 preloadAudioFiles();
 setupAudioUnlock();
 // アカウント状態と招待を受け取れるよう、開いた時点で接続する
-if(firebaseConfigured()) ensureFirebase();
+if(firebaseConfigured()) ensureFirebase({passive:true});
 // 開いた時点でBGMを鳴らす（スマホでは最初の操作の直後に鳴り出す）
 updateBGM(true);
 </script>
