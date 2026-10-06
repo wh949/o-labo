@@ -403,7 +403,7 @@ async function loadAll(){
 /* ---------- 画面 ---------- */
 function render(){
   const tabs = [
-    ['users','利用者'], ['titles','称号'], ['rooms','対局の部屋'], ['events','イベント'], ['tournaments','競技大会'],
+    ['users','利用者'], ['titles','称号'], ['rooms','対局の部屋'], ['events','イベント'], ['tournaments','競技大会'], ['duplicates','重複'],
     ...(isOwner ? [['admins','管理者']] : [])
   ];
   $('#app').innerHTML = `
@@ -423,11 +423,12 @@ function render(){
         view==='rooms' ? viewRooms() :
         view==='events'? viewEvents():
         view==='tournaments'? viewTournamentsAdmin():
+        view==='duplicates'? viewDuplicates():
         view==='admins'? viewAdmins(): ''
       }</main>
     </div>`;
 }
-function go(v){ view = v; selectedUid = null; detail = null; render(); if(v==='rooms') loadRooms(); if(v==='tournaments'){ loadTournamentParticipants(); loadTournamentGames(); } }
+function go(v){ view = v; selectedUid = null; detail = null; render(); if(v==='rooms') loadRooms(); if(v==='tournaments'){ loadTournamentParticipants(); loadTournamentGames(); } if(v==='duplicates'){ selectedUids.clear(); loadDuplicateGroups(); } }
 async function reloadAll(){ await loadAll(); if(view==='user' && selectedUid) await openUser(selectedUid, true); render(); toast('最新の情報にしました'); }
 
 /* 利用者の一覧 */
@@ -920,6 +921,107 @@ async function deleteEvent(){
     toast('イベントを削除しました');
     render();
   }catch(err){ toast('削除に失敗しました: ' + err.message); }
+}
+
+/* 重複アカウントの検出（同じデータから複製されたアカウントを、ランキングのデータから見つける） */
+let dupGroups = null, dupLoading = false, dupMinGames = 10;
+// 「同じデータ」とみなす手がかり：データの系統ID、または成績がすべて同じ（対局数が minGames 以上のとき）
+function groupDuplicates(entries, minGames, infoOf){
+  const parent = entries.map((_, i) => i);
+  const find = i => { while(parent[i] !== i){ parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const keysOf = e => {
+    const k = [];
+    if(e.lineageId) k.push('L:' + e.lineageId);
+    if((e.games || 0) >= minGames) k.push('F:' + [e.games, e.wins, e.casualUnlocked, e.flipUnlocked, e.trainingRankIndex, e.trainingXNumber, e.consecutiveLoginDays].join('|'));
+    return k;
+  };
+  const first = new Map();
+  entries.forEach((e, i) => keysOf(e).forEach(k => { if(first.has(k)) parent[find(i)] = find(first.get(k)); else first.set(k, i); }));
+  const buckets = new Map();
+  entries.forEach((e, i) => { const r = find(i); if(!buckets.has(r)) buckets.set(r, []); buckets.get(r).push(e); });
+  const better = (a, b) => {                       // a を残すべきか：ゲストでないほう → 先に作られたほう
+    const ia = infoOf(a.uid) || {}, ib = infoOf(b.uid) || {};
+    if(!!ia.guest !== !!ib.guest) return !ia.guest;
+    const ca = ia.createdAt || Infinity, cb = ib.createdAt || Infinity;
+    if(ca !== cb) return ca < cb;
+    return String(a.uid) < String(b.uid);
+  };
+  const groups = [];
+  for(const members of buckets.values()){
+    if(members.length < 2) continue;
+    let keep = members[0];
+    for(const m of members) if(better(m, keep)) keep = m;
+    const count = new Map();
+    members.forEach(m => keysOf(m).forEach(k => count.set(k, (count.get(k) || 0) + 1)));
+    const reasons = [];
+    if([...count].some(([k, c]) => k.startsWith('L:') && c >= 2)) reasons.push('同じデータの系統');
+    if([...count].some(([k, c]) => k.startsWith('F:') && c >= 2)) reasons.push('成績がすべて同じ');
+    groups.push({ members, keep: keep.uid, reasons });
+  }
+  groups.sort((a, b) => b.members.length - a.members.length);
+  return groups;
+}
+async function loadDuplicateGroups(){
+  if(dupLoading) return;
+  dupLoading = true; render();
+  try{
+    const snap = await db.ref('leaderboard').once('value');
+    const v = snap.val() || {};
+    const entries = Object.entries(v).map(([uid, e]) => Object.assign({uid}, e)).filter(e => (e.games || 0) > 0);
+    dupGroups = groupDuplicates(entries, Math.max(1, parseInt(dupMinGames, 10) || 10), uid => users[uid]);
+  }catch(err){ dupGroups = []; toast('読み込めませんでした: ' + err.message); }
+  dupLoading = false; render();
+}
+function selectDupRest(){
+  if(!isOwner) return;
+  (dupGroups || []).forEach(g => g.members.forEach(m => { if(m.uid !== g.keep && isBulkSelectable(m.uid)) selectedUids.add(m.uid); }));
+  render();
+}
+async function banSelectedDuplicates(){
+  const prev = bulkReason;
+  bulkReason = '重複アカウントのため停止';
+  await bulkBan();
+  bulkReason = prev;
+  await loadDuplicateGroups();
+}
+function viewDuplicates(){
+  const groups = dupGroups || [];
+  const extra = groups.reduce((n, g) => n + g.members.length - 1, 0);
+  return `
+    <h2>重複アカウント</h2>
+    <p class="lead">ランキングのデータから、<b>同じデータから複製されたと見られるアカウント</b>を探します。「同じデータの系統」は確実な手がかり、「成績がすべて同じ」は偶然の一致の可能性もあるので、内容を見て判断してください。★が残す候補です（ゲストでないほう → 先に作られたほう）。</p>
+    <div class="box">
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px;">成績の一致を調べる、最低の対局数
+        <input type="number" min="1" style="width:70px;" value="${esc(String(dupMinGames))}" onchange="dupMinGames=this.value; loadDuplicateGroups();"> 戦以上</label>
+      <div class="row" style="margin-top:10px; align-items:center;">
+        <button class="btn" onclick="loadDuplicateGroups()" ${dupLoading?'disabled':''}>${dupLoading?'読み込み中…':'読み込み直す'}</button>
+        <span style="font-size:12px; color:var(--ink-soft);">${dupGroups ? `${groups.length}組・余分と見られるアカウント ${extra}件` : ''}</span>
+      </div>
+      ${isOwner ? `<div class="row" style="margin-top:10px;">
+        <button class="btn" onclick="selectDupRest()" ${extra?'':'disabled'}>★以外をすべて選ぶ</button>
+        <button class="btn danger" onclick="banSelectedDuplicates()" ${selectedUids.size?'':'disabled'}>選んだ${selectedUids.size}人を停止する</button>
+        <button class="btn" onclick="selectedUids.clear(); render();" ${selectedUids.size?'':'disabled'}>選択解除</button>
+      </div>
+      <p style="margin:8px 0 0; font-size:11px; color:var(--ink-soft);">停止は大元の管理者だけができます。停止すると、ランキングと大会・イベントの参加者からも外れます。</p>` : '<p style="margin:8px 0 0; font-size:11px; color:var(--ink-soft);">停止は大元の管理者だけができます。</p>'}
+    </div>
+    ${dupGroups === null ? '<div class="box"><p style="margin:0; color:var(--ink-soft);">読み込み中…</p></div>'
+      : !groups.length ? '<div class="box"><p style="margin:0; color:var(--ink-soft);">重複と見られるアカウントはありません。</p></div>'
+      : groups.map(g => `
+    <div class="box" style="padding:0;">
+      <div style="padding:10px 14px; border-bottom:1px solid var(--line); font-size:12px;"><b>${g.members.length}件</b>が同じデータと見られます（${esc(g.reasons.join('・')||'—')}）</div>
+      <div class="tbl-wrap"><table><tbody>${g.members.map(m => {
+        const u = users[m.uid] || {};
+        const isKeep = m.uid === g.keep;
+        return `<tr>
+          ${isOwner ? `<td style="width:34px;">${(!isKeep && isBulkSelectable(m.uid)) ? `<input type="checkbox" ${selectedUids.has(m.uid)?'checked':''} onchange="toggleSelectUid('${m.uid}', this.checked)">` : ''}</td>` : ''}
+          <td onclick="openUser('${m.uid}')" style="cursor:pointer;">${isKeep?'<span class="tag admin">★残す</span> ':''}${esc(m.name||nameOf(u))}</td>
+          <td class="code" onclick="openUser('${m.uid}')">${esc(u.code||'-')}</td>
+          <td class="hide-sm">${u.guest?'ゲスト':'アカウント'}</td>
+          <td class="hide-sm">登録 ${fmtDate(u.createdAt)}</td>
+          <td class="num">${m.games}戦${m.wins}勝</td>
+          <td class="hide-sm">${u.banned?'<span class="tag ban">停止中</span>':''}</td>
+        </tr>`;}).join('')}</tbody></table></div>
+    </div>`).join('')}`;
 }
 
 /* O-LABO競技大会の管理 */
