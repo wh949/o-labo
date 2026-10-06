@@ -220,6 +220,33 @@ function closeModal(){ $('#modalRoot').innerHTML = ''; }
 function fmtDate(ms){ if(!ms) return '-'; const d=new Date(ms); return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
 function iconSrc(u){ return u && u.profile && u.profile.icon && u.profile.icon.startsWith('data:') ? u.profile.icon : ''; }
 function nameOf(u){ return (u && ((u.profile && u.profile.displayName) || u.name)) || '(名前なし)'; }
+let selectedUids = new Set();   // 一括操作用に選択された利用者
+let suspiciousOnly = false;     // 「不審なアカウントだけ表示」のチェック状態
+// 作成から日が浅く、メールの確認もまだ済んでいない（ゲストや、Google等だけで登録した人は対象外）
+function isSuspicious(u){
+  if(!u || u.guest) return false;
+  if(u.emailVerified !== false) return false;   // false(明示的に未確認)のときだけ疑う。undefinedはメール未連携などなので対象外
+  const ageMs = Date.now() - (u.createdAt || 0);
+  return ageMs < 24*60*60*1000;
+}
+function toggleSelectUid(uid, checked){
+  if(checked) selectedUids.add(uid); else selectedUids.delete(uid);
+  render();
+}
+async function bulkBan(){
+  if(!selectedUids.size) return;
+  const uids = Array.from(selectedUids).filter(uid => users[uid] && users[uid].code !== OWNER_CODE);
+  if(!uids.length){ toast('停止できる対象がありません'); return; }
+  if(!confirm(`${uids.length}件のアカウントをまとめて停止します。本人はセーブデータなどに一切アクセスできなくなります。よろしいですか？`)) return;
+  const reason = '不審なアカウントのため一括停止';
+  for(const uid of uids){
+    await db.ref('users/'+uid).update({ banned:true, banReason: reason, bannedAt: Date.now() }).catch(()=>{});
+    await db.ref('leaderboard/'+uid).remove().catch(()=>{});
+  }
+  toast(`${uids.length}件を停止しました`);
+  selectedUids.clear();
+  await loadAll(); render();
+}
 function banElapsedDays(bannedAt){ return Math.floor((Date.now() - bannedAt) / 86400000); }
 function banElapsedText(bannedAt){
   if(!bannedAt) return '';
@@ -348,33 +375,49 @@ async function reloadAll(){ await loadAll(); if(view==='user' && selectedUid) aw
 /* 利用者の一覧 */
 function viewUsers(){
   const q = query.trim().toLowerCase();
-  const list = Object.entries(users)
-    .filter(([uid,u]) => !q || nameOf(u).toLowerCase().includes(q) || String(u.code||'').toLowerCase().includes(q) || uid.toLowerCase().includes(q))
-    .sort((a,b) => ((b[1].lastSeen||0) - (a[1].lastSeen||0)));
+  let list = Object.entries(users)
+    .filter(([uid,u]) => !q || nameOf(u).toLowerCase().includes(q) || String(u.code||'').toLowerCase().includes(q) || uid.toLowerCase().includes(q));
+  if(suspiciousOnly) list = list.filter(([uid,u]) => isSuspicious(u));
+  list = list.sort((a,b) => ((b[1].lastSeen||0) - (a[1].lastSeen||0)));
   const total = Object.keys(users).length;
   const bannedUsers = Object.values(users).filter(u => u.banned);
   const overLimitCount = bannedUsers.filter(u => u.bannedAt && banElapsedDays(u.bannedAt) >= 60).length;
+  const suspiciousCount = Object.values(users).filter(isSuspicious).length;
   return `
     <h2>利用者</h2>
-    <p class="lead">登録 ${total}人 ／ 停止中 ${bannedUsers.length}人${overLimitCount ? `（うち保持期限超過 ${overLimitCount}人）` : ''}。行を押すと詳しく見られます。</p>
+    <p class="lead">登録 ${total}人 ／ 停止中 ${bannedUsers.length}人${overLimitCount ? `（うち保持期限超過 ${overLimitCount}人）` : ''}${suspiciousCount ? ` ／ <span style="color:var(--danger); font-weight:700;">不審なアカウント ${suspiciousCount}人</span>` : ''}。行を押すと詳しく見られます。</p>
     <div class="box">
       <input type="text" placeholder="名前・ID で探す" value="${esc(query)}" oninput="query=this.value; render(); this.focus(); this.setSelectionRange(this.value.length,this.value.length);">
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; margin-top:10px;">
+        <input type="checkbox" ${suspiciousOnly?'checked':''} onchange="suspiciousOnly=this.checked; selectedUids.clear(); render();">
+        不審なアカウントだけ表示（登録から24時間未満・メール未確認）
+      </label>
     </div>
+    ${selectedUids.size ? `
+    <div class="box row" style="align-items:center; justify-content:space-between;">
+      <span style="font-size:13px;">${selectedUids.size}件選択中</span>
+      <div class="row">
+        <button class="btn danger" onclick="bulkBan()">まとめて停止する</button>
+        <button class="btn" onclick="selectedUids.clear(); render();">選択解除</button>
+      </div>
+    </div>` : ''}
     <div class="box" style="padding:0;">
       <div class="tbl-wrap"><table>
-        <thead><tr><th></th><th>名前</th><th>ID</th><th class="hide-sm">状態</th><th class="num hide-sm">対局</th><th class="hide-sm">最終</th><th></th></tr></thead>
+        <thead><tr><th></th><th></th><th>名前</th><th>ID</th><th class="hide-sm">状態</th><th class="hide-sm">登録</th><th class="num hide-sm">対局</th><th></th></tr></thead>
         <tbody>${list.length ? list.map(([uid,u]) => {
           const [pl,pc] = presenceOf(uid);
           const src = iconSrc(u);
-          return `<tr onclick="openUser('${uid}')">
-            <td>${src ? `<img class="ic" src="${src}" alt="">` : '<span class="ic"></span>'}</td>
-            <td>${esc(nameOf(u))}</td>
-            <td class="code">${esc(u.code||'-')}</td>
-            <td class="hide-sm"><span class="dot" style="background:${pc}"></span>${pl}</td>
-            <td class="num hide-sm">${(u.stats && u.stats.games) || 0}</td>
-            <td class="hide-sm">${fmtDate(u.lastSeen)}</td>
-            <td>${u.banned?'<span class="tag ban">停止中</span>':''}${u.guest?' <span class="tag guest">ゲスト</span>':''}${admins[uid]||u.code===OWNER_CODE?' <span class="tag admin">管理者</span>':''}</td>
-          </tr>`;}).join('') : `<tr><td colspan="7" class="empty">該当する利用者はいません</td></tr>`}
+          const susp = isSuspicious(u);
+          return `<tr ${susp?'style="background:rgba(230,126,34,.1);"':''}>
+            <td onclick="event.stopPropagation()"><input type="checkbox" ${selectedUids.has(uid)?'checked':''} onchange="toggleSelectUid('${uid}', this.checked)"></td>
+            <td onclick="openUser('${uid}')">${src ? `<img class="ic" src="${src}" alt="">` : '<span class="ic"></span>'}</td>
+            <td onclick="openUser('${uid}')">${esc(nameOf(u))}</td>
+            <td class="code" onclick="openUser('${uid}')">${esc(u.code||'-')}</td>
+            <td class="hide-sm" onclick="openUser('${uid}')"><span class="dot" style="background:${pc}"></span>${pl}</td>
+            <td class="hide-sm" onclick="openUser('${uid}')">${fmtDate(u.createdAt)}</td>
+            <td class="num hide-sm" onclick="openUser('${uid}')">${(u.stats && u.stats.games) || 0}</td>
+            <td onclick="openUser('${uid}')">${u.banned?'<span class="tag ban">停止中</span>':''}${u.guest?' <span class="tag guest">ゲスト</span>':''}${u.emailVerified===false?' <span class="tag ban" style="background:#e67e22;">メール未確認</span>':''}${admins[uid]||u.code===OWNER_CODE?' <span class="tag admin">管理者</span>':''}</td>
+          </tr>`;}).join('') : `<tr><td colspan="8" class="empty">該当する利用者はいません</td></tr>`}
         </tbody>
       </table></div>
     </div>`;
@@ -437,6 +480,7 @@ function viewUser(){
         <dt>登録日</dt><dd>${fmtDate(u.createdAt)}</dd>
         <dt>最終アクセス</dt><dd>${fmtDate(u.lastSeen)}</dd>
         <dt>種類</dt><dd>${u.guest?'ゲスト':'アカウント'}${isAdm?'（管理者）':''}</dd>
+        ${u.emailVerified !== undefined ? `<dt>メール確認</dt><dd>${u.emailVerified ? '確認済み' : '<span style="color:#e67e22; font-weight:700;">未確認</span>'}</dd>` : ''}
         <dt>停止</dt><dd>${u.banned ? `<span class="tag ban">停止中</span> ${esc(u.banReason||'')}${banElapsedText(u.bannedAt)}` : 'なし'}</dd>
         <dt>誕生日</dt><dd>${d && d.priv.birthMonth ? `${d.priv.birthMonth}月${d.priv.birthDay}日（${d.priv.birthPublic?'公開':'非公開'}）` : '未設定'}</dd>
       </dl>
