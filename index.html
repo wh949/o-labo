@@ -834,6 +834,12 @@ html[data-theme="dark"] {
   font-weight:800; font-size:13px; margin-bottom:10px;
 }
 .home-event-go{ font-size:11.5px; font-weight:600; opacity:.9; }
+.home-email-banner{
+  display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; cursor:pointer;
+  border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:14px; padding:11px 14px;
+  font-weight:700; font-size:12.5px; margin:6px 0 10px; text-align:left;
+}
+.home-email-banner.is-required{ background:#b3261e; border-color:#b3261e; color:#fff; }
 .home-grid-4{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
 .home-grid-btn{
   border:none; border-radius:14px; cursor:pointer; color:#fff; padding:16px 8px;
@@ -2866,6 +2872,7 @@ function viewHome(){
     </div>
 
     ${inviteBannerMarkup()}
+    ${emailAuthBannerMarkup()}
 
     ${eventOpen ? `
     <button class="home-event-banner" data-action="go-event">
@@ -3658,26 +3665,31 @@ function bgmMetaUrl(path){
 }
 
 // いまのゾーンで流す曲の候補（行事版があれば先に、通常版をその次に）を1つずつ選ぶ
-async function pickZoneBgm(zone){
+// excludeName を渡すと、その曲は（ほかに曲があるかぎり）選ばない。曲が終わったあとに同じ曲が続かないようにするため
+async function pickZoneBgm(zone, excludeName){
   const prefix = zone === 'home' ? 'ro' : (zone === 'flipside' ? 'fl' : 'vs');
   const normalNames = await scanBgmFolder(zone, prefix);
   const ev = (state.settings.eventSkins !== false && activeTab !== 'flipside') ? activeEvent() : null;
+  const pickOne = (names, folder) => {
+    let pool = names;
+    if(excludeName){
+      const others = names.filter(n => (folder + '/' + n) !== excludeName);
+      if(others.length) pool = others;
+    }
+    return folder + '/' + pool[Math.floor(Math.random() * pool.length)];
+  };
 
   const candidates = [];
   if(ev){
     const evFolder = `event/${ev.id}/${zone}`;
     const evNames = await scanBgmFolder(evFolder, prefix);
-    if(evNames.length){
-      candidates.push(evFolder + '/' + evNames[Math.floor(Math.random() * evNames.length)]);
-    }
+    if(evNames.length) candidates.push(pickOne(evNames, evFolder));
   }
-  if(normalNames.length){
-    candidates.push(zone + '/' + normalNames[Math.floor(Math.random() * normalNames.length)]);
-  }
+  if(normalNames.length) candidates.push(pickOne(normalNames, zone));
   return candidates;
 }
-async function playZoneBGM(zone){
-  const candidates = await pickZoneBgm(zone);
+async function playZoneBGM(zone, excludeName){
+  const candidates = await pickZoneBgm(zone, excludeName);
   if(!candidates.length) return;   // まだ音源が置かれていない
   // 前の曲はフェードアウトし、次の曲はフェードインなしでそのまま鳴らす
   playBGM(candidates, false);
@@ -3769,7 +3781,15 @@ async function playBGM(names, fadeIn=true){
   try{
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.loop = true;
+    source.loop = false;   // 同じ曲をくり返さず、1曲鳴り終わったら次の曲へ進む
+    source.onended = () => {
+      // 手動で止めたとき・場面が切り替わったときは、すでに別の曲が登録されているので何もしない
+      if(audioState.bgmNode !== source) return;
+      const last = audioState.currentBGM;
+      audioState.bgmNode = null; audioState.bgmGain = null; audioState.currentBGM = null;
+      if(!bgmEnabledNow()) return;
+      playZoneBGM(bgmZone, last);
+    };
 
     const gain = ctx.createGain();
     const target = bgmVolumeNow();
@@ -3985,12 +4005,12 @@ async function accountSignUpEmail(email, password){
     }
     // 実在するメールアドレスかどうかを確かめるため、確認メールを送る。
     // 確認が済むまでは、大会エントリーなど荒らしに使われやすい一部の機能を制限する
+    fbUser = firebase.auth().currentUser;
     try{
-      const u = firebase.auth().currentUser;
-      if(u && !u.emailVerified) await u.sendEmailVerification();
+      if(fbUser && !fbUser.emailVerified) await sendVerifyMailWithFallback(fbUser);
     }catch(err){ console.warn('確認メールの送信に失敗:', err); }
-    myEmailVerified = !!(firebase.auth().currentUser && firebase.auth().currentUser.emailVerified);
-    toast('アカウントを作成しました。届いたメールのリンクから、メールアドレスの確認をお願いします');
+    recomputeEmailVerified();
+    toast('アカウントを作成しました。届いたメールのリンクから、メールアドレスの認証をお願いします');
     sub.settings = 'home';
   }catch(err){
     console.error(err);
@@ -3998,18 +4018,6 @@ async function accountSignUpEmail(email, password){
     if(accountError) toast(accountError);
   }finally{
     accountBusy = false; render();
-  }
-}
-
-async function resendVerifyEmail(){
-  if(!fbUser || fbUser.emailVerified) return;
-  try{
-    await fbUser.sendEmailVerification();
-    toast('確認メールを再送信しました');
-  }catch(err){
-    const code = err && err.code;
-    if(code === 'auth/too-many-requests') toast('少し時間をおいてから、もう一度お試しください');
-    else toast('送信できませんでした');
   }
 }
 
@@ -4565,7 +4573,169 @@ let titleCatalog = Object.assign({}, AUTO_TITLES);
 let myTitleIds = [];
 let myTitlesRevoked = {};   // 管理者が外した自動の称号（付け直さない）
 let myBanned = false, myBanReason = '';
-let myEmailVerified = true;   // メール/パスワードのアカウントで、確認がまだなら false（ゲストや他の連携方法は対象外）
+let myEmailVerified = true;   // メールの認証が有効なら true（メール/パスワードのアカウントで未認証・期限切れなら false。ゲストやGoogleのみは常に true）
+const EMAIL_REVERIFY_MS = 30*24*60*60*1000;   // 認証の有効期間（おおむね1ヶ月に1回、認証し直してもらう）
+let myEmailVerifiedAt = 0;         // 最後にメールで認証した時刻（users/<uid>/emailVerifiedAt）
+let emailLinkUnavailable = false;  // 再認証用のメールリンクが、サーバー側でまだ有効化されていない場合
+let emailAuthBusy = false;
+let emailVerifiedJustNow = false;  // メールのリンクで認証した直後（ログインし直した後に記録するため）
+let emailLinkHandled = false;
+
+// 対象はメール/パスワードで登録したアカウントだけ（ゲストや、Googleだけで登録した人は対象外）
+function emailAuthApplies(){ return !!(fbUser && !fbUser.isAnonymous && hasProvider('password')); }
+function emailAuthDaysLeft(){
+  if(!myEmailVerifiedAt) return 0;
+  return Math.ceil((myEmailVerifiedAt + EMAIL_REVERIFY_MS - Date.now()) / 86400000);
+}
+function persistEmailVerifiedAt(){
+  if(!fbDb || !fbUid || !myEmailVerifiedAt) return;
+  fbDb.ref('users/' + fbUid + '/emailVerifiedAt').set(myEmailVerifiedAt).catch(()=>{});
+}
+// 認証が有効かどうかを、いまの状態から決め直す
+function recomputeEmailVerified(){
+  if(!emailAuthApplies()){ myEmailVerified = true; return; }
+  if(fbUser.emailVerified && !myEmailVerifiedAt){
+    // メールの確認は済んでいるが記録がまだ無い＝いま確認できたところなので、この時刻を認証日時にする
+    myEmailVerifiedAt = Date.now();
+    persistEmailVerifiedAt();
+  }
+  const fresh = myEmailVerifiedAt && (Date.now() - myEmailVerifiedAt) < EMAIL_REVERIFY_MS;
+  myEmailVerified = !!(fbUser.emailVerified && fresh);
+  // 再認証のメールを送れない設定のときは、確認済みの人を止めない（お知らせだけ出す）
+  if(!myEmailVerified && emailLinkUnavailable && fbUser.emailVerified) myEmailVerified = true;
+}
+// 認証が必要な機能の入り口で使う
+function requireEmailAuth(){
+  if(myEmailVerified) return true;
+  toast('この機能を使うには、メールアドレスの認証が必要です。ホームの案内から認証してください');
+  return false;
+}
+function authContinueUrl(){ return location.origin + location.pathname; }
+function cleanAuthUrl(){ try{ history.replaceState(null, '', location.origin + location.pathname); }catch(e){} }
+// 確認メール（初めての認証用）を送る。戻り先を指定できない設定なら、指定なしで送り直す
+async function sendVerifyMailWithFallback(user){
+  try{ await user.sendEmailVerification({ url: authContinueUrl() }); }
+  catch(err){
+    const c = err && err.code;
+    if(c === 'auth/unauthorized-continue-uri' || c === 'auth/invalid-continue-uri' || c === 'auth/missing-continue-uri'){
+      await user.sendEmailVerification();
+    } else throw err;
+  }
+}
+function fmtMonthDay(ms){ const d = new Date(ms); return `${d.getMonth()+1}月${d.getDate()}日`; }
+// 設定画面のアカウント欄に出す、メール認証の状態と案内
+function emailAuthCardMarkup(){
+  if(!emailAuthApplies()) return '';
+  const firstTime = !fbUser.emailVerified;
+  const stateText = myEmailVerified ? `認証済み（${fmtMonthDay(myEmailVerifiedAt + EMAIL_REVERIFY_MS)}ごろまで）` : '要認証';
+  const row = `<div class="acc-row"><span class="acc-k">メール認証</span><span class="acc-v" style="color:${myEmailVerified?'var(--jade-deep)':'#b3261e'};">${stateText}</span></div>`;
+  if(myEmailVerified) return row;
+  return row + `
+    <div class="card" style="border:1px solid #b3261e; margin:8px 0;">
+      <p style="margin:0 0 8px; font-size:12px; line-height:1.7;">${firstTime
+        ? 'メールアドレスの認証をお願いします。届いたメールのリンクを開くと完了します。認証が済むまでは、大会・オンライン対戦・フレンド申請・ランキングへの掲載が使えません（ひとりで遊ぶモードは今までどおり使えます）。'
+        : '前回の認証から1ヶ月ほどたちました。安全のため、もう一度メールで認証をお願いします。'}</p>
+      <button class="btn btn-soft" data-action="send-auth-mail" ${emailAuthBusy?'disabled':''} style="width:100%;">${emailAuthBusy?'送信中…':'認証メールを送る'}</button>
+      ${firstTime ? `<button class="btn btn-ghost" data-action="refresh-email-auth" style="width:100%; margin-top:8px;">メールのリンクを開いた（状態を更新）</button>` : ''}
+    </div>`;
+}
+// ホームに出す、メール認証のお知らせ
+function emailAuthBannerMarkup(){
+  if(!emailAuthApplies()) return '';
+  if(!myEmailVerified){
+    return `<button class="home-email-banner is-required" data-action="go-email-auth">
+      <span>📧 メールアドレスの認証をお願いします</span><span class="home-event-go">認証する ›</span></button>`;
+  }
+  const left = emailAuthDaysLeft();
+  if(myEmailVerifiedAt && left <= 5){
+    return `<button class="home-email-banner" data-action="go-email-auth">
+      <span>📧 あと${Math.max(left,0)}日で、メールの再認証が必要です</span><span class="home-event-go">確認する ›</span></button>`;
+  }
+  return '';
+}
+// 「認証メールを送る」ボタン。初めての認証は確認メール、1ヶ月ごとの再認証はメールのリンク
+async function sendAuthMail(){
+  if(!emailAuthApplies() || emailAuthBusy) return;
+  emailAuthBusy = true; render();
+  try{
+    if(!fbUser.emailVerified){
+      await sendVerifyMailWithFallback(fbUser);
+      toast('認証メールを送りました。メールのリンクを開いたあと、「認証した」を押してください');
+    } else {
+      try{ localStorage.setItem('olabo_email_link_addr', fbUser.email || ''); }catch(e){}
+      await firebase.auth().sendSignInLinkToEmail(fbUser.email, { url: authContinueUrl(), handleCodeInApp: true });
+      toast('認証メールを送りました。メールのリンクを開いてください');
+    }
+  }catch(err){
+    const code = err && err.code;
+    if(code === 'auth/operation-not-allowed'){
+      emailLinkUnavailable = true; recomputeEmailVerified();
+      toast('再認証メールの送信は準備中のため、今はそのままご利用いただけます');
+    } else if(code === 'auth/too-many-requests'){ toast('少し時間をおいてから、もう一度お試しください'); }
+    else if(code === 'auth/unauthorized-continue-uri'){ toast('認証メールを送れませんでした（サーバー側の設定が必要です）'); }
+    else toast('認証メールを送れませんでした');
+  }finally{ emailAuthBusy = false; render(); }
+}
+// メールのリンクを開いて戻ってきたあと、認証できたかを確かめる
+async function refreshEmailAuth(showToast){
+  if(!fbUser || fbUser.isAnonymous) return;
+  const wasFirebaseVerified = !!fbUser.emailVerified;
+  try{
+    await fbUser.reload(); fbUser = firebase.auth().currentUser;
+    if(fbDb && fbUid){
+      const s = await fbDb.ref('users/' + fbUid + '/emailVerifiedAt').once('value');
+      const v = s.val();
+      if(typeof v === 'number') myEmailVerifiedAt = v;
+    }
+    // 確認済みに変わったら、サーバー側のルールにも伝わるよう、証明書(トークン)も作り直す
+    if(!wasFirebaseVerified && fbUser.emailVerified) await fbUser.getIdToken(true);
+  }catch(err){}
+  const before = myEmailVerified;
+  recomputeEmailVerified();
+  syncEmailVerifiedFlag();
+  if(showToast) toast(myEmailVerified ? '認証できました' : 'まだ認証を確認できません。メールのリンクを開いたあと、もう一度お試しください');
+  if(!before && myEmailVerified) publishStats();
+  render();
+}
+// 管理者が見られるよう、Firebase上で確認済みかどうかも控えておく
+function syncEmailVerifiedFlag(){
+  if(fbDb && fbUid && emailAuthApplies()){
+    fbDb.ref('users/' + fbUid + '/emailVerified').set(!!fbUser.emailVerified).catch(()=>{});
+  }
+}
+// 1ヶ月ごとの再認証メールのリンクを開いて戻ってきたとき。戻り値：false=何もしなかった / 'reauth'=認証できた / 'switched'=ログインし直した
+async function handleEmailLinkReturn(user){
+  if(emailLinkHandled) return false;
+  const href = location.href;
+  let isLink = false;
+  try{ isLink = firebase.auth().isSignInWithEmailLink(href); }catch(e){}
+  if(!isLink) return false;
+  emailLinkHandled = true;
+  let email = '';
+  try{ email = localStorage.getItem('olabo_email_link_addr') || ''; }catch(e){}
+  if(user && !user.isAnonymous && user.email) email = user.email;
+  if(!email) email = window.prompt('認証メールを送った、メールアドレスを入力してください') || '';
+  email = email.trim();
+  if(!email){ cleanAuthUrl(); return false; }
+  try{
+    if(user && !user.isAnonymous){
+      if(user.email && user.email.toLowerCase() !== email.toLowerCase()){
+        toast('このリンクは、別のアカウント用の認証メールです'); cleanAuthUrl(); return false;
+      }
+      await user.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credentialWithLink(email, href));
+      emailVerifiedJustNow = true; cleanAuthUrl();
+      return 'reauth';
+    }
+    // ゲストのままリンクを開いた場合は、そのメールのアカウントにログインして認証する
+    await firebase.auth().signInWithEmailLink(email, href);
+    emailVerifiedJustNow = true; cleanAuthUrl();
+    return 'switched';
+  }catch(err){
+    cleanAuthUrl();
+    toast('認証できませんでした。リンクの有効期限が切れているかもしれません。もう一度メールを送ってください');
+    return false;
+  }
+}
 async function loadTitlesAndStatus(){
   if(!fbDb || !fbUid) return;
   try{
@@ -4583,6 +4753,7 @@ async function loadTitlesAndStatus(){
     const wasBanned = myBanned;
     myBanned = !!u.banned;
     myBanReason = u.banReason || '';
+    myEmailVerifiedAt = (typeof u.emailVerifiedAt === 'number') ? u.emailVerifiedAt : 0;
     // BANされたと分かった端末では、この端末に残っているセーブデータそのものを消す
     if(myBanned && !wasBanned){
       try{ localStorage.removeItem('genseki_othello_save_v1'); }catch(err){}
@@ -4775,6 +4946,7 @@ async function publishStats(){
 // （users/ 以下を全員分読むのはデータ量・プライバシーの両面で避けたいため）
 async function publishLeaderboard(){
   if(!fbDb || !fbUid) return;
+  if(!myEmailVerified) return;   // メール認証が済んでいない間は、ランキングに載せない
   const unlocked = CASUAL_DIFFS.filter(d => !d.locked || state.casual.unlocked[d.id]).length;
   const fs = state.flipside || {};
   const flipUnlocked = fs.flip && fs.flip.unlocked ? Object.keys(fs.flip.unlocked).filter(k => fs.flip.unlocked[k]).length : 0;
@@ -5281,6 +5453,7 @@ let sentRequestTo = {};               // この端末で送った相手（ボタ
 // 申請を送る（対局後のリザルトから）
 async function friendRequestSend(toUid, toName){
   if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
+  if(!requireEmailAuth()) return;
   if(!isSignedIn()){ toast('フレンド申請にはアカウントが必要です'); return; }
   if(!toUid || toUid === fbUid){ return; }
   try{
@@ -5425,6 +5598,7 @@ function unwatchFriends(){
 // フレンドを対局に招待する（自分が部屋を用意して待つ）
 async function friendInvite(friendUid, friendName){
   if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
+  if(!requireEmailAuth()) return;
   if(!(await ensureFirebase())){ toast(fbInitError); return; }
   const myName = (state.online && state.online.lastName) || state.username || 'プレイヤー';
   try{
@@ -5507,6 +5681,7 @@ function showInviteToast(inv){
 
 // 招待を受けて入室する
 async function acceptInvite(inviteId){
+  if(!requireEmailAuth()) return;
   const inv = pendingInvites.find(x => x.id === inviteId);
   if(!inv){ toast('招待が見つかりません'); return; }
   if(!(await ensureFirebase())){ toast(fbInitError); return; }
@@ -5558,23 +5733,30 @@ async function ensureFirebase(){
         fbUser = user;
         fbUid = user ? user.uid : null;
         accountReady = true;
-        // メールのリンクを開いて確認した直後は、手元の情報が古いままのことがあるので、
-        // メール/パスワードのアカウントならここで一度最新の状態に合わせておく
-        if(user && !user.isAnonymous && hasProvider('password') && !user.emailVerified){
-          try{ await user.reload(); fbUser = firebase.auth().currentUser; }catch(err){}
+        // 1ヶ月ごとの再認証メールのリンクから戻ってきた場合は、ここで認証を済ませる
+        if(user && !emailLinkHandled){
+          const res = await handleEmailLinkReturn(user);
+          if(res === 'switched') return;   // 別のアカウントとして入り直したので、新しい状態の通知に任せる
+          fbUser = firebase.auth().currentUser;
         }
-        // メール/パスワードで登録している場合だけ、確認が済んでいるかを見る
-        // （ゲストや、まだメールを連携していないアカウントは対象外として扱う）
-        myEmailVerified = !fbUser || fbUser.isAnonymous || !hasProvider('password') || !!fbUser.emailVerified;
+        // 確認メールのリンクを開いた直後は、手元の情報が古いままのことがあるので、最新の状態に合わせておく
+        if(fbUser && !fbUser.isAnonymous && hasProvider('password') && !fbUser.emailVerified){
+          try{ await fbUser.reload(); fbUser = firebase.auth().currentUser; }catch(err){}
+        }
+        // サーバー側のルールが使う証明書(トークン)にも、確認済みであることが載っているようにしておく
+        if(fbUser && !fbUser.isAnonymous && fbUser.emailVerified){
+          try{ const tr = await fbUser.getIdTokenResult(); if(!tr.claims.email_verified) await fbUser.getIdToken(true); }catch(err){}
+        }
+        if(!user){ myEmailVerifiedAt = 0; myEmailVerified = true; }
         if(user){
           onlineDebug.myUid = user.uid;
-          // 管理者が利用者一覧から確認できるよう、確認状態を Realtime Database にも控えておく
-          if(fbDb && !user.isAnonymous && hasProvider('password')){
-            fbDb.ref('users/' + user.uid + '/emailVerified').set(myEmailVerified).catch(()=>{});
-          }
           await ensureUserRecord();
           await loadMyProfile();
           await loadTitlesAndStatus();
+          // メールの認証状態を決める（認証日時は loadTitlesAndStatus で読み込み済み）
+          if(emailVerifiedJustNow){ myEmailVerifiedAt = Date.now(); emailVerifiedJustNow = false; persistEmailVerifiedAt(); toast('メールアドレスの認証ができました'); }
+          recomputeEmailVerified();
+          syncEmailVerifiedFlag();
           // 停止中は、セーブデータへのアクセスがルール側で拒否されるため、
           // 同期やオンライン関連の処理自体を行わない（エラーの原因にもなるため）
           if(!myBanned){
@@ -5657,6 +5839,7 @@ function normalizeRoomCode(v){
 // 合言葉で入室（居なければ作成して待機、居れば参加）
 async function onlineJoinByCode(code, myName){
   if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
+  if(!requireEmailAuth()) return;
   const id = normalizeRoomCode(code);
   if(!id){ toast('合言葉を入力してください'); return; }
 
@@ -5816,6 +5999,7 @@ async function onlineTryJoinWaiting(myName, isMatch){
 // matchOpts: { isMatch:true, timeLimitSec:600 } を渡すと、競技モード（公式ルール）の対局になる
 async function onlineRandomMatch(myName, matchOpts){
   if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
+  if(!requireEmailAuth()) return;
   const isMatch = !!(matchOpts && matchOpts.isMatch);
   const timeLimitSec = (matchOpts && matchOpts.timeLimitSec) || 600;
   // 押した瞬間に画面を切り替える
@@ -7984,12 +8168,7 @@ function accountCardMarkup(){
         <div class="acc-row"><span class="acc-k">ログイン中</span><span class="acc-v">${escapeHtml(fbUser.email || accountProviderLabel())}</span></div>
         <div class="acc-row"><span class="acc-k">ログイン方法</span><span class="acc-v">${escapeHtml(accountProviderLabel())}</span></div>
         <div class="acc-row"><span class="acc-k">ユーザーID</span><span class="acc-v acc-code">${escapeHtml(myUserCode())}</span></div>
-        ${hasProvider('password') ? `<div class="acc-row"><span class="acc-k">メール確認</span><span class="acc-v" style="color:${myEmailVerified?'var(--jade-deep)':'#b3261e'};">${myEmailVerified?'確認済み':'未確認'}</span></div>` : ''}
-        ${hasProvider('password') && !myEmailVerified ? `
-        <div class="card" style="border:1px solid #b3261e; margin:8px 0;">
-          <p style="margin:0 0 8px; font-size:12px; line-height:1.7;">メールアドレスがまだ確認できていません。届いたメールのリンクを開くか、下のボタンから再送信できます。大会へのエントリーなど、一部の機能はメール確認後に使えるようになります。</p>
-          <button class="btn btn-soft" data-action="resend-verify-email" style="width:100%;">確認メールを再送信</button>
-        </div>` : ''}
+        ${emailAuthCardMarkup()}
         <p style="font-size:11.5px; color:var(--ink-soft); line-height:1.7; margin:10px 0 10px;">記録は自動でクラウドに保存されます。ほかの端末で同じアカウントにログインすると、進んでいるほうの記録が使われます。</p>
         ${friendRequests.length ? `<p style="font-size:12px; color:var(--jade-deep); font-weight:700; margin:0 0 8px;">フレンド申請が${friendRequests.length}件届いています</p>` : ''}
         <button class="btn btn-primary" data-action="open-mypage" style="width:100%; margin-bottom:8px;">マイページ</button>
@@ -8255,9 +8434,19 @@ function loadRankingIfNeeded(){
 }
 // 並べ替えに使う数値（ゆる解放度は、同数のときに FlipSide の解放度で細かく順位を付ける。
 // ただし画面には出さない＝「内訳として含む」）
+// 勝率のランキング用の点数。対局数が少ないほど「たまたま勝っただけ」の可能性が高いので、
+// 信頼度を割り引いて点数にする（ウィルソン信頼区間の下限）。1戦1勝で100%が1位になる、といった偏りを防ぐ。
+// 対局が増えるほど、実際の勝率に近い点数になる。画面に出すのは実際の勝率のまま
+function winRateScore(wins, games){
+  if(!games || games <= 0) return 0;
+  const z = 1.96, n = games, p = Math.min(1, Math.max(0, (wins||0) / n));
+  const z2 = z * z;
+  const v = (p + z2/(2*n) - z * Math.sqrt(p*(1-p)/n + z2/(4*n*n))) / (1 + z2/n);
+  return Math.min(1, Math.max(0, v));   // 浮動小数点の誤差で 0 を割らないように
+}
 function rankingScoreFor(kind, e){
   const games = e.games || 0;
-  const winrate = games > 0 ? (e.wins||0) / games : 0;
+  const winrate = winRateScore(e.wins, games);
   const trainingScore = ((e.trainingRankIndex||0) * 1000 + (e.trainingXNumber||0)) / (RANK_MAX_X + (RANK_LADDER.length)*1000);
   const casualScore = (e.casualUnlocked||0) / 100;
   const flipScore = (e.flipUnlocked||0) / 15;
@@ -8273,7 +8462,7 @@ function rankingScoreFor(kind, e){
 }
 function rankingValueText(kind, e){
   switch(kind){
-    case 'winrate': { const g=e.games||0; return g>0 ? `${Math.round((e.wins||0)/g*100)}%（${g}戦）` : '対局なし'; }
+    case 'winrate': { const g=e.games||0; return g>0 ? `${Math.round((e.wins||0)/g*100)}%（${g}戦${e.wins||0}勝）` : '対局なし'; }
     case 'login': return `${e.consecutiveLoginDays||0}日`;
     case 'training': return rankLabel(e.trainingRankIndex||0, e.trainingXNumber||0);
     case 'casual': return `${e.casualUnlocked||0} / 100`;
@@ -8333,6 +8522,7 @@ function viewRankerRanking(){
         <label class="switch"><input type="checkbox" ${showMod?'checked':''} data-action="toggle-ranking-moderators"><span class="toggle-track"></span></label>
       </div>
     </div>
+    ${rankingKind==='winrate' || rankingKind==='total' ? `<p style="margin:0 0 8px; font-size:11px; color:var(--ink-soft); text-align:center; line-height:1.6;">順位は、対局数が少ない人ほど勝率を割り引いて決めています（表示は実際の勝率です）。対局を重ねるほど、実際の勝率どおりの順位になります。</p>` : ''}
     ${myIdx>=0 ? `<p style="margin:0 0 8px; font-size:12px; color:var(--ink-soft); text-align:center;">あなたの順位：${myIdx+1}位 / ${list.length}人中</p>` : ''}
     <div class="card" style="padding:0;">${body}</div>
   `;
@@ -8430,6 +8620,8 @@ function startMatch(){
 }
 // オンラインで競技（公式ルール）の対戦相手をさがす
 async function startMatchOnline(){
+  if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
+  if(!requireEmailAuth()) return;
   if(!(await ensureFirebase())){ toast(fbInitError); return; }
   const myName = onlineDefaultName();
   sub.match = 'online-wait';
@@ -8766,6 +8958,7 @@ function eventRankedParticipants(){
 
 async function eventJoinSolo(){
   if(!fbDb || !fbUid) return;
+  if(!requireEmailAuth()) return;
   const entry = { name: profileName()||'プレイヤー', groupId: null, joinedAt: Date.now(), points: 0, huntCount: 0 };
   try{
     await fbDb.ref('events/current/participants/'+fbUid).set(entry);
@@ -8777,6 +8970,7 @@ async function eventJoinSolo(){
 }
 async function eventJoinWithGroup(gid){
   if(!fbDb || !fbUid) return;
+  if(!requireEmailAuth()) return;
   const entry = { name: profileName()||'プレイヤー', groupId: gid, joinedAt: Date.now(), points: 0, huntCount: 0 };
   try{
     await fbDb.ref('events/current/participants/'+fbUid).set(entry);
@@ -8787,6 +8981,7 @@ async function eventJoinWithGroup(gid){
   }catch(err){ toast('参加できませんでした'); }
 }
 async function eventCreateGroup(){
+  if(!requireEmailAuth()) return;
   const name = (document.getElementById('eventGroupName')||{}).value || '';
   const pw = (document.getElementById('eventGroupPassword')||{}).value || '';
   if(!name.trim()){ toast('グループ名を入力してください'); return; }
@@ -9301,7 +9496,7 @@ function viewSettings(){
       <button class="btn btn-danger" data-action="delete-cache">キャッシュデータを${ruby('削除','さくじょ',2)}</button>
     </div>
     <div style="text-align:center; margin-top:20px; padding:10px; font-size:10px; color:var(--ink-soft);">
-      <span>ver. 2.7.0</span>
+      <span>ver. 2.7.1</span>
     </div>
     <input type="file" id="importFile" accept=".txt" style="display:none;">
   `;
@@ -9518,6 +9713,12 @@ async function previewSE(seName, volume01){
   }catch(err){ console.warn('効果音の再生に失敗:', err); }
 }
 // 効果音の音量は、手を離したときに一度だけ試聴させる
+// メールのリンクを別のタブやメールアプリで開いて、このアプリに戻ってきたら、認証の状態を自動で確かめる
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible' && emailAuthApplies() && !myEmailVerified && !emailAuthBusy){
+    refreshEmailAuth(false);
+  }
+});
 document.addEventListener('change', (e)=>{
   const el = e.target;
   const act = el && el.dataset && el.dataset.action;
@@ -9978,7 +10179,9 @@ document.addEventListener('click', (e)=>{
     }
     case 'link-google': linkGoogle(); break;
     case 'link-email-open': accountFormMode = 'link'; navigate(()=>{ sub.settings='account'; }); break;
-    case 'resend-verify-email': resendVerifyEmail(); break;
+    case 'send-auth-mail': sendAuthMail(); break;
+    case 'refresh-email-auth': refreshEmailAuth(true); break;
+    case 'go-email-auth': navigate(()=>{ activeTab = 'settings'; sub.settings = 'home'; }); break;
     case 'link-email-do': {
       const le = (document.getElementById('accEmail')||{}).value || '';
       const lp = (document.getElementById('accPass')||{}).value || '';
