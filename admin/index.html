@@ -223,7 +223,7 @@ function nameOf(u){ return (u && ((u.profile && u.profile.displayName) || u.name
 let selectedUids = new Set();   // 一括操作用に選択された利用者（大元の管理者のみ）
 let bulkReason = '';            // 一括停止のときに、本人に表示する理由
 // 絞り込み（すべて「かつ」で効く）。荒らしアカウントをまとめて見つけるために使う
-let flt = { accountOnly:false, unverifiedOnly:false, noGames:false, hideBanned:false, bannedOnly:false, hideDeleted:true, recentDays:'' };
+let flt = { accountOnly:false, unverifiedOnly:false, noGames:false, hideBanned:false, bannedOnly:false, noCodeOnly:false, hideDeleted:true, recentDays:'' };
 // 作成から日が浅く、メールの確認もまだ済んでいない（ゲストや、Google等だけで登録した人は対象外）
 function isSuspicious(u){
   if(!u || u.guest) return false;
@@ -238,18 +238,19 @@ function userMatchesFilter(u){
   if(flt.noGames && (((u.stats && u.stats.games) || 0) > 0)) return false;
   if(flt.hideBanned && u.banned) return false;
   if(flt.bannedOnly && !u.banned) return false;
+  if(flt.noCodeOnly && (u.code || u.deletedAt)) return false;   // IDのない記録（異常な状態）だけ
   if(flt.hideDeleted && u.deletedAt) return false;
   const d = parseFloat(flt.recentDays);
   if(d > 0 && (Date.now() - (u.createdAt || 0)) > d*86400000) return false;
   return true;
 }
-function hasActiveFilter(){ return flt.accountOnly || flt.unverifiedOnly || flt.noGames || flt.hideBanned || flt.bannedOnly || parseFloat(flt.recentDays) > 0; }
+function hasActiveFilter(){ return flt.accountOnly || flt.unverifiedOnly || flt.noGames || flt.hideBanned || flt.bannedOnly || flt.noCodeOnly || parseFloat(flt.recentDays) > 0; }
 function applyTrollPreset(){
-  flt = { accountOnly:true, unverifiedOnly:true, noGames:true, hideBanned:true, bannedOnly:false, hideDeleted:true, recentDays:'' };
+  flt = { accountOnly:true, unverifiedOnly:true, noGames:true, hideBanned:true, bannedOnly:false, noCodeOnly:false, hideDeleted:true, recentDays:'' };
   selectedUids.clear(); render();
 }
 function clearFilter(){
-  flt = { accountOnly:false, unverifiedOnly:false, noGames:false, hideBanned:false, bannedOnly:false, hideDeleted:true, recentDays:'' };
+  flt = { accountOnly:false, unverifiedOnly:false, noGames:false, hideBanned:false, bannedOnly:false, noCodeOnly:false, hideDeleted:true, recentDays:'' };
   selectedUids.clear(); render();
 }
 // 一括で選べる利用者か（大元の管理者・管理者・すでに停止中の人は選ばない）
@@ -262,12 +263,13 @@ function toggleSelectUid(uid, checked){
   if(checked) selectedUids.add(uid); else selectedUids.delete(uid);
   render();
 }
-// 「停止中の人だけ」で絞り込んでいるときは、削除用の選択になる
+// 「停止中の人だけ」「IDがない人だけ」で絞り込んでいるときは、削除用の選択になる。
+// 削除できるのは、停止中の人と、IDのない記録（本人が次にログインすれば自動で直るが、使われていないものは消してよい）
 function isDeleteSelectable(uid){
   const u = users[uid];
-  return !!(u && u.banned && !u.deletedAt && u.code !== OWNER_CODE && !admins[uid]);
+  return !!(u && (u.banned || !u.code) && !u.deletedAt && u.code !== OWNER_CODE && !admins[uid]);
 }
-function selectableFn(){ return flt.bannedOnly ? isDeleteSelectable : isBulkSelectable; }
+function selectableFn(){ return (flt.bannedOnly || flt.noCodeOnly) ? isDeleteSelectable : isBulkSelectable; }
 function selectAllShown(uids){
   if(!isOwner) return;
   uids.filter(selectableFn()).forEach(uid => selectedUids.add(uid));
@@ -307,7 +309,7 @@ function buildWipeUpdates(uid, u, friendUids, tombstone, now, skipFriends){
 async function wipeAccountsBatch(uids, opts){
   const tombstone = !!(opts && opts.tombstone);
   const now = Date.now();
-  let done = 0, failed = 0;
+  let done = 0, failed = 0, firstError = '';
   const CHUNK = 25;
   for(let i=0; i<uids.length; i+=CHUNK){
     const chunk = uids.slice(i, i+CHUNK);
@@ -319,14 +321,21 @@ async function wipeAccountsBatch(uids, opts){
       await db.ref().update(Object.assign({}, ...perUser));
       done += chunk.length;
     }catch(err){
+      if(!firstError) firstError = (err && err.message) || String(err);
       for(let k=0; k<chunk.length; k++){
         try{ await db.ref().update(buildWipeUpdates(chunk[k], users[chunk[k]], friendLists[k], tombstone, now, null)); done++; }
-        catch(e){ failed++; }
+        catch(e){ failed++; if(!firstError) firstError = (e && e.message) || String(e); }
       }
     }
     toast(`データを削除しています… ${done}/${uids.length}`);
   }
-  return { done, failed };
+  return { done, failed, firstError };
+}
+// 失敗したときに、原因が分かるようにする。権限の拒否は、Firebase のルールが古いことが多い
+function wipeFailHint(r){
+  if(!r || !r.failed) return '';
+  if(/PERMISSION_DENIED|permission/i.test(r.firstError || '')) return '（Firebase のルールが最新ではない可能性があります。firebase-rules.json を貼り直してください）';
+  return r.firstError ? `（原因：${r.firstError}）` : '';
 }
 let purgeRunning = false, autoPurgeDone = false;
 async function purgeStaleGuests(auto){
@@ -339,7 +348,8 @@ async function purgeStaleGuests(auto){
   purgeRunning = true;
   try{
     const r = await wipeAccountsBatch(uids, { tombstone:false });
-    toast(`5日以上ログインしていないゲスト${r.done}人のデータを削除しました${r.failed ? `（${r.failed}人は失敗）` : ''}${total > MAX ? `。残り${total-MAX}人は次回に削除します` : ''}`);
+    toast(r.done === 0 && r.failed ? `ゲストのデータを削除できませんでした${wipeFailHint(r)}`
+      : `5日以上ログインしていないゲスト${r.done}人のデータを削除しました${r.failed ? `（${r.failed}人は失敗）${wipeFailHint(r)}` : ''}${total > MAX ? `。残り${total-MAX}人は次回に削除します` : ''}`);
     await loadAll(); render();
     return r.done;
   }finally{ purgeRunning = false; }
@@ -350,16 +360,24 @@ async function autoPurgeStaleGuests(){
   autoPurgeDone = true;
   try{ await purgeStaleGuests(true); }catch(err){ console.warn('古いゲストの自動削除に失敗:', err); }
 }
-// 停止中の人のアカウントを、まとめて削除する（大元の管理者のみ）
+// 停止中の人・IDのない記録を、まとめて削除する（大元の管理者のみ）
 async function bulkDelete(){
   if(!isOwner){ toast('アカウントの削除は、大元の管理者だけができます'); return; }
   const uids = Array.from(selectedUids).filter(isDeleteSelectable);
-  if(!uids.length){ toast('削除できる対象がありません（停止中の人だけが対象です）'); return; }
-  const typed = prompt(`停止中の${uids.length}人のアカウントのデータを、完全に削除します。元に戻せません。\n\n・記録・プロフィール・フレンド・ランキング・大会やイベントの参加が、すべて消えます\n・本人が入り直しても、停止は解除されません\n\n続けるには「削除」と入力してください。`);
+  if(!uids.length){ toast('削除できる対象がありません（停止中の人か、IDのない記録だけが対象です）'); return; }
+  const bannedUids = uids.filter(uid => users[uid] && users[uid].banned);   // 停止の記録は残す
+  const noCodeUids = uids.filter(uid => !(users[uid] && users[uid].banned));   // IDのない記録は、完全に消す
+  const typed = prompt(`${uids.length}件のデータを、完全に削除します。元に戻せません。\n（停止中 ${bannedUids.length}人／IDのない記録 ${noCodeUids.length}件）\n\n・記録・プロフィール・フレンド・ランキング・大会やイベントの参加が、すべて消えます\n・停止中の人は、本人が入り直しても停止は解除されません\n\n続けるには「削除」と入力してください。`);
   if(typed === null) return;
   if(typed.trim() !== '削除'){ toast('入力が違うため中止しました'); return; }
-  const r = await wipeAccountsBatch(uids, { tombstone:true });
-  toast(r.failed ? `${r.done}人のデータを削除しました（${r.failed}人は失敗）` : `${r.done}人のデータを削除しました`);
+  let done = 0, failed = 0, firstError = '';
+  for(const [group, tomb] of [[bannedUids, true], [noCodeUids, false]]){
+    if(!group.length) continue;
+    const r = await wipeAccountsBatch(group, { tombstone: tomb });
+    done += r.done; failed += r.failed; if(!firstError) firstError = r.firstError;
+  }
+  const res = { done, failed, firstError };
+  toast(done === 0 && failed ? `削除できませんでした${wipeFailHint(res)}` : (failed ? `${done}件のデータを削除しました（${failed}件は失敗）${wipeFailHint(res)}` : `${done}件のデータを削除しました`));
   selectedUids.clear();
   await loadAll(); render();
 }
@@ -539,6 +557,7 @@ function viewUsers(){
   list = list.sort((a,b) => ((b[1].createdAt||0) - (a[1].createdAt||0)));
   const all = Object.values(users);
   const deletedCount = all.filter(u => u.deletedAt).length;
+  const noCodeCount = all.filter(u => !u.code && !u.deletedAt).length;
   const total = all.length - deletedCount;
   const bannedUsers = all.filter(u => u.banned && !u.deletedAt);
   const overLimitCount = bannedUsers.filter(u => u.bannedAt && banElapsedDays(u.bannedAt) >= 60).length;
@@ -547,11 +566,11 @@ function viewUsers(){
   const shownUids = list.map(([uid]) => uid);
   const selFn = selectableFn();
   const selectableShown = shownUids.filter(selFn);
-  const deleteMode = flt.bannedOnly;
+  const deleteMode = flt.bannedOnly || flt.noCodeOnly;
   const chk = (key, label) => `<label style="display:flex; align-items:center; gap:6px; font-size:12px;"><input type="checkbox" ${flt[key]?'checked':''} onchange="flt.${key}=this.checked; selectedUids.clear(); render();">${label}</label>`;
   return `
     <h2>利用者</h2>
-    <p class="lead">登録 ${total}人 ／ 停止中 ${bannedUsers.length}人${overLimitCount ? `（うち保持期限超過 ${overLimitCount}人）` : ''}${deletedCount ? ` ／ データ削除済み ${deletedCount}人` : ''}${suspiciousCount ? ` ／ <span style="color:var(--danger); font-weight:700;">不審なアカウント ${suspiciousCount}人</span>` : ''}。行を押すと詳しく見られます。</p>
+    <p class="lead">登録 ${total}人 ／ 停止中 ${bannedUsers.length}人${overLimitCount ? `（うち保持期限超過 ${overLimitCount}人）` : ''}${deletedCount ? ` ／ データ削除済み ${deletedCount}人` : ''}${noCodeCount ? ` ／ <span style="color:var(--danger); font-weight:700;">IDのない記録 ${noCodeCount}件</span>` : ''}${suspiciousCount ? ` ／ <span style="color:var(--danger); font-weight:700;">不審なアカウント ${suspiciousCount}人</span>` : ''}。行を押すと詳しく見られます。</p>
     <div class="box">
       <p style="margin:0; font-size:12px; line-height:1.7;"><b>5日以上ログインしていないゲスト</b>は、この管理画面を開いたときに自動でデータを削除します（管理者・停止中の人は対象外）。${staleGuestCount ? `<span style="color:var(--danger); font-weight:700;">いま ${staleGuestCount}人 が該当しています。</span>` : '該当する人は、いまいません。'}</p>
       ${isOwner && staleGuestCount ? `<button class="btn" style="margin-top:8px;" onclick="purgeStaleGuests(false)">今すぐ削除する</button>` : ''}
@@ -565,6 +584,7 @@ function viewUsers(){
         ${chk('noGames','対局が0回')}
         ${chk('hideBanned','停止中の人を除く')}
         ${chk('bannedOnly','停止中の人だけ')}
+        ${chk('noCodeOnly','IDがない記録だけ')}
         ${chk('hideDeleted','データ削除済みを隠す')}
       </div>
       <label style="display:flex; align-items:center; gap:6px; font-size:12px; margin-top:8px;">登録から
@@ -592,10 +612,10 @@ function viewUsers(){
     ${isOwner && deleteMode ? `
     <div class="box" style="border-color:var(--danger);">
       <div class="row" style="align-items:center; justify-content:space-between;">
-        <span style="font-size:13px; font-weight:700; color:var(--danger);">停止中の人のアカウントを削除（大元の管理者のみ）</span>
+        <span style="font-size:13px; font-weight:700; color:var(--danger);">停止中の人・IDのない記録を削除（大元の管理者のみ）</span>
         <span style="font-size:12px; color:var(--ink-soft);">${selectedUids.size}件選択中</span>
       </div>
-      <p style="margin:8px 0 0; font-size:12px; line-height:1.7;">記録・プロフィール・フレンド・ランキング・大会やイベントの参加を、<b>完全に消します。元に戻せません。</b>本人が入り直しても、停止は解除されません（停止の記録だけは残します）。</p>
+      <p style="margin:8px 0 0; font-size:12px; line-height:1.7;">記録・プロフィール・フレンド・ランキング・大会やイベントの参加を、<b>完全に消します。元に戻せません。</b>停止中の人は、本人が入り直しても停止は解除されません（停止の記録だけは残します）。<br>IDのない記録は、本人が次にログインすると自動で直ります。<b>最近使われている記録は、消さずに残してください</b>（「登録」の列の下に最終アクセスを出しています）。</p>
       <div class="row" style="margin-top:10px;">
         <button class="btn" onclick="selectAllShown(${esc(JSON.stringify(shownUids))})" ${selectableShown.length?'':'disabled'}>表示中の${selectableShown.length}人をすべて選ぶ</button>
         <button class="btn" onclick="selectedUids.clear(); render();" ${selectedUids.size?'':'disabled'}>選択解除</button>
@@ -613,11 +633,11 @@ function viewUsers(){
             ${isOwner ? `<td onclick="event.stopPropagation()">${selFn(uid) ? `<input type="checkbox" ${selectedUids.has(uid)?'checked':''} onchange="toggleSelectUid('${uid}', this.checked)">` : ''}</td>` : ''}
             <td onclick="openUser('${uid}')">${src ? `<img class="ic" src="${src}" alt="">` : '<span class="ic"></span>'}</td>
             <td onclick="openUser('${uid}')">${esc(nameOf(u))}</td>
-            <td class="code" onclick="openUser('${uid}')">${esc(u.code||'-')}</td>
+            <td class="code" onclick="openUser('${uid}')">${u.code ? esc(u.code) : (u.deletedAt ? '-' : '<span style="color:var(--danger); font-weight:700;">（なし）</span>')}</td>
             <td class="hide-sm" onclick="openUser('${uid}')"><span class="dot" style="background:${pc}"></span>${pl}</td>
-            <td class="hide-sm" onclick="openUser('${uid}')">${fmtDate(u.createdAt)}</td>
+            <td class="hide-sm" onclick="openUser('${uid}')">${fmtDate(u.createdAt)}<div style="font-size:10px; color:var(--ink-soft);">最終 ${fmtDate(u.lastSeen)}</div></td>
             <td class="num hide-sm" onclick="openUser('${uid}')">${(u.stats && u.stats.games) || 0}</td>
-            <td onclick="openUser('${uid}')">${u.banned?'<span class="tag ban">停止中</span>':''}${u.deletedAt?' <span class="tag guest">削除済み</span>':''}${u.guest?' <span class="tag guest">ゲスト</span>':''}${(!u.guest && !u.deletedAt && u.emailVerified!==true)?' <span class="tag ban" style="background:#e67e22;">メール未確認</span>':''}${admins[uid]||u.code===OWNER_CODE?' <span class="tag admin">管理者</span>':''}</td>
+            <td onclick="openUser('${uid}')">${u.banned?'<span class="tag ban">停止中</span>':''}${u.deletedAt?' <span class="tag guest">削除済み</span>':''}${(!u.code && !u.deletedAt)?' <span class="tag ban" style="background:#8e44ad;">IDなし</span>':''}${u.guest?' <span class="tag guest">ゲスト</span>':''}${(!u.guest && !u.deletedAt && u.emailVerified!==true)?' <span class="tag ban" style="background:#e67e22;">メール未確認</span>':''}${admins[uid]||u.code===OWNER_CODE?' <span class="tag admin">管理者</span>':''}</td>
           </tr>`;}).join('') : `<tr><td colspan="${isOwner?8:7}" class="empty">該当する利用者はいません</td></tr>`}
         </tbody>
       </table></div>
@@ -679,6 +699,7 @@ function viewUser(){
       <dl class="kv">
         <dt>在席</dt><dd><span class="dot" style="background:${pc}"></span>${pl}</dd>
         <dt>登録日</dt><dd>${fmtDate(u.createdAt)}</dd>
+        <dt>記録されている項目</dt><dd style="font-size:11px; word-break:break-all;">${esc(Object.keys(u).join(', ') || '（なし）')}${(!u.code && !u.deletedAt) ? '<br><span style="color:var(--danger); font-weight:700;">IDがありません。</span>本人が次にログインすると、IDが自動で付け直されます。' : ''}</dd>
         <dt>最終アクセス</dt><dd>${fmtDate(u.lastSeen)}</dd>
         <dt>種類</dt><dd>${u.guest?'ゲスト':'アカウント'}${isAdm?'（管理者）':''}</dd>
         ${u.emailVerified !== undefined || u.emailVerifiedAt ? `<dt>メール認証</dt><dd>${u.emailVerified ? '確認済み' : '<span style="color:#e67e22; font-weight:700;">未確認</span>'}${u.emailVerifiedAt ? `（最終認証 ${fmtDate(u.emailVerifiedAt)}）` : ''}</dd>` : ''}
