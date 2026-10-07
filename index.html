@@ -4682,7 +4682,7 @@ let myTitleIds = [];
 let myTitlesRevoked = {};   // 管理者が外した自動の称号（付け直さない）
 let myBanned = false, myBanReason = '';
 let myEmailVerified = true;   // メールの認証が有効なら true（メール/パスワードのアカウントで未認証・期限切れなら false。ゲストやGoogleのみは常に true）
-const EMAIL_REVERIFY_MS = 30*24*60*60*1000;   // 認証の有効期間（おおむね1ヶ月に1回、認証し直してもらう）
+const EMAIL_REVERIFY_MS = 90*24*60*60*1000;   // 認証の有効期間（おおむね3ヶ月に1回、認証し直してもらう）
 let myEmailVerifiedAt = 0;         // 最後にメールで認証した時刻（users/<uid>/emailVerifiedAt）
 let emailLinkUnavailable = false;  // 再認証用のメールリンクが、サーバー側でまだ有効化されていない場合
 let emailAuthBusy = false;
@@ -4742,7 +4742,7 @@ function emailAuthCardMarkup(){
     <div class="card" style="border:1px solid #b3261e; margin:8px 0;">
       <p style="margin:0 0 8px; font-size:12px; line-height:1.7;">${firstTime
         ? 'メールアドレスの認証をお願いします。届いたメールのリンクを開くと完了します。認証が済むまでは、大会・オンライン対戦・フレンド申請・ランキングへの掲載が使えません（ひとりで遊ぶモードは今までどおり使えます）。'
-        : '前回の認証から1ヶ月ほどたちました。安全のため、もう一度メールで認証をお願いします。'}</p>
+        : '前回の認証から3ヶ月ほどたちました。安全のため、もう一度メールで認証をお願いします。'}</p>
       <button class="btn btn-soft" data-action="send-auth-mail" ${emailAuthBusy?'disabled':''} style="width:100%;">${emailAuthBusy?'送信中…':'認証メールを送る'}</button>
       ${firstTime ? `<button class="btn btn-ghost" data-action="refresh-email-auth" style="width:100%; margin-top:8px;">メールのリンクを開いた（状態を更新）</button>` : ''}
     </div>`;
@@ -4761,7 +4761,7 @@ function emailAuthBannerMarkup(){
   }
   return '';
 }
-// 「認証メールを送る」ボタン。初めての認証は確認メール、1ヶ月ごとの再認証はメールのリンク
+// 「認証メールを送る」ボタン。初めての認証は確認メール、3ヶ月ごとの再認証はメールのリンク
 async function sendAuthMail(){
   if(!emailAuthApplies() || emailAuthBusy) return;
   emailAuthBusy = true; render();
@@ -4811,7 +4811,7 @@ function syncEmailVerifiedFlag(){
     fbDb.ref('users/' + fbUid + '/emailVerified').set(!!fbUser.emailVerified).catch(()=>{});
   }
 }
-// 1ヶ月ごとの再認証メールのリンクを開いて戻ってきたとき。戻り値：false=何もしなかった / 'reauth'=認証できた / 'switched'=ログインし直した
+// 3ヶ月ごとの再認証メールのリンクを開いて戻ってきたとき。戻り値：false=何もしなかった / 'reauth'=認証できた / 'switched'=ログインし直した
 async function handleEmailLinkReturn(user){
   if(emailLinkHandled) return false;
   const href = location.href;
@@ -5861,7 +5861,7 @@ async function ensureFirebase(opts){
         fbUid = user ? user.uid : null;
         accountReady = true;
         cloudSaveSuspended = false;
-        // 1ヶ月ごとの再認証メールのリンクから戻ってきた場合は、ここで認証を済ませる
+        // 3ヶ月ごとの再認証メールのリンクから戻ってきた場合は、ここで認証を済ませる
         if(user && !emailLinkHandled){
           const res = await handleEmailLinkReturn(user);
           if(res === 'switched') return;   // 別のアカウントとして入り直したので、新しい状態の通知に任せる
@@ -9125,8 +9125,8 @@ function eventRankedParticipants(){
 }
 
 async function eventJoinSolo(){
-  if(!fbDb || !fbUid) return;
   if(!requireEmailAuth()) return;
+  if(!fbDb || !fbUid) return;
   const entry = { name: profileName()||'プレイヤー', groupId: null, joinedAt: Date.now(), points: 0, huntCount: 0 };
   try{
     await fbDb.ref('events/current/participants/'+fbUid).set(entry);
@@ -9137,8 +9137,8 @@ async function eventJoinSolo(){
   }catch(err){ toast('参加できませんでした'); }
 }
 async function eventJoinWithGroup(gid){
-  if(!fbDb || !fbUid) return;
   if(!requireEmailAuth()) return;
+  if(!fbDb || !fbUid) return;
   const entry = { name: profileName()||'プレイヤー', groupId: gid, joinedAt: Date.now(), points: 0, huntCount: 0 };
   try{
     await fbDb.ref('events/current/participants/'+fbUid).set(entry);
