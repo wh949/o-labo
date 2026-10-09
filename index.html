@@ -6966,14 +6966,20 @@ async function tournamentRecordResult(black, white, room){
   const oppUid = hostUid === fbUid ? guestUid : hostUid;
   const winnerUid = myWon ? fbUid : oppUid;
   try{
-    await fbDb.ref(`tournaments/current/bracket/rounds/${roundIdx}/${idx}`).update({
-      winner: winnerUid, black, white, playedAt: Date.now()
-    });
-    if(t.bracket && t.bracket.rounds[roundIdx+1]){
-      const nextIdx = Math.floor(idx/2);
-      const slotKey = (idx % 2 === 0) ? 'p1' : 'p2';
-      await fbDb.ref(`tournaments/current/bracket/rounds/${roundIdx+1}/${nextIdx}/${slotKey}`).set(winnerUid);
-    }
+    // 最新の表を読み直し、勝者を書き込む（不戦勝の枠があれば続けて勝ち上がらせる）。まとめて1回で書くので、途中で止まらない
+    const bSnap = await fbDb.ref('tournaments/current/bracket').once('value');
+    const nb = normalizeBracket(bSnap.val());
+    if(nb && nb.rounds[roundIdx] && nb.rounds[roundIdx][idx] && !nb.rounds[roundIdx][idx].winner){
+      const changes = [];
+      bracketAdvance(nb.rounds, roundIdx, idx, winnerUid, changes);
+      const upd = {};
+      changes.forEach(([r,i,k,v]) => { upd[`rounds/${r}/${i}/${k}`] = v; });
+      upd[`rounds/${roundIdx}/${idx}/black`] = black;
+      upd[`rounds/${roundIdx}/${idx}/white`] = white;
+      upd[`rounds/${roundIdx}/${idx}/playedAt`] = Date.now();
+      await fbDb.ref('tournaments/current/bracket').update(upd);
+      t.bracket = nb;
+    } else if(nb){ t.bracket = nb; }
     // 大会の対局は、モデレーターが管理者ページから見られるよう、棋譜まで含めて公開データとして残す。
     // どちらのプレイヤーが書き込んでも同じ内容になるので、二重に書いても実害はない
     await fbDb.ref(`tournaments/current/games/${roundIdx}_${idx}`).set({
@@ -8926,6 +8932,7 @@ function loadTournamentIfNeeded(){
   tournamentLoading = true;
   fbDb.ref('tournaments/current').once('value').then(snap => {
     tournamentData = snap.val() || false;
+    if(tournamentData && tournamentData.bracket) tournamentData.bracket = normalizeBracket(tournamentData.bracket);
     tournamentLoading = false;
     if(tournamentData && fbUid){
       return fbDb.ref('tournaments/current/participants').once('value').then(pSnap => {
@@ -8936,36 +8943,46 @@ function loadTournamentIfNeeded(){
     render();
   }).catch(err => { console.warn('大会情報の取得に失敗:', err); tournamentLoading = false; tournamentData = false; render(); });
 }
-// 参加者 uid の配列から、シングルエリミネーションのトーナメント表を作る。
-// 人数が2の累乗に満たない分は「不戦勝（null）」で埋める
+// ---- トーナメント表のしくみ -------------------------------------------------
+// 参加者が奇数のラウンドでは、1人（1組）が「不戦勝」で次へ進む。2の累乗に揃えるための空き枠は作らない。
+//   例）6人 → 3組(6人) → 2組(3人：1人は不戦勝) → 1組(2人：決勝) → 優勝(1人)
+// 各対戦は {p1, p2, winner, bye, black, white, playedAt}。bye=true の対戦は p2 が空で、p1 が自動で勝ち上がる。
+// 値がすべて空の対戦はデータベースに残らないため、bye は必ず true/false で書いておく。
+function bracketAdvance(rounds, ri, i, winnerUid, changes){
+  rounds[ri][i].winner = winnerUid;
+  changes.push([ri, i, 'winner', winnerUid]);
+  if(ri + 1 >= rounds.length) return;
+  const ni = Math.floor(i/2), slot = (i % 2 === 0) ? 'p1' : 'p2';
+  const nm = rounds[ri+1][ni];
+  nm[slot] = winnerUid;
+  changes.push([ri+1, ni, slot, winnerUid]);
+  // 次の対戦が不戦勝の枠なら、そのまま続けて勝ち上がる
+  if(nm.bye && slot === 'p1' && !nm.winner) bracketAdvance(rounds, ri+1, ni, winnerUid, changes);
+}
 function generateBracket(uids, names){
-  let size = 1;
-  while(size < uids.length) size *= 2;
-  size = Math.max(size, 2);
   const shuffled = uids.slice().sort(() => Math.random() - 0.5);
-  // 不戦勝（null）が同じ組に2つ入らないよう、各組の1人目（偶数位置）から順に
-  // 参加者を詰めていく。参加者数は必ず size/2 より多いので、これで両方不戦勝の組は作られない
-  const slots = new Array(size).fill(null);
-  let si = 0;
-  for(let i=0;i<size && si<shuffled.length;i+=2) slots[i] = shuffled[si++];
-  for(let i=1;i<size && si<shuffled.length;i+=2) slots[i] = shuffled[si++];
-  const round1 = [];
-  for(let i=0;i<size;i+=2){
-    const p1 = slots[i], p2 = slots[i+1];
-    // 片方が不戦勝（相手がいない）なら、もう片方が自動的に勝ち上がる
-    const winner = (p2===null && p1!==null) ? p1 : (p1===null && p2!==null) ? p2 : null;
-    round1.push({p1, p2, winner, black:null, white:null, playedAt:null});
+  const mk = (p1, p2, bye) => ({p1, p2, bye: !!bye, winner:null, black:null, white:null, playedAt:null});
+  const r1 = [];
+  for(let i=0;i<shuffled.length;i+=2){
+    const hasPair = i+1 < shuffled.length;
+    r1.push(mk(shuffled[i], hasPair ? shuffled[i+1] : null, !hasPair));
   }
-  const rounds = [round1];
-  let roundSize = size/2;
-  while(roundSize >= 1){
-    const r = [];
-    for(let i=0;i<roundSize;i++) r.push({p1:null, p2:null, winner:null, black:null, white:null, playedAt:null});
-    rounds.push(r);
-    if(roundSize === 1) break;
-    roundSize = roundSize/2;
+  const rounds = [r1];
+  while(rounds[rounds.length-1].length > 1){
+    const prev = rounds[rounds.length-1], next = [];
+    for(let j=0;j<prev.length;j+=2) next.push(mk(null, null, j+1 >= prev.length));
+    rounds.push(next);
   }
-  return {size, rounds, names: names||{}};
+  // 1回戦の不戦勝を、あらかじめ勝ち上がらせておく
+  r1.forEach((m, i) => { if(m.bye) bracketAdvance(rounds, 0, i, m.p1, []); });
+  return {rounds, total: shuffled.length, names: names||{}};
+}
+// データベースから読んだトーナメント表を、配列の形にそろえる
+function normalizeBracket(b){
+  if(!b) return b;
+  const toArr = x => Array.isArray(x) ? x : (x && typeof x === 'object' ? Object.keys(x).sort((a,c)=>a-c).map(k=>x[k]) : []);
+  const rounds = toArr(b.rounds).map(r => toArr(r).map(m => Object.assign({p1:null, p2:null, winner:null, bye:false}, m || {})));
+  return Object.assign({}, b, {rounds});
 }
 function viewRankerEvent(){
   if(!isSignedIn()){
@@ -9204,19 +9221,32 @@ function fmtTournamentDate(ms){
 function tournamentMyEntry(){
   return tournamentParticipants && fbUid ? tournamentParticipants[fbUid] : null;
 }
-// 自分が今のラウンドで対局すべき相手を、トーナメント表から探す
-function tournamentFindMyMatch(t, roundIdx){
-  if(!t || !t.bracket || !t.bracket.rounds || !t.bracket.rounds[roundIdx]) return null;
-  const round = t.bracket.rounds[roundIdx];
-  for(let i=0;i<round.length;i++){
-    const m = round[i];
-    if(m.winner) continue;   // 既に決着済み
-    if(m.p1 === fbUid || m.p2 === fbUid) return { round: roundIdx, idx: i, match: m };
+// 開催日ごとに行うラウンド：3日目＝決勝、2日目＝準決勝、それより前のラウンドは1日目
+function tournamentRoundIdxsForPhase(t, phase){
+  if(!t || !t.bracket || !t.bracket.rounds) return [];
+  const total = t.bracket.rounds.length, last = total - 1, semi = total - 2;
+  if(phase === 'day3') return [last];
+  if(phase === 'day2') return semi >= 0 ? [semi] : [];
+  if(phase === 'day1'){ const a = []; for(let i=0;i<semi;i++) a.push(i); return a; }
+  return [];
+}
+// 自分が今の日に対局すべき相手を、トーナメント表から探す（両方の選手が決まっていて、まだ決着していない対戦）
+function tournamentFindMyMatch(t, roundIdxs){
+  if(!t || !t.bracket || !t.bracket.rounds) return null;
+  const list = Array.isArray(roundIdxs) ? roundIdxs : [roundIdxs];
+  for(const ri of list){
+    const round = t.bracket.rounds[ri];
+    if(!round) continue;
+    for(let i=0;i<round.length;i++){
+      const m = round[i];
+      if(!m || m.winner || m.bye || !m.p1 || !m.p2) continue;
+      if(m.p1 === fbUid || m.p2 === fbUid) return { round: ri, idx: i, match: m };
+    }
   }
   return null;
 }
-function tournamentNameOf(t, uid, isFirstRound){
-  if(!uid) return isFirstRound ? '不戦勝' : '勝者未定';
+function tournamentNameOf(t, uid, isBye){
+  if(!uid) return isBye ? '不戦勝' : '勝者未定';
   if(t.bracket && t.bracket.names && t.bracket.names[uid]) return t.bracket.names[uid];
   if(tournamentParticipants && tournamentParticipants[uid]) return tournamentParticipants[uid].name || 'プレイヤー';
   return 'プレイヤー';
@@ -9225,12 +9255,13 @@ function tournamentRoundLabel(total, idx){
   const fromEnd = total - 1 - idx;
   if(fromEnd === 0) return '決勝';
   if(fromEnd === 1) return '準決勝';
-  if(fromEnd === 2) return '準々決勝';
   return `${idx+1}回戦`;
 }
 function bracketMarkup(t){
   if(!t.bracket) return '';
   const rounds = t.bracket.rounds;
+  const lastRound = rounds[rounds.length-1];
+  const champ = (lastRound && lastRound[0] && lastRound[0].winner) || null;
   return `<div class="bracket-wrap">${rounds.map((round, ri) => `
     <div class="bracket-round">
       <div class="bracket-round-title">${tournamentRoundLabel(rounds.length, ri)}</div>
@@ -9238,11 +9269,32 @@ function bracketMarkup(t){
         const p1Win = m.winner && m.winner === m.p1, p2Win = m.winner && m.winner === m.p2;
         return `
         <div class="bracket-match">
-          <div class="bracket-p ${p1Win?'is-winner':''} ${m.p1===fbUid?'is-me':''}">${escapeHtml(tournamentNameOf(t, m.p1, ri===0))}</div>
-          <div class="bracket-p ${p2Win?'is-winner':''} ${m.p2===fbUid?'is-me':''}">${escapeHtml(tournamentNameOf(t, m.p2, ri===0))}</div>
+          <div class="bracket-p ${p1Win?'is-winner':''} ${m.p1===fbUid?'is-me':''}">${escapeHtml(tournamentNameOf(t, m.p1, false))}</div>
+          <div class="bracket-p ${p2Win?'is-winner':''} ${m.p2===fbUid?'is-me':''}">${escapeHtml(tournamentNameOf(t, m.p2, !!m.bye))}</div>
         </div>`;
       }).join('')}
-    </div>`).join('')}</div>`;
+    </div>`).join('')}
+    <div class="bracket-round">
+      <div class="bracket-round-title">優勝</div>
+      <div class="bracket-match"><div class="bracket-p ${champ?'is-winner':''} ${champ===fbUid?'is-me':''}">${champ ? escapeHtml(tournamentNameOf(t, champ, false)) : '―'}</div></div>
+    </div></div>`;
+}
+// 開催中は、他の人の対局結果（勝ち上がり）が見られるよう、ときどきトーナメント表を読み直す
+let tournamentRefreshTimer = null;
+function tournamentScheduleRefresh(){
+  if(tournamentRefreshTimer || !fbDb) return;
+  tournamentRefreshTimer = setTimeout(async () => {
+    tournamentRefreshTimer = null;
+    if(activeTab !== 'ranker' || currentRankerMode !== 'match' || sub.match !== 'tournament' || !tournamentData) return;
+    try{
+      const snap = await fbDb.ref('tournaments/current/bracket').once('value');
+      const nb = normalizeBracket(snap.val());
+      if(nb && JSON.stringify(nb.rounds) !== JSON.stringify(tournamentData.bracket && tournamentData.bracket.rounds)){
+        tournamentData.bracket = nb;
+      }
+    }catch(err){}
+    if(activeTab === 'ranker' && currentRankerMode === 'match' && sub.match === 'tournament' && !game) render();
+  }, 20000);
 }
 function viewTournament(){
   const hero = `
@@ -9281,8 +9333,8 @@ function viewTournament(){
       ${bracketMarkup(t)}`;
   }
   if(phase === 'day1' || phase === 'day2' || phase === 'day3'){
-    const roundIdx = phase === 'day1' ? 0 : phase === 'day2' ? 1 : (t.bracket ? t.bracket.rounds.length - 1 : 0);
-    const myMatch = myEntry ? tournamentFindMyMatch(t, roundIdx) : null;
+    const myMatch = myEntry ? tournamentFindMyMatch(t, tournamentRoundIdxsForPhase(t, phase)) : null;
+    tournamentScheduleRefresh();
     return hero + `
       <div class="card">
         ${phase === 'day3' && t.liveUrl ? `<p style="font-size:12px; margin:0 0 8px;"><a href="${escapeHtml(t.liveUrl)}" target="_blank" style="color:var(--jade-deep);">▶ ライブ配信を見る</a></p>` : ''}
@@ -9332,9 +9384,9 @@ async function tournamentStartMatch(){
   const t = tournamentData;
   if(!t) return;
   const phase = tournamentPhase(t);
-  const roundIdx = phase === 'day1' ? 0 : phase === 'day2' ? 1 : (t.bracket ? t.bracket.rounds.length - 1 : 0);
-  const found = tournamentFindMyMatch(t, roundIdx);
+  const found = tournamentFindMyMatch(t, tournamentRoundIdxsForPhase(t, phase));
   if(!found) return;
+  const roundIdx = found.round;
   if(!(await ensureFirebase())){ toast(fbInitError); return; }
   const oppUid = found.match.p1 === fbUid ? found.match.p2 : found.match.p1;
   const roomId = 'tour_' + (t.id || 'current') + '_' + roundIdx + '_' + found.idx;
