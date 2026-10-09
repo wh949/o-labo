@@ -1236,7 +1236,8 @@ function viewTournamentsAdmin(){
       <p style="margin:0 0 4px; font-size:12px; color:var(--ink-soft);">今のフェーズ：${tourPhaseOf(t)}</p>
       <p style="margin:0 0 10px; font-size:12px; color:var(--ink-soft);">
         予告：${dtLocal(t.announceAt)} / エントリー：${dtLocal(t.entryStartAt)}〜${dtLocal(t.entryEndAt)}<br>
-        開催：${dtLocal(t.day1At)} 〜 ${dtLocal(t.day3At)} / 持ち時間：${Math.round((t.timeLimitSec||0)/60)}分
+        開催：${dtLocal(t.day1At)} 〜 ${dtLocal(t.day3At)} / 持ち時間：${Math.round((t.timeLimitSec||0)/60)}分<br>
+        開催形式：<b>${t.format==='offline'?'オフライン（会場で対局・結果は管理者が入力）':'オンライン（アプリ内で対局）'}</b>
       </p>
       <div class="row">
         <button class="btn" onclick="tournamentEditing=true; render();">編集する</button>
@@ -1273,6 +1274,13 @@ function viewTournamentsAdmin(){
       <input type="datetime-local" id="tDay3" value="${t?dtLocal(t.day3At):''}">
       <label class="f" for="tEnd">大会終了（結果発表の区切り）</label>
       <input type="datetime-local" id="tEnd" value="${t?dtLocal(t.endAt):''}">
+      <label class="f" for="tFormat">開催形式</label>
+      <select id="tFormat">
+        <option value="online" ${(!t||t.format!=='offline')?'selected':''}>オンライン（アプリ内で対局する）</option>
+        <option value="offline" ${t&&t.format==='offline'?'selected':''}>オフライン（会場で対局し、結果は管理者がトーナメント表に入力する）</option>
+      </select>
+      <label class="f" for="tVenue">会場・集合時間などの案内（オフライン用、任意）</label>
+      <textarea id="tVenue" rows="3" maxlength="300" style="width:100%;">${esc((t&&t.venueNote)||'')}</textarea>
       <label class="f" for="tTimeLimit">対局の持ち時間（分）</label>
       <input type="number" id="tTimeLimit" min="5" max="120" value="${t?Math.round((t.timeLimitSec||1500)/60):25}">
       <label class="f" for="tLiveUrl">ライブ配信URL（3日目用、任意）</label>
@@ -1302,15 +1310,43 @@ function tourBracketAdminMarkup(t){
   return `<div style="display:flex; gap:10px; overflow-x:auto;">${rounds.map((round,ri)=>`
     <div style="flex:0 0 auto; width:150px;">
       <div style="font-size:11px; font-weight:800; text-align:center; margin-bottom:6px;">${label(ri)}</div>
-      ${round.map(m=>`<div style="border:1px solid var(--line); border-radius:8px; margin-bottom:10px; font-size:11px;">
+      ${round.map((m,mi)=>`<div style="border:1px solid var(--line); border-radius:8px; margin-bottom:10px; font-size:11px;">
         <div style="padding:4px 6px; ${m.winner&&m.winner===m.p1?'font-weight:800;background:var(--jade-mist);':''}">${esc(nameOf(m.p1,'勝者未定'))}</div>
         <div style="padding:4px 6px; border-top:1px solid var(--line); ${m.winner&&m.winner===m.p2?'font-weight:800;background:var(--jade-mist);':''}">${esc(nameOf(m.p2, m.bye ? '不戦勝' : '勝者未定'))}</div>
+        ${(!m.winner && !m.bye && m.p1 && m.p2) ? `<div style="display:flex; gap:4px; padding:4px 6px; border-top:1px solid var(--line);">
+          <button class="btn" style="padding:2px 6px; font-size:10px; flex:1;" onclick="adminSetTournamentWinner(${ri},${mi},'p1')">上の勝ち</button>
+          <button class="btn" style="padding:2px 6px; font-size:10px; flex:1;" onclick="adminSetTournamentWinner(${ri},${mi},'p2')">下の勝ち</button></div>` : ''}
       </div>`).join('')}
     </div>`).join('')}
     <div style="flex:0 0 auto; width:150px;">
       <div style="font-size:11px; font-weight:800; text-align:center; margin-bottom:6px;">優勝</div>
       <div style="border:1px solid var(--line); border-radius:8px; font-size:11px;"><div style="padding:4px 6px; ${champ?'font-weight:800;background:var(--jade-mist);':''}">${esc(champ ? nameOf(champ,'') : '―')}</div></div>
     </div></div>`;
+}
+// 管理者が勝者を入力する（オフライン大会の結果入力や、オンラインでの不戦・欠場の処理に使う）
+async function adminSetTournamentWinner(ri, mi, slot){
+  if(!currentTournament || !currentTournament.bracket) return;
+  try{
+    const snap = await db.ref('tournaments/current/bracket').once('value');
+    const nb = normalizeBracket(snap.val());
+    const m = nb && nb.rounds[ri] && nb.rounds[ri][mi];
+    if(!m){ toast('対戦が見つかりません'); return; }
+    if(m.winner){ toast('この対戦はすでに決着しています'); currentTournament.bracket = nb; render(); return; }
+    const w = m[slot];
+    if(!w) return;
+    const nm = u => (tournamentParticipantsAdmin && tournamentParticipantsAdmin[u] && tournamentParticipantsAdmin[u].name) || u.slice(0,8);
+    if(!confirm(`「${nm(w)}」の勝ちにします。次のラウンドへ進み、あとから取り消すことはできません。よろしいですか？`)) return;
+    const changes = [];
+    bracketAdvance(nb.rounds, ri, mi, w, changes);
+    const upd = {};
+    changes.forEach(([r,i,k,v]) => { upd[`rounds/${r}/${i}/${k}`] = v; });
+    upd[`rounds/${ri}/${mi}/playedAt`] = Date.now();
+    upd[`rounds/${ri}/${mi}/manual`] = true;
+    await db.ref('tournaments/current/bracket').update(upd);
+    currentTournament.bracket = nb;
+    toast('勝者を入力しました');
+    render();
+  }catch(err){ toast('入力に失敗しました: ' + err.message); }
 }
 async function loadTournamentGames(){
   if(!currentTournament) return;
@@ -1388,6 +1424,8 @@ async function saveTournament(){
     announceAt: dates[0], entryStartAt: dates[1], entryEndAt: dates[2],
     day1At: dates[3], day2At: dates[4], day3At: dates[5], endAt: dates[6],
     timeLimitSec: (parseInt(($('#tTimeLimit')||{}).value, 10) || 25) * 60,
+    format: ($('#tFormat')||{}).value === 'offline' ? 'offline' : 'online',
+    venueNote: (($('#tVenue')||{}).value || '').trim(),
     liveUrl: ($('#tLiveUrl')||{}).value || '',
     nextNote: ($('#tNextNote')||{}).value || '',
     status: ($('#tStatus')||{}).value || 'draft',
