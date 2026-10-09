@@ -5971,6 +5971,7 @@ function normalizeRoomCode(v){
 async function onlineJoinByCode(code, myName){
   if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
   if(!requireEmailAuth()) return;
+  onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined;
   const id = normalizeRoomCode(code);
   if(!id){ toast('合言葉を入力してください'); return; }
 
@@ -6137,6 +6138,7 @@ async function onlineRandomMatch(myName, matchOpts){
   onlineState.myName = myName;
   onlineState.mode = 'random';
   onlineState.isMatch = isMatch;
+  onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined;
   onlineState.matchTimeLimitSec = timeLimitSec;
   onlineState.timeUpReported = false;
   onlineState.phase = 'connecting';
@@ -6458,7 +6460,8 @@ function onlineAttachRoom(id){
           vsType: 'online',
           oppName: newOpp,
           timeLimitSec: room.timeLimitSec || 600,
-          showHints: false
+          showHints: false,
+          isTournament: !!room.isTournament
         });
         game.timeLeftBlack = room.timeLeftBlack ?? room.timeLimitSec ?? 600;
         game.timeLeftWhite = room.timeLeftWhite ?? room.timeLimitSec ?? 600;
@@ -6733,6 +6736,7 @@ async function onlineLeave(){
     }
   }catch(err){ console.warn(err); }
   onlineDetach();
+  onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined;
   onlineState.phase='lobby'; onlineState.roomId=null; onlineState.myColor=null;
   onlineState.oppLeft=false; onlineState.message=''; onlineState.mode=null; onlineState.abandoned=false; onlineState.waitStartedAt=0;
   game = null;
@@ -6945,7 +6949,10 @@ function onlineMatchFinish(room){
   }
   game.matchEndReason = endReason;
   game.matchLoser = loserColor;
-  if(onlineState.isTournament) tournamentRecordResult(black, white, room);
+  if(onlineState.isTournament){
+    tournamentRecordResult(black, white, room);   // 必要な値は呼び出しの時点で読み取られる
+    onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined;
+  }
   const entry = {
     timestamp: Date.now(),
     moves: game.moveCount || 0,
@@ -8804,6 +8811,18 @@ async function startMatchOnline(){
 }
 function viewMatchOnlineWaiting(){
   const phase = onlineState.phase;
+  if(onlineState.isTournament){
+    return `
+    <div class="hero" style="background:linear-gradient(150deg, #b8860b, #3a2c0a 80%);">
+      <div class="hero-eyebrow">O-LABO TOURNAMENT${onlineState.tournamentRoundLabel ? ' ・ ' + escapeHtml(onlineState.tournamentRoundLabel) : ''}</div>
+      <h2>${phase === 'joining' ? '対局を始めます…' : '対戦相手を待っています…'}</h2>
+    </div>
+    <div class="card" style="text-align:center;">
+      <p style="font-size:13px; line-height:1.9; margin:0 0 6px;">対戦相手：<b>${escapeHtml(onlineState.tournamentOppName || '相手')}</b></p>
+      <p style="color:var(--ink-soft); font-size:12px; line-height:1.8; margin:0 0 12px;">相手が「対局する」を押すと、自動で対局が始まります。このまま画面を開いてお待ちください。持ち時間は ${matchClockText(onlineState.matchTimeLimitSec || 1500)} です。</p>
+      <button class="btn btn-ghost" data-action="match-online-cancel" style="width:100%;">待つのをやめる</button>
+    </div>`;
+  }
   const label = phase === 'joining' ? '対局相手が見つかりました…' : '対戦相手をさがしています…';
   return `
     <div class="hero" style="background:linear-gradient(150deg, #37465a, #1b232d 80%);">
@@ -8837,10 +8856,13 @@ function renderMatchResultScreen(){
         <b style="font-size:40px; font-family:var(--font-title);">${r.whiteScore}</b>
       </div>
       ${reasonText ? `<p style="font-size:12px; color:var(--ink-soft); margin:0 0 10px;">${reasonText}</p>` : ''}
-      <div class="btn-row" style="margin-top:10px;">
+      ${(g.opts && g.opts.isTournament)
+        ? `<p style="font-size:12px; color:var(--ink-soft); margin:0 0 10px;">結果は大会のトーナメント表に反映されます。</p>
+           <div class="btn-row" style="margin-top:10px;"><button class="btn btn-accent" data-action="match-tournament-back">トーナメント表へ</button></div>`
+        : `<div class="btn-row" style="margin-top:10px;">
         <button class="btn btn-accent" data-action="match-again">もう一度</button>
         <button class="btn btn-ghost" data-action="match-setup-back">設定に戻る</button>
-      </div>
+      </div>`}
     </div>
   `;
 }
@@ -9296,10 +9318,18 @@ function tournamentScheduleRefresh(){
     if(activeTab === 'ranker' && currentRankerMode === 'match' && sub.match === 'tournament' && !game) render();
   }, 20000);
 }
+function tournamentIsOffline(t){ return !!(t && t.format === 'offline'); }
+// 開催形式（オンライン／オフライン）の案内
+function tournamentFormatNoteMarkup(t){
+  if(tournamentIsOffline(t)){
+    return `<p style="font-size:12px; line-height:1.8; margin:0 0 10px;"><b>オフライン開催</b>：会場に集まって対局します。${t.venueNote ? `<br>${escapeHtml(t.venueNote).replace(/\n/g,'<br>')}` : ''}</p>`;
+  }
+  return `<p style="font-size:12px; line-height:1.8; margin:0 0 10px;"><b>オンライン開催</b>：アプリの中で対局します。</p>`;
+}
 function viewTournament(){
   const hero = `
     <div class="hero" style="background:linear-gradient(150deg, #b8860b, #3a2c0a 80%);">
-      <div class="hero-eyebrow">O-LABO TOURNAMENT</div>
+      <div class="hero-eyebrow">O-LABO TOURNAMENT${tournamentData ? (tournamentIsOffline(tournamentData) ? ' ・ OFFLINE' : ' ・ ONLINE') : ''}</div>
       <h2>${escapeHtml((tournamentData && tournamentData.title) || 'O-LABO競技大会')}</h2>
     </div>`;
   if(!tournamentData) return hero + `<div class="card"><p style="text-align:center; margin:0; color:var(--ink-soft);">現在、開催中の大会はありません。</p></div>`;
@@ -9311,6 +9341,7 @@ function viewTournament(){
     return hero + `
       <div class="card">
         <p style="font-size:13px; line-height:1.9; margin:0 0 10px;">公式ルールに則った、O-LABO内の正式な大会です。1〜3位には豪華報酬、4・5位には報酬、それ以外の参加者にも参加賞が贈られます。</p>
+        ${tournamentFormatNoteMarkup(t)}
         <div class="tournament-sched">
           <div><b>エントリー開始</b><span>${fmtTournamentDate(t.entryStartAt)}</span></div>
           <div><b>エントリー締切</b><span>${fmtTournamentDate(t.entryEndAt)}</span></div>
@@ -9322,6 +9353,7 @@ function viewTournament(){
     return hero + `
       <div class="card">
         <p style="font-size:13px; line-height:1.9; margin:0 0 10px;">エントリー受付中です。締切：${fmtTournamentDate(t.entryEndAt)}</p>
+        ${tournamentFormatNoteMarkup(t)}
         ${myEntry
           ? `<p style="text-align:center; color:var(--jade-deep); font-weight:700;">エントリー済みです</p>`
           : `<button class="btn btn-accent" data-action="tournament-enter" style="width:100%;">エントリーする</button>`}
@@ -9329,7 +9361,7 @@ function viewTournament(){
   }
   if(phase === 'bracket'){
     return hero + `
-      <div class="card"><p style="font-size:13px; margin:0;">組み合わせが決まりました。開催日：${fmtTournamentDate(t.day1At)} 〜</p></div>
+      <div class="card"><p style="font-size:13px; margin:0 0 8px;">組み合わせが決まりました。開催日：${fmtTournamentDate(t.day1At)} 〜</p>${tournamentFormatNoteMarkup(t)}</div>
       ${bracketMarkup(t)}`;
   }
   if(phase === 'day1' || phase === 'day2' || phase === 'day3'){
@@ -9338,10 +9370,13 @@ function viewTournament(){
     return hero + `
       <div class="card">
         ${phase === 'day3' && t.liveUrl ? `<p style="font-size:12px; margin:0 0 8px;"><a href="${escapeHtml(t.liveUrl)}" target="_blank" style="color:var(--jade-deep);">▶ ライブ配信を見る</a></p>` : ''}
-        ${myMatch
+        ${tournamentIsOffline(t) ? tournamentFormatNoteMarkup(t) + `<p style="font-size:12px; color:var(--ink-soft); line-height:1.8; margin:0 0 ${myMatch?'8':'0'}px;">対局は会場で行い、結果は運営がトーナメント表に入力します。</p>` : ''}
+        ${myMatch && tournamentIsOffline(t)
+          ? `<p style="font-size:13px; margin:0;">次の対戦相手：<b>${escapeHtml(tournamentNameOf(t, myMatch.match.p1===fbUid ? myMatch.match.p2 : myMatch.match.p1))}</b></p>`
+        : myMatch
           ? `<p style="font-size:13px; margin:0 0 10px;">相手：<b>${escapeHtml(tournamentNameOf(t, myMatch.match.p1===fbUid ? myMatch.match.p2 : myMatch.match.p1))}</b></p>
              <button class="btn btn-accent" data-action="tournament-play" style="width:100%;">対局する</button>`
-          : `<p style="font-size:13px; color:var(--ink-soft); margin:0;">${myEntry ? '今日の対局はありません。結果をお待ちください。' : 'このラウンドの対局はありません。'}</p>`}
+          : (tournamentIsOffline(t) ? '' : `<p style="font-size:13px; color:var(--ink-soft); margin:0;">${myEntry ? '今日の対局はありません。結果をお待ちください。' : 'このラウンドの対局はありません。'}</p>`)}
       </div>
       ${bracketMarkup(t)}`;
   }
@@ -9383,6 +9418,7 @@ async function tournamentEnter(){
 async function tournamentStartMatch(){
   const t = tournamentData;
   if(!t) return;
+  if(tournamentIsOffline(t)){ toast('この大会はオフライン開催です。会場で対局してください'); return; }
   const phase = tournamentPhase(t);
   const found = tournamentFindMyMatch(t, tournamentRoundIdxsForPhase(t, phase));
   if(!found) return;
@@ -9398,7 +9434,11 @@ async function tournamentStartMatch(){
   onlineState.isTournament = true;
   onlineState.tournamentRound = roundIdx;
   onlineState.tournamentIdx = found.idx;
-  sub.match = 'play';
+  onlineState.tournamentOppName = tournamentNameOf(t, oppUid, false);
+  onlineState.tournamentRoundLabel = tournamentRoundLabel(t.bracket.rounds.length, roundIdx);
+  // 相手が来るまで待つ画面を出す（'play' のままだと、対局がまだ無いので競技の設定画面に戻ってしまう）
+  onlineState.phase = 'connecting';
+  sub.match = 'online-wait';
   render();
   try{
     const ref = fbDb.ref('rooms/' + roomId);
@@ -10436,9 +10476,16 @@ document.addEventListener('click', (e)=>{
     case 'match-time': matchTimeSec = parseInt(el.dataset.v, 10) || 600; render(); break;
     case 'match-start': startMatch(); break;
     case 'match-online-start': startMatchOnline(); break;
-    case 'match-online-cancel':
+    case 'match-online-cancel': {
+      const wasTour = !!onlineState.isTournament;
       onlineLeave();
-      navigate(()=>{ sub.match = 'setup'; onlineState.isMatch = false; });
+      onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined;
+      navigate(()=>{ sub.match = wasTour ? 'tournament' : 'setup'; onlineState.isMatch = false; });
+      break;
+    }
+    case 'match-tournament-back':
+      tournamentData = null;   // 結果を反映した最新の表を読み直す
+      navigate(()=>{ game = null; sub.match = 'tournament'; });
       break;
     case 'go-tournament':
       navigate(()=>{ activeTab='ranker'; currentRankerMode='match'; sub.match = 'tournament'; });
