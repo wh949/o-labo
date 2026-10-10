@@ -1252,7 +1252,9 @@ function viewTournamentsAdmin(){
       <h3>エントリー済みの参加者</h3>
       <div id="tourParticipantsList">読み込み中…</div>
     </div>
-    ${t.bracket ? `<div class="box"><h3>トーナメント表</h3>${tourBracketAdminMarkup(t)}</div>` : ''}
+    ${t.bracket ? `<div class="box"><h3>トーナメント表</h3>
+      <p style="margin:0 0 8px; font-size:11.5px; color:var(--ink-soft); line-height:1.7;">各対戦の「操作」から、結果の入力・辞退（相手が不戦勝）・対局できなかった組（片方を進める）を選べます。前のラウンドが終わると、ラウンド見出しの「組み替え」で、次のラウンドの対戦の組み合わせを自由に決められます。</p>
+      <div id="tourBracketBody">${tourBracketAdminMarkup(t)}</div></div>` : ''}
     <div class="box">
       <h3>対局記録（モデレーター閲覧用・棋譜含む）</h3>
       <div id="tourGamesList">読み込み中…</div>
@@ -1302,54 +1304,184 @@ function viewTournamentsAdmin(){
     </div>` : ''}
   `;
 }
+// 選手名：表に控えた名前 → 参加者の名前 → 利用者の一覧、の順に探す（IDのままにならないように）
+function tourNameOfUid(uid, br, emptyLabel){
+  if(!uid) return emptyLabel;
+  if(br && br.names && br.names[uid]) return br.names[uid];
+  const p = tournamentParticipantsAdmin && tournamentParticipantsAdmin[uid];
+  if(p && p.name) return p.name;
+  if(users && users[uid]) return nameOf(users[uid]);
+  return uid.slice(0,8);
+}
+let tourSwap = { ri: null, sel: null };   // 組み替え中のラウンドと、最初に選んだ枠
+const TOUR_MATCH_FIELDS = ['p1','p2','winner','bye','walkover','manual','black','white','playedAt','replay'];
+// 前のラウンドの対局がすべて終わっていれば、そのラウンドの組み合わせを組み替えられる（勝ち上がりで枠が埋まる心配がないため）
+function bracketRoundIsFree(rounds, ri){ return ri === 0 || rounds[ri-1].every(m => m && m.winner); }
+// 勝ち上がりを取り消す（自動の不戦勝で進んでいた人を、組み替えのために戻す）。対局が済んでいれば false
+function bracketUnadvance(rounds, ri, i){
+  const m = rounds[ri][i];
+  if(!m.winner) return true;
+  if(ri + 1 < rounds.length){
+    const ni = Math.floor(i/2), slot = (i % 2 === 0) ? 'p1' : 'p2', nm = rounds[ri+1][ni];
+    if(nm.winner){
+      if(!(nm.bye && !nm.walkover && slot === 'p1')) return false;
+      if(!bracketUnadvance(rounds, ri+1, ni)) return false;
+    }
+    nm[slot] = null;
+  }
+  m.winner = null; m.black = null; m.white = null; m.playedAt = null; m.manual = null; m.walkover = null;
+  return true;
+}
+// 同じラウンドの2つの枠の選手を入れ替える（空きの枠との入れ替えは「移動」）。できないときは理由の文を返す
+function bracketSwapSlots(rounds, ri, a, b){
+  if(!bracketRoundIsFree(rounds, ri)) return '前のラウンドの対局がまだ終わっていないため、組み替えられません';
+  const mis = a.mi === b.mi ? [a.mi] : [a.mi, b.mi];
+  for(const mi of mis){
+    const m = rounds[ri][mi];
+    if(m.winner){
+      if(!(m.bye && !m.walkover)) return '対局が済んでいる組は、組み替えられません';
+      if(!bracketUnadvance(rounds, ri, mi)) return '次のラウンドの対局が済んでいるため、組み替えられません';
+    }
+  }
+  const ma = rounds[ri][a.mi], mb = rounds[ri][b.mi];
+  const tmp = ma[a.slot]; ma[a.slot] = mb[b.slot]; mb[b.slot] = tmp;
+  for(const mi of mis){
+    const m = rounds[ri][mi];
+    const n = (m.p1 ? 1 : 0) + (m.p2 ? 1 : 0);
+    if(n === 0) return '選手のいない組ができるため、その入れ替えはできません';
+    if(n === 1 && !m.p1){ m.p1 = m.p2; m.p2 = null; }
+    m.bye = (n === 1);
+  }
+  for(const mi of mis){
+    const m = rounds[ri][mi];
+    if(m.bye && !m.winner) bracketAdvance(rounds, ri, mi, m.p1, []);   // 相手のいない組は、そのまま勝ち上がる
+  }
+  return null;
+}
+function bracketDiff(before, after){
+  const upd = {};
+  const nr = Math.max(before.length, after.length);
+  for(let r=0; r<nr; r++){
+    const bm = before[r] || [], am = after[r] || [];
+    const nm = Math.max(bm.length, am.length);
+    for(let i=0; i<nm; i++){
+      const x = bm[i] || {}, y = am[i] || {};
+      TOUR_MATCH_FIELDS.forEach(f => {
+        const xv = x[f] === undefined ? null : x[f], yv = y[f] === undefined ? null : y[f];
+        if(xv !== yv) upd[`rounds/${r}/${i}/${f}`] = yv;
+      });
+    }
+  }
+  return upd;
+}
+// 最新の表を読み直し、fn で書き換えた差分だけを、まとめて1回で書き込む
+async function adminBracketMutate(fn, okMsg){
+  try{
+    const bref = db.ref('tournaments/current/bracket');
+    const nb = normalizeBracket((await bref.once('value')).val());
+    if(!nb){ toast('トーナメント表がありません'); return false; }
+    const before = JSON.parse(JSON.stringify(nb.rounds));
+    if(fn(nb.rounds, nb) === false) return false;
+    const upd = bracketDiff(before, nb.rounds);
+    if(!Object.keys(upd).length){ toast('変更はありません'); return false; }
+    await bref.update(upd);
+    currentTournament.bracket = nb;
+    if(okMsg) toast(okMsg);
+    render();
+    return true;
+  }catch(err){ toast('操作に失敗しました: ' + err.message); return false; }
+}
+// 管理者による勝敗の決定。reason：'result'＝結果入力 / 'withdraw'＝辞退（slot の人が辞退し、相手が不戦勝）/ 'noshow'＝対局できなかったので slot の人を進める
+async function adminResolveMatch(ri, mi, slot, reason){
+  const br = currentTournament && currentTournament.bracket ? normalizeBracket(currentTournament.bracket) : null;
+  const m0 = br && br.rounds[ri] && br.rounds[ri][mi];
+  if(!m0 || m0.winner || !m0.p1 || !m0.p2){ toast('この対戦は操作できません'); return; }
+  const other = slot === 'p1' ? 'p2' : 'p1';
+  const winnerSlot = reason === 'withdraw' ? other : slot;
+  const nm = u => tourNameOfUid(u, br, '');
+  const msg = reason === 'withdraw'
+    ? `「${nm(m0[slot])}」が辞退したことにします。\n「${nm(m0[other])}」の不戦勝になり、次のラウンドへ進みます。取り消しはできません。よろしいですか？`
+    : reason === 'noshow'
+    ? `この対局は行われなかったことにして、「${nm(m0[slot])}」を次のラウンドへ進めます。取り消しはできません。よろしいですか？`
+    : `「${nm(m0[slot])}」の勝ちにします。次のラウンドへ進み、取り消しはできません。よろしいですか？`;
+  if(!confirm(msg)) return;
+  await adminBracketMutate(rounds => {
+    const m = rounds[ri][mi];
+    if(!m || m.winner || !m.p1 || !m.p2){ toast('この対局はすでに決着しています'); return false; }
+    m.manual = true;
+    if(reason === 'withdraw' || reason === 'noshow') m.walkover = reason;
+    m.playedAt = Date.now();
+    bracketAdvance(rounds, ri, mi, m[winnerSlot], []);
+  }, reason === 'result' ? '勝者を入力しました' : '次のラウンドへ進めました。続けて、次のラウンドの組み合わせを変えられます（「組み替え」）');
+}
+function tourSwapToggle(ri){ tourSwap = (tourSwap.ri === ri) ? { ri:null, sel:null } : { ri, sel:null }; render(); }
+async function tourSwapPick(ri, mi, slot){
+  if(tourSwap.ri !== ri) return;
+  const sel = tourSwap.sel;
+  if(!sel){ tourSwap.sel = { mi, slot }; render(); return; }
+  if(sel.mi === mi && sel.slot === slot){ tourSwap.sel = null; render(); return; }
+  tourSwap.sel = null;
+  await adminBracketMutate(rounds => {
+    const err = bracketSwapSlots(rounds, ri, sel, { mi, slot });
+    if(err){ toast(err); return false; }
+  }, '入れ替えました');
+  render();
+}
 function tourBracketAdminMarkup(t){
   if(!t.bracket) return '';
   const br = normalizeBracket(t.bracket);
   const rounds = br.rounds;
-  const nameOf = (uid, emptyLabel) => uid ? ((tournamentParticipantsAdmin && tournamentParticipantsAdmin[uid] && tournamentParticipantsAdmin[uid].name) || uid.slice(0,8)) : emptyLabel;
   const label = ri => { const fe = rounds.length - 1 - ri; return fe === 0 ? '決勝' : fe === 1 ? '準決勝' : `${ri+1}回戦`; };
   const last = rounds[rounds.length-1];
   const champ = (last && last[0] && last[0].winner) || null;
-  return `<div style="display:flex; gap:10px; overflow-x:auto;">${rounds.map((round,ri)=>`
-    <div style="flex:0 0 auto; width:150px;">
-      <div style="font-size:11px; font-weight:800; text-align:center; margin-bottom:6px;">${label(ri)}</div>
-      ${round.map((m,mi)=>`<div style="border:1px solid var(--line); border-radius:8px; margin-bottom:10px; font-size:11px;">
-        <div style="padding:4px 6px; ${m.winner&&m.winner===m.p1?'font-weight:800;background:var(--jade-mist);':''}">${esc(nameOf(m.p1,'勝者未定'))}</div>
-        <div style="padding:4px 6px; border-top:1px solid var(--line); ${m.winner&&m.winner===m.p2?'font-weight:800;background:var(--jade-mist);':''}">${esc(nameOf(m.p2, m.bye ? '不戦勝' : '勝者未定'))}</div>
-        ${(!m.winner && !m.bye && m.p1 && m.p2) ? `<div style="display:flex; gap:4px; padding:4px 6px; border-top:1px solid var(--line);">
-          <button class="btn" style="padding:2px 6px; font-size:10px; flex:1;" onclick="adminSetTournamentWinner(${ri},${mi},'p1')">上の勝ち</button>
-          <button class="btn" style="padding:2px 6px; font-size:10px; flex:1;" onclick="adminSetTournamentWinner(${ri},${mi},'p2')">下の勝ち</button></div>` : ''}
-      </div>`).join('')}
-    </div>`).join('')}
-    <div style="flex:0 0 auto; width:150px;">
-      <div style="font-size:11px; font-weight:800; text-align:center; margin-bottom:6px;">優勝</div>
-      <div style="border:1px solid var(--line); border-radius:8px; font-size:11px;"><div style="padding:4px 6px; ${champ?'font-weight:800;background:var(--jade-mist);':''}">${esc(champ ? nameOf(champ,'') : '―')}</div></div>
+  const WO = { withdraw:'辞退により不戦勝', noshow:'対局不成立（管理者が決定）' };
+  return `<div style="display:flex; gap:10px; overflow-x:auto;">${rounds.map((round,ri)=>{
+    const swapOn = tourSwap.ri === ri;
+    const free = bracketRoundIsFree(rounds, ri);
+    const hasOpen = round.some(m => !m.winner || (m.bye && !m.walkover));
+    return `
+    <div style="flex:0 0 auto; width:158px;">
+      <div style="font-size:11px; font-weight:800; text-align:center; margin-bottom:4px;">${label(ri)}</div>
+      ${(free && hasOpen && ri < rounds.length-1) ? `<div style="text-align:center; margin-bottom:6px;"><button class="btn" style="padding:2px 8px; font-size:10px;" onclick="tourSwapToggle(${ri})">${swapOn?'組み替えを終わる':'組み替え'}</button></div>` : '<div style="height:6px;"></div>'}
+      ${swapOn ? `<div style="font-size:10px; color:var(--ink-soft); margin-bottom:6px; line-height:1.5;">入れ替えたい2つの枠を、順に押してください（空きの枠にも移せます）</div>` : ''}
+      ${round.map((m,mi)=>{
+        const canSwap = swapOn && (!m.winner || (m.bye && !m.walkover));
+        const cell = (slot, emptyLabel, extraStyle) => {
+          const uid = m[slot];
+          const sel = tourSwap.sel && tourSwap.sel.mi === mi && tourSwap.sel.slot === slot && swapOn;
+          const win = m.winner && m.winner === uid;
+          const st = `padding:4px 6px; ${extraStyle||''} ${win?'font-weight:800;background:var(--jade-mist);':''} ${canSwap?'cursor:pointer; outline:1px dashed var(--ink-soft); outline-offset:-2px;':''} ${sel?'background:#ffe9a8; color:#222;':''}`;
+          return `<div style="${st}" ${canSwap?`onclick="tourSwapPick(${ri},${mi},'${slot}')"`:''}>${esc(tourNameOfUid(uid, br, emptyLabel))}</div>`;
+        };
+        const ops = (!swapOn && !m.winner && !m.bye && m.p1 && m.p2) ? `
+          <details style="padding:3px 6px; border-top:1px solid var(--line);">
+            <summary style="cursor:pointer; font-size:10px; color:var(--ink-soft);">操作</summary>
+            <div style="font-size:10px; margin:4px 0 2px;">結果を入力</div>
+            <div style="display:flex; gap:4px;">
+              <button class="btn" style="padding:2px 4px; font-size:10px; flex:1;" onclick="adminResolveMatch(${ri},${mi},'p1','result')">上の勝ち</button>
+              <button class="btn" style="padding:2px 4px; font-size:10px; flex:1;" onclick="adminResolveMatch(${ri},${mi},'p2','result')">下の勝ち</button></div>
+            <div style="font-size:10px; margin:6px 0 2px;">辞退（相手が不戦勝）</div>
+            <div style="display:flex; gap:4px;">
+              <button class="btn" style="padding:2px 4px; font-size:10px; flex:1;" onclick="adminResolveMatch(${ri},${mi},'p1','withdraw')">上が辞退</button>
+              <button class="btn" style="padding:2px 4px; font-size:10px; flex:1;" onclick="adminResolveMatch(${ri},${mi},'p2','withdraw')">下が辞退</button></div>
+            <div style="font-size:10px; margin:6px 0 2px;">対局できなかった（片方を進める）</div>
+            <div style="display:flex; gap:4px;">
+              <button class="btn" style="padding:2px 4px; font-size:10px; flex:1;" onclick="adminResolveMatch(${ri},${mi},'p1','noshow')">上を進める</button>
+              <button class="btn" style="padding:2px 4px; font-size:10px; flex:1;" onclick="adminResolveMatch(${ri},${mi},'p2','noshow')">下を進める</button></div>
+          </details>` : '';
+        return `<div style="border:1px solid var(--line); border-radius:8px; margin-bottom:10px; font-size:11px; overflow:hidden;">
+          ${cell('p1','勝者未定')}
+          ${cell('p2', m.bye ? '不戦勝' : '勝者未定', 'border-top:1px solid var(--line);')}
+          ${m.walkover && WO[m.walkover] ? `<div style="padding:2px 6px; border-top:1px solid var(--line); font-size:10px; color:var(--ink-soft);">${WO[m.walkover]}</div>` : ''}
+          ${ops}
+        </div>`;
+      }).join('')}
+    </div>`;}).join('')}
+    <div style="flex:0 0 auto; width:158px;">
+      <div style="font-size:11px; font-weight:800; text-align:center; margin-bottom:4px;">優勝</div>
+      <div style="height:6px;"></div>
+      <div style="border:1px solid var(--line); border-radius:8px; font-size:11px;"><div style="padding:4px 6px; ${champ?'font-weight:800;background:var(--jade-mist);':''}">${esc(champ ? tourNameOfUid(champ, br, '') : '―')}</div></div>
     </div></div>`;
-}
-// 管理者が勝者を入力する（オフライン大会の結果入力や、オンラインでの不戦・欠場の処理に使う）
-async function adminSetTournamentWinner(ri, mi, slot){
-  if(!currentTournament || !currentTournament.bracket) return;
-  try{
-    const snap = await db.ref('tournaments/current/bracket').once('value');
-    const nb = normalizeBracket(snap.val());
-    const m = nb && nb.rounds[ri] && nb.rounds[ri][mi];
-    if(!m){ toast('対戦が見つかりません'); return; }
-    if(m.winner){ toast('この対戦はすでに決着しています'); currentTournament.bracket = nb; render(); return; }
-    const w = m[slot];
-    if(!w) return;
-    const nm = u => (tournamentParticipantsAdmin && tournamentParticipantsAdmin[u] && tournamentParticipantsAdmin[u].name) || u.slice(0,8);
-    if(!confirm(`「${nm(w)}」の勝ちにします。次のラウンドへ進み、あとから取り消すことはできません。よろしいですか？`)) return;
-    const changes = [];
-    bracketAdvance(nb.rounds, ri, mi, w, changes);
-    const upd = {};
-    changes.forEach(([r,i,k,v]) => { upd[`rounds/${r}/${i}/${k}`] = v; });
-    upd[`rounds/${ri}/${mi}/playedAt`] = Date.now();
-    upd[`rounds/${ri}/${mi}/manual`] = true;
-    await db.ref('tournaments/current/bracket').update(upd);
-    currentTournament.bracket = nb;
-    toast('勝者を入力しました');
-    render();
-  }catch(err){ toast('入力に失敗しました: ' + err.message); }
 }
 // 部屋のデータから結果を求める（本体と同じ考え方）。host が先手（黒）
 function tourResultFromRoom(room){
@@ -1447,6 +1579,8 @@ async function loadTournamentParticipants(){
   try{
     const snap = await db.ref('tournaments/current/participants').once('value');
     tournamentParticipantsAdmin = snap.val() || {};
+    const bb = document.getElementById('tourBracketBody');   // 名前が読み込めたら、表の名前も更新する
+    if(bb && currentTournament && currentTournament.bracket) bb.innerHTML = tourBracketAdminMarkup(currentTournament);
     const el = document.getElementById('tourParticipantsList');
     if(el){
       const list = Object.entries(tournamentParticipantsAdmin);
@@ -1504,7 +1638,9 @@ async function generateTournamentBracket(){
   const uids = Object.keys(tournamentParticipantsAdmin || {});
   if(uids.length < 2){ toast('参加者が2人未満のため、組み合わせを作れません'); return; }
   if(currentTournament.bracket && !confirm('すでに組み合わせがあります。作り直すと今の進行状況は消えます。よろしいですか？')) return;
-  const bracket = generateBracketAdmin(uids);
+  const names = {};
+  uids.forEach(u => { names[u] = (tournamentParticipantsAdmin[u] && tournamentParticipantsAdmin[u].name) || 'プレイヤー'; });
+  const bracket = generateBracketAdmin(uids, names);
   try{
     await db.ref('tournaments/current/bracket').set(bracket);
     currentTournament.bracket = bracket;
