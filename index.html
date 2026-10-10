@@ -109,6 +109,22 @@ rt{font-size:.58em; font-weight:500; color:var(--ink-soft); opacity:.72; letter-
 }
 .tournament-banner-phase{ font-size:11px; font-weight:600; opacity:.9; }
 .tournament-sched{ display:flex; flex-direction:column; gap:8px; }
+.tsched-title{ font-size:14px; font-weight:800; margin:0 0 6px; }
+.tsched-sub{ font-size:12px; color:var(--ink-soft); line-height:1.7; margin:0 0 8px; }
+.tsched-decided{ background:var(--jade-mist); color:var(--jade-deep); border-radius:12px; padding:10px 12px; font-size:13px; font-weight:800; margin:0 0 10px; text-align:center; }
+.tsched-overlap{ border:1px dashed var(--line); border-radius:12px; padding:8px 10px; font-size:12px; line-height:1.7; margin:0 0 10px; }
+.tsched-list{ display:flex; flex-direction:column; gap:8px; margin:0 0 12px; max-height:300px; overflow-y:auto; }
+.tsched-msg{ max-width:88%; border:1px solid var(--line); background:var(--panel); border-radius:12px; padding:7px 10px; font-size:13px; align-self:flex-start; }
+.tsched-msg.is-me{ align-self:flex-end; background:var(--jade-mist); }
+.tsched-who{ font-size:10.5px; color:var(--ink-soft); margin-bottom:2px; }
+.tsched-time{ font-weight:800; font-size:14px; }
+.tsched-react{ display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+.tsched-chip{ border:1px solid var(--line); background:var(--panel); border-radius:999px; padding:2px 8px; font-size:12px; cursor:pointer; line-height:1.5; }
+.tsched-chip.is-on{ background:var(--jade-mist); border-color:var(--jade-deep); }
+.tsched-chip.is-static{ cursor:default; }
+.tsched-form{ border-top:1px solid var(--line-soft); padding-top:10px; margin-top:4px; }
+.tsched-row{ display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+.tsched-row input[type=time]{ flex:1; min-width:0; padding:7px 6px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); font-size:14px; color-scheme:light dark; }
 .tournament-sched > div{ display:flex; justify-content:space-between; font-size:12.5px; padding:6px 0; border-bottom:1px solid var(--line-soft); }
 .tournament-sched > div:last-child{ border-bottom:none; }
 .bracket-wrap{ display:flex; gap:10px; overflow-x:auto; padding-bottom:10px; }
@@ -2374,6 +2390,9 @@ function render(){
   
   updateBGM();
   if(presenceRef) updatePresence();
+
+  // 大会の画面を離れたら、日程調整の受信をやめる
+  if(!(activeTab === 'ranker' && currentRankerMode === 'match' && sub.match === 'tournament') && tourSched.key) tourSchedDetach();
 
   // ホーム画面ではお知らせを表示する（取得は数分に1回だけ）
   if(activeTab === 'home') showHomeNews();
@@ -9318,6 +9337,182 @@ function tournamentScheduleRefresh(){
     if(activeTab === 'ranker' && currentRankerMode === 'match' && sub.match === 'tournament' && !game) render();
   }, 20000);
 }
+// ---- 対戦相手との日程調整（時間と絵文字のリアクションだけをやり取りする）----
+// 保存先：tourSchedule/<2人のuidを並べた鍵>/messages/<id> と reactions/<id>/<uid>。大会が終わったら管理者側で消す
+const TSCHED_EMOJIS = ['⭕️','❌','👍','🙏','🙇','😊'];
+const TSCHED_MAX_MY_MESSAGES = 40;
+let tourSched = { key:null, ref:null, refR:null, msgs:{}, reacts:{}, error:false, ctx:null };
+function tsFmtMin(m){ return String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0'); }
+function tsRangeText(r){ return tsFmtMin(r.s) + '〜' + (r.e != null ? tsFmtMin(r.e) : ''); }
+function tsParseTime(v){ const m = /^(\d{1,2}):(\d{2})$/.exec(v || ''); if(!m) return null; const h = +m[1], mi = +m[2]; return (h < 24 && mi < 60) ? h*60+mi : null; }
+function tsToArr(x){ return Array.isArray(x) ? x.filter(Boolean) : (x && typeof x === 'object' ? Object.keys(x).sort((a,b)=>a-b).map(k=>x[k]) : []); }
+// 2人それぞれの「出られる時間」の重なり（終わりが無い時間は24:00まで）
+function tsIntersect(a, b){
+  const out = [];
+  a.forEach(x => b.forEach(y => {
+    const s = Math.max(x.s, y.s);
+    const bothOpen = x.e == null && y.e == null;
+    const e = Math.min(x.e == null ? 1440 : x.e, y.e == null ? 1440 : y.e);
+    if(s < e || bothOpen) out.push({ s, e: bothOpen ? null : e });
+  }));
+  out.sort((p,q) => p.s - q.s);
+  return out;
+}
+function tournamentFindMyPendingMatch(t){
+  if(!t || !t.bracket || !t.bracket.rounds || !fbUid) return null;
+  const rounds = t.bracket.rounds;
+  for(let ri=0; ri<rounds.length; ri++){
+    for(let i=0; i<rounds[ri].length; i++){
+      const m = rounds[ri][i];
+      if(!m || m.winner || m.bye || !m.p1 || !m.p2) continue;
+      if(m.p1 === fbUid || m.p2 === fbUid) return { round: ri, idx: i, match: m };
+    }
+  }
+  return null;
+}
+// そのラウンドを行う日（決勝＝3日目、準決勝＝2日目、それ以前＝1日目）
+function tournamentMatchDateMs(t, ri){
+  const total = t.bracket.rounds.length;
+  return ri === total - 1 ? t.day3At : ri === total - 2 ? t.day2At : t.day1At;
+}
+function tsFmtDate(ms){
+  if(!ms) return '';
+  const d = new Date(ms);
+  return `${d.getMonth()+1}月${d.getDate()}日(${'日月火水木金土'[d.getDay()]})`;
+}
+function tourSchedDetach(){
+  try{ if(tourSched.ref) tourSched.ref.off(); if(tourSched.refR) tourSched.refR.off(); }catch(e){}
+  tourSched = { key:null, ref:null, refR:null, msgs:{}, reacts:{}, error:false, ctx:null };
+}
+function tourSchedAttach(key){
+  if(tourSched.key === key || !fbDb) return;
+  tourSchedDetach();
+  tourSched.key = key;
+  tourSched.ref = fbDb.ref('tourSchedule/' + key + '/messages');
+  tourSched.refR = fbDb.ref('tourSchedule/' + key + '/reactions');
+  const onErr = () => { tourSched.error = true; tourSchedUpdate(); };
+  tourSched.ref.on('value', snap => { tourSched.msgs = snap.val() || {}; tourSched.error = false; tourSchedUpdate(); }, onErr);
+  tourSched.refR.on('value', snap => { tourSched.reacts = snap.val() || {}; tourSchedUpdate(); }, onErr);
+}
+function tourSchedUpdate(){
+  const el = document.getElementById('tourSchedBody');
+  if(el){ el.innerHTML = tourSchedBodyMarkup(); const l = document.getElementById('tourSchedList'); if(l) l.scrollTop = l.scrollHeight; }
+}
+function tourSchedSortedMsgs(){
+  return Object.keys(tourSched.msgs || {}).map(id => Object.assign({ id }, tourSched.msgs[id])).filter(m => m && m.uid && m.type)
+    .sort((a,b) => (a.at||0) - (b.at||0) || (a.id < b.id ? -1 : 1));
+}
+function tourSchedBodyMarkup(){
+  const ctx = tourSched.ctx;
+  if(!ctx) return '';
+  if(tourSched.error) return `<p class="tsched-sub">日程調整はまだ準備中です（しばらくしてから、もう一度開いてください）。</p>`;
+  const msgs = tourSchedSortedMsgs();
+  const reacts = tourSched.reacts || {};
+  const nameOf = uid => uid === fbUid ? 'あなた' : ctx.oppName;
+  // 最新の「出られる時間」を、2人それぞれから取り出す
+  const latest = {};
+  msgs.forEach(m => { if(m.type === 'avail') latest[m.uid] = tsToArr(m.ranges); });
+  // 決定：最後の提案に、提案者ではない側から ⭕️ が付いているとき
+  const proposals = msgs.filter(m => m.type === 'propose');
+  const lastP = proposals[proposals.length - 1];
+  let decided = null;
+  if(lastP){
+    const rs = reacts[lastP.id] || {};
+    if(Object.keys(rs).some(u => u !== lastP.uid && rs[u] === '⭕️')) decided = lastP;
+  }
+  let head = '';
+  if(decided){
+    head += `<div class="tsched-decided">🎉 対局の時間が決まりました<br>${escapeHtml(tsFmtDate(ctx.dateMs))} ${tsFmtMin(decided.start)}〜</div>`;
+  } else if(latest[fbUid] && latest[ctx.oppUid]){
+    const ov = tsIntersect(latest[fbUid], latest[ctx.oppUid]);
+    head += ov.length
+      ? `<div class="tsched-overlap">お互いに出られる時間：<b>${ov.map(tsRangeText).join('、')}</b><br>この中で、細かい開始時間を決めましょう。</div>`
+      : `<div class="tsched-overlap">いまのところ、お互いの時間が重なっていません。相手の時間に合わせて、開始時間を提案してみましょう。</div>`;
+  } else if(latest[fbUid] && !latest[ctx.oppUid]){
+    head += `<div class="tsched-overlap">相手が「出られる時間」を送るのを待っています。</div>`;
+  }
+  const items = msgs.map(m => {
+    const mine = m.uid === fbUid;
+    const body = m.type === 'avail'
+      ? `<div class="tsched-time">${tsToArr(m.ranges).map(tsRangeText).join('、')}</div><div class="tsched-who" style="margin:2px 0 0;">出られる時間</div>`
+      : `<div class="tsched-time">${tsFmtMin(m.start)}〜</div><div class="tsched-who" style="margin:2px 0 0;">この時間で始めませんか？</div>`;
+    const rs = reacts[m.id] || {};
+    const chips = Object.keys(rs).map(u => `<span class="tsched-chip is-static" title="${escapeHtml(nameOf(u))}">${escapeHtml(rs[u])}<span style="font-size:10px; color:var(--ink-soft);"> ${escapeHtml(nameOf(u))}</span></span>`).join('');
+    // 自分のメッセージには反応できない。相手のメッセージには絵文字でリアクションできる
+    const picker = mine ? '' : (m.type === 'propose' ? TSCHED_EMOJIS : TSCHED_EMOJIS.slice(2)).map(e => `<button class="tsched-chip ${rs[fbUid]===e?'is-on':''}" data-action="tsched-react" data-mid="${escapeHtml(m.id)}" data-emoji="${e}">${e}</button>`).join('');
+    return `<div class="tsched-msg ${mine?'is-me':''}">
+      <div class="tsched-who">${escapeHtml(nameOf(m.uid))}</div>${body}
+      ${(chips || picker) ? `<div class="tsched-react">${chips}${picker ? `<span style="flex-basis:100%; height:0;"></span>${picker}` : ''}</div>` : ''}
+    </div>`;
+  }).join('');
+  return head + (items ? `<div class="tsched-list" id="tourSchedList">${items}</div>` : `<p class="tsched-sub">まだやり取りはありません。まずは、あなたが出られる時間を送りましょう。</p>`);
+}
+function tourSchedCardMarkup(t, phase){
+  if(tournamentIsOffline(t) || !fbUid || !tournamentMyEntry()) { tourSchedDetach(); return ''; }
+  if(phase !== 'bracket' && phase !== 'day1' && phase !== 'day2' && phase !== 'day3'){ tourSchedDetach(); return ''; }
+  const found = tournamentFindMyPendingMatch(t);
+  if(!found){ tourSchedDetach(); return ''; }
+  const oppUid = found.match.p1 === fbUid ? found.match.p2 : found.match.p1;
+  const key = [fbUid, oppUid].sort().join('_');
+  tourSchedAttach(key);
+  tourSched.ctx = { oppUid, oppName: tournamentNameOf(t, oppUid, false), dateMs: tournamentMatchDateMs(t, found.round), round: found.round };
+  const ctx = tourSched.ctx;
+  const row = i => `<div class="tsched-row"><input type="time" id="tsStart${i}" aria-label="開始"><span>〜</span><input type="time" id="tsEnd${i}" aria-label="終了（空欄でもOK）"></div>`;
+  return `
+    <div class="card" id="tourSched">
+      <p class="tsched-title">⏰ 対戦相手との日程調整</p>
+      <p class="tsched-sub">相手：<b>${escapeHtml(ctx.oppName)}</b>　／　対局日：<b>${escapeHtml(tsFmtDate(ctx.dateMs))}</b><br>出られる時間だけを送り合って、始める時間を決めます。やり取りは大会が終わると消えます。</p>
+      <div id="tourSchedBody">${tourSchedBodyMarkup()}</div>
+      <div class="tsched-form">
+        <p class="tsched-sub" style="margin:0 0 6px;"><b>出られる時間を送る</b>（終わりの時間は空欄でもOK。時間帯は3つまで）</p>
+        ${row(0)}${row(1)}${row(2)}
+        <button class="btn btn-soft" data-action="tsched-send-avail" style="width:100%;">出られる時間を送る</button>
+        <p class="tsched-sub" style="margin:12px 0 6px;"><b>この時間に始めよう、と提案する</b></p>
+        <div class="tsched-row"><input type="time" id="tsPropose" aria-label="開始時間"><span>〜</span>
+          <button class="btn btn-accent" data-action="tsched-propose" style="flex:1;">提案する</button></div>
+      </div>
+    </div>`;
+}
+async function tourSchedSend(msg){
+  if(!tourSched.ref || !fbUid) return false;
+  const mine = tourSchedSortedMsgs().filter(m => m.uid === fbUid).length;
+  if(mine >= TSCHED_MAX_MY_MESSAGES){ toast('送れる回数の上限に達しました'); return false; }
+  try{
+    await tourSched.ref.push(Object.assign({ uid: fbUid, at: firebase.database.ServerValue.TIMESTAMP }, msg));
+    return true;
+  }catch(err){ toast('送信できませんでした'); return false; }
+}
+async function tourSchedSendAvail(){
+  const ranges = [];
+  for(let i=0;i<3;i++){
+    const sEl = document.getElementById('tsStart'+i), eEl = document.getElementById('tsEnd'+i);
+    const s = tsParseTime(sEl && sEl.value), e = tsParseTime(eEl && eEl.value);
+    if(s === null){ if(e !== null){ toast('開始の時間も入れてください'); return; } continue; }
+    if(e !== null && e <= s){ toast('終わりの時間は、開始より後にしてください'); return; }
+    ranges.push(e === null ? { s } : { s, e });
+  }
+  if(!ranges.length){ toast('出られる時間を入れてください'); return; }
+  ranges.sort((a,b) => a.s - b.s);
+  if(await tourSchedSend({ type:'avail', ranges })){
+    for(let i=0;i<3;i++){ ['tsStart','tsEnd'].forEach(p => { const el = document.getElementById(p+i); if(el) el.value = ''; }); }
+    toast('送りました');
+  }
+}
+async function tourSchedPropose(){
+  const el = document.getElementById('tsPropose');
+  const start = tsParseTime(el && el.value);
+  if(start === null){ toast('開始の時間を入れてください'); return; }
+  if(await tourSchedSend({ type:'propose', start })){ el.value = ''; toast('提案しました'); }
+}
+async function tourSchedReact(mid, emoji){
+  if(!tourSched.key || !fbUid || !TSCHED_EMOJIS.includes(emoji)) return;
+  const ref = fbDb.ref('tourSchedule/' + tourSched.key + '/reactions/' + mid + '/' + fbUid);
+  try{
+    const already = tourSched.reacts && tourSched.reacts[mid] && tourSched.reacts[mid][fbUid] === emoji;
+    if(already) await ref.remove(); else await ref.set(emoji);
+  }catch(err){ toast('送信できませんでした'); }
+}
+
 function tournamentIsOffline(t){ return !!(t && t.format === 'offline'); }
 // 開催形式（オンライン／オフライン）の案内
 function tournamentFormatNoteMarkup(t){
@@ -9362,6 +9557,7 @@ function viewTournament(){
   if(phase === 'bracket'){
     return hero + `
       <div class="card"><p style="font-size:13px; margin:0 0 8px;">組み合わせが決まりました。開催日：${fmtTournamentDate(t.day1At)} 〜</p>${tournamentFormatNoteMarkup(t)}</div>
+      ${tourSchedCardMarkup(t, phase)}
       ${bracketMarkup(t)}`;
   }
   if(phase === 'day1' || phase === 'day2' || phase === 'day3'){
@@ -9378,6 +9574,7 @@ function viewTournament(){
              <button class="btn btn-accent" data-action="tournament-play" style="width:100%;">対局する</button>`
           : (tournamentIsOffline(t) ? '' : `<p style="font-size:13px; color:var(--ink-soft); margin:0;">${myEntry ? '今日の対局はありません。結果をお待ちください。' : 'このラウンドの対局はありません。'}</p>`)}
       </div>
+      ${tourSchedCardMarkup(t, phase)}
       ${bracketMarkup(t)}`;
   }
   // ended
@@ -10492,6 +10689,9 @@ document.addEventListener('click', (e)=>{
       break;
     case 'tournament-enter': tournamentEnter(); break;
     case 'tournament-play': tournamentStartMatch(); break;
+    case 'tsched-send-avail': tourSchedSendAvail(); break;
+    case 'tsched-propose': tourSchedPropose(); break;
+    case 'tsched-react': tourSchedReact(el.dataset.mid, el.dataset.emoji); break;
     case 'tournament-claim-reward': tournamentClaimReward(); break;
     case 'match-again':
       navigate(()=>{ game = null; sub.match = 'setup'; }, ()=> startMatch());
