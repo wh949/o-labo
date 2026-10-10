@@ -9384,6 +9384,7 @@ function bracketMarkup(t){
         <div class="bracket-match">
           <div class="bracket-p ${p1Win?'is-winner':''} ${m.p1===fbUid?'is-me':''}">${escapeHtml(tournamentNameOf(t, m.p1, false))}</div>
           <div class="bracket-p ${p2Win?'is-winner':''} ${m.p2===fbUid?'is-me':''}">${escapeHtml(tournamentNameOf(t, m.p2, !!m.bye))}</div>
+          ${m.walkover === 'withdraw' ? '<div class="bracket-p" style="font-size:10px; color:var(--ink-soft);">辞退により不戦勝</div>' : (m.walkover === 'noshow' ? '<div class="bracket-p" style="font-size:10px; color:var(--ink-soft);">対局不成立（運営が決定）</div>' : '')}
         </div>`;
       }).join('')}
     </div>`).join('')}
