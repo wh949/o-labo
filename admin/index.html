@@ -546,7 +546,7 @@ function render(){
       }</main>
     </div>`;
 }
-function go(v){ view = v; selectedUid = null; detail = null; render(); if(v==='rooms') loadRooms(); if(v==='tournaments'){ loadTournamentParticipants(); loadTournamentGames(); } if(v==='duplicates'){ selectedUids.clear(); loadDuplicateGroups(); } }
+function go(v){ view = v; selectedUid = null; detail = null; render(); if(v==='rooms') loadRooms(); if(v==='tournaments'){ loadTournamentParticipants(); loadTournamentGames(); reconcileTournamentFromRooms(false); } if(v==='duplicates'){ selectedUids.clear(); loadDuplicateGroups(); } }
 async function reloadAll(){ await loadAll(); if(view==='user' && selectedUid) await openUser(selectedUid, true); render(); toast('最新の情報にしました'); }
 
 /* 利用者の一覧 */
@@ -1217,7 +1217,7 @@ function generateBracketAdmin(uids, names){
   }
   // 1回戦の不戦勝を、あらかじめ勝ち上がらせておく
   r1.forEach((m, i) => { if(m.bye) bracketAdvance(rounds, 0, i, m.p1, []); });
-  return {rounds, total: shuffled.length, names: names||{}};
+  return {rounds, total: shuffled.length, gen: Date.now(), names: names||{}};
 }
 // データベースから読んだトーナメント表を、配列の形にそろえる
 function normalizeBracket(b){
@@ -1242,6 +1242,7 @@ function viewTournamentsAdmin(){
       </p>
       <div class="row">
         <button class="btn" onclick="tournamentEditing=true; render();">編集する</button>
+        ${t.bracket ? '<button class="btn" onclick="reconcileTournamentFromRooms(true)">対局結果を表に反映する（取りこぼしの回収）</button>' : ''}
         <button class="btn" onclick="generateTournamentBracket()">組み合わせを作る（${t.bracket?'作り直す':'今すぐ'}）</button>
         <button class="btn" onclick="if(confirm('参加者どうしの日程調整のやり取りをすべて消します。よろしいですか？')) purgeTourSchedule(true)">日程調整のデータを消す</button>
         <button class="btn danger" onclick="deleteTournament()">削除する</button>
@@ -1349,6 +1350,62 @@ async function adminSetTournamentWinner(ri, mi, slot){
     toast('勝者を入力しました');
     render();
   }catch(err){ toast('入力に失敗しました: ' + err.message); }
+}
+// 部屋のデータから結果を求める（本体と同じ考え方）。host が先手（黒）
+function tourResultFromRoom(room){
+  if(!room || room.status !== 'finished') return null;
+  const hostUid = room.host && room.host.uid, guestUid = room.guest && room.guest.uid;
+  if(!hostUid || !guestUid) return null;
+  let black, white;
+  if(room.matchBlack !== undefined && room.matchWhite !== undefined){ black = room.matchBlack; white = room.matchWhite; }
+  else {
+    const b = String(room.board || ''); let bc = 0, wc = 0, ec = 0;
+    for(const ch of b){ if(ch === '1') bc++; else if(ch === '2') wc++; else ec++; }
+    if(bc > wc) bc += ec; else if(wc > bc) wc += ec;
+    black = bc; white = wc;
+  }
+  const loser = room.resignedBy || room.matchTimeUpBy || room.abandonedBy || null;
+  if(loser === 1 && white - black < 2) white = black + 2;
+  else if(loser === 2 && black - white < 2) black = white + 2;
+  if(black === white) return { winnerUid: null, draw: true, black, white };
+  return { winnerUid: black > white ? hostUid : guestUid, draw: false, black, white };
+}
+// 終わっている対局の結果が、トーナメント表に反映されていなければ反映する（取りこぼしの回収）
+async function reconcileTournamentFromRooms(manual){
+  if(!currentTournament || !currentTournament.bracket) return;
+  let fixed = 0;
+  try{
+    const bref = db.ref('tournaments/current/bracket');
+    for(let pass=0; pass<4; pass++){   // 勝ち上がりで新しく決まった対戦も続けて確認する
+      const nb = normalizeBracket((await bref.once('value')).val());
+      let progressed = false;
+      for(let ri=0; ri<nb.rounds.length; ri++){
+        for(let mi=0; mi<nb.rounds[ri].length; mi++){
+          const m = nb.rounds[ri][mi];
+          if(!m || m.winner || m.bye || !m.p1 || !m.p2) continue;
+          const gameNo = m.replay || 0;
+          const roomId = 'tour_' + (nb.gen || 'x') + '_' + ri + '_' + mi + (gameNo > 0 ? '_' + gameNo : '');
+          const res = tourResultFromRoom((await db.ref('rooms/' + roomId).once('value')).val());
+          if(!res) continue;
+          if(res.draw){ await bref.update({ [`rounds/${ri}/${mi}/replay`]: gameNo + 1 }); fixed++; progressed = true; continue; }
+          const changes = [];
+          bracketAdvance(nb.rounds, ri, mi, res.winnerUid, changes);
+          const upd = {};
+          changes.forEach(([r,i,k,v]) => { upd[`rounds/${r}/${i}/${k}`] = v; });
+          upd[`rounds/${ri}/${mi}/black`] = res.black; upd[`rounds/${ri}/${mi}/white`] = res.white;
+          upd[`rounds/${ri}/${mi}/playedAt`] = Date.now();
+          await bref.update(upd);
+          fixed++; progressed = true;
+        }
+      }
+      if(!progressed) break;
+    }
+    if(fixed){
+      currentTournament.bracket = normalizeBracket((await bref.once('value')).val());
+      if(view === 'tournaments') render();
+    }
+    if(manual) toast(fixed ? `${fixed}件の結果を表に反映しました` : '反映が必要な結果はありませんでした');
+  }catch(err){ if(manual) toast('確認に失敗しました: ' + err.message); else console.warn(err); }
 }
 async function loadTournamentGames(){
   if(!currentTournament) return;
