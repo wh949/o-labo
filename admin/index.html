@@ -456,6 +456,7 @@ auth.onAuthStateChanged(async user => {
   await loadAll();
   render();
   autoPurgeStaleGuests();   // 5日以上ログインしていないゲストのデータを、自動で削除する
+  setTimeout(autoPurgeTourSchedule, 2500);   // 終了した大会の日程調整のデータを消す（大会情報の読み込みを待つ）
 });
 
 function renderGate(msg, denied){
@@ -1242,6 +1243,7 @@ function viewTournamentsAdmin(){
       <div class="row">
         <button class="btn" onclick="tournamentEditing=true; render();">編集する</button>
         <button class="btn" onclick="generateTournamentBracket()">組み合わせを作る（${t.bracket?'作り直す':'今すぐ'}）</button>
+        <button class="btn" onclick="if(confirm('参加者どうしの日程調整のやり取りをすべて消します。よろしいですか？')) purgeTourSchedule(true)">日程調整のデータを消す</button>
         <button class="btn danger" onclick="deleteTournament()">削除する</button>
       </div>
     </div>
@@ -1453,9 +1455,25 @@ async function generateTournamentBracket(){
     render();
   }catch(err){ toast('作成に失敗しました: ' + err.message); }
 }
+// 大会が終わったあとの、日程調整（時間のやり取り）のデータを消す
+async function purgeTourSchedule(manual){
+  try{
+    await db.ref('tourSchedule').remove();
+    if(manual) toast('日程調整のデータを消しました');
+  }catch(err){ if(manual) toast('消せませんでした: ' + err.message); }
+}
+// 大会が終了していて、日程調整のデータが残っていれば自動で消す（管理者ページを開いたとき）
+async function autoPurgeTourSchedule(){
+  try{
+    if(!currentTournament || !currentTournament.endAt || Date.now() < currentTournament.endAt) return;
+    const snap = await db.ref('tourSchedule').limitToFirst(1).once('value');
+    if(snap.exists()) await purgeTourSchedule(false);
+  }catch(err){ console.warn(err); }
+}
 async function deleteTournament(){
   if(!confirm('大会を削除します。参加者の記録もすべて消えます。よろしいですか？')) return;
   try{
+    await db.ref('tourSchedule').remove().catch(()=>{});
     await db.ref('tournaments/current').remove();
     currentTournament = null;
     tournamentEditing = false;
