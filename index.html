@@ -5990,7 +5990,7 @@ function normalizeRoomCode(v){
 async function onlineJoinByCode(code, myName){
   if(myBanned){ toast('このアカウントは利用が停止されています'); return; }
   if(!requireEmailAuth()) return;
-  onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined;
+  onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined; onlineState.tournamentGameNo = 0;
   const id = normalizeRoomCode(code);
   if(!id){ toast('合言葉を入力してください'); return; }
 
@@ -6157,7 +6157,7 @@ async function onlineRandomMatch(myName, matchOpts){
   onlineState.myName = myName;
   onlineState.mode = 'random';
   onlineState.isMatch = isMatch;
-  onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined;
+  onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined; onlineState.tournamentGameNo = 0;
   onlineState.matchTimeLimitSec = timeLimitSec;
   onlineState.timeUpReported = false;
   onlineState.phase = 'connecting';
@@ -6498,7 +6498,7 @@ function onlineAttachRoom(id){
       onlineState.lastChangeAt = Date.now();
       onlineStopQueueHeartbeat();
       onlineStopRescan();
-      onlineStartIdleWatch();
+      if(!onlineState.isTournament) onlineStartIdleWatch();   // 大会は持ち時間で決まるので、放置による判定はしない
       // 相手のアイコンを読み込んでから演出を出す。
       // 先に出すと、初対戦のときだけ既定の絵になってしまう。
       if(onlineState.mode === 'random'){
@@ -6581,7 +6581,8 @@ function onlineAttachRoom(id){
     render();
   });
 
-  onlineRoomRef.child('status').onDisconnect().set('abandoned');
+  // 大会の対局は、つながりが一時的に切れても、同じ部屋に戻って続けられるようにする
+  if(!onlineState.isTournament) onlineRoomRef.child('status').onDisconnect().set('abandoned');
 }
 
 // 相手が動かないまま3分たったら、放棄とみなして決着させる
@@ -6755,7 +6756,7 @@ async function onlineLeave(){
     }
   }catch(err){ console.warn(err); }
   onlineDetach();
-  onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined;
+  onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined; onlineState.tournamentGameNo = 0;
   onlineState.phase='lobby'; onlineState.roomId=null; onlineState.myColor=null;
   onlineState.oppLeft=false; onlineState.message=''; onlineState.mode=null; onlineState.abandoned=false; onlineState.waitStartedAt=0;
   game = null;
@@ -6970,7 +6971,7 @@ function onlineMatchFinish(room){
   game.matchLoser = loserColor;
   if(onlineState.isTournament){
     tournamentRecordResult(black, white, room);   // 必要な値は呼び出しの時点で読み取られる
-    onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined;
+    onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined; onlineState.tournamentGameNo = 0;
   }
   const entry = {
     timestamp: Date.now(),
@@ -6984,42 +6985,108 @@ function onlineMatchFinish(room){
 async function tournamentRecordResult(black, white, room){
   const t = tournamentData;
   if(!t || !fbDb || onlineState.tournamentRound === undefined) return;
-  const roundIdx = onlineState.tournamentRound, idx = onlineState.tournamentIdx;
+  // 対局が終わった時点の情報を、いまのうちに控えておく（このあと画面や状態が切り替わるため）
+  const roundIdx = onlineState.tournamentRound, idx = onlineState.tournamentIdx, gameNo = onlineState.tournamentGameNo || 0;
   const myColor = game.opts.myColor;
-  const myWon = myColor === 1 ? black > white : white > black;
   const hostUid = room && room.host && room.host.uid;
   const guestUid = room && room.guest && room.guest.uid;
   const oppUid = hostUid === fbUid ? guestUid : hostUid;
-  const winnerUid = myWon ? fbUid : oppUid;
+  const draw = black === white;
+  const myWon = myColor === 1 ? black > white : white > black;
+  const winnerUid = draw ? null : (myWon ? fbUid : oppUid);
+  const rec = {
+    blackUid: myColor === 1 ? fbUid : oppUid,
+    whiteUid: myColor === 1 ? oppUid : fbUid,
+    blackName: tournamentNameOf(t, myColor === 1 ? fbUid : oppUid, false),
+    whiteName: tournamentNameOf(t, myColor === 1 ? oppUid : fbUid, false),
+    black, white, winner: winnerUid || '',
+    draw,
+    endReason: game.matchEndReason || 'normal',
+    moves: game.moveCount || 0,
+    boardStates: Array.isArray(game.boardStates) ? game.boardStates.map(b => boardToStr(b)) : [],
+    playedAt: Date.now()
+  };
+  if(!draw && !winnerUid){ console.warn('勝者を特定できませんでした'); return; }
+  // 表への反映は、つながりが不安定でも取りこぼさないよう、数回やり直す
+  let res = false;
+  for(let n=0; n<4 && !res; n++){
+    try{ res = await tournamentApplyResult(roundIdx, idx, gameNo, { winnerUid, draw, black, white }); }
+    catch(err){ console.warn('トーナメント結果の反映に失敗:', err); res = false; }
+    if(!res) await new Promise(r => setTimeout(r, 2000 * (n+1)));
+  }
+  if(res){
+    toast(draw ? '引き分けでした。もう一度対局して、決着をつけてください' : '結果をトーナメント表に反映しました');
+    try{
+      // 大会の対局は、モデレーターが管理者ページから見られるよう、棋譜まで含めて公開データとして残す。
+      // どちらのプレイヤーが書き込んでも同じ内容になるので、二重に書いても実害はない
+      const key = draw ? `${roundIdx}_${idx}_d${gameNo}` : `${roundIdx}_${idx}`;
+      await fbDb.ref('tournaments/current/games/' + key).set(rec);
+    }catch(err){ console.warn('対局記録の保存に失敗:', err); }
+  } else {
+    toast('トーナメント表への反映に失敗しました。大会の画面を開くと、もう一度反映します');
+  }
+}
+// 対局の結果を、トーナメント表に反映する（勝者を次のラウンドへ進める。引き分けは再試合の印を付ける）。
+// 同じ結果を何度送っても、同じ状態になる
+async function tournamentApplyResult(roundIdx, idx, gameNo, res){
+  const ref = fbDb.ref('tournaments/current/bracket');
+  const nb = normalizeBracket((await ref.once('value')).val());
+  const m = nb && nb.rounds[roundIdx] && nb.rounds[roundIdx][idx];
+  if(!m) return false;
+  const finish = v => { if(tournamentData) tournamentData.bracket = nb; return v; };
+  if(m.winner) return finish(true);          // すでに反映済み
+  if(res.draw){
+    if((m.replay || 0) <= gameNo){
+      await ref.update({ [`rounds/${roundIdx}/${idx}/replay`]: gameNo + 1 });
+      m.replay = gameNo + 1;
+    }
+    return finish('draw');
+  }
+  if(!res.winnerUid || (res.winnerUid !== m.p1 && res.winnerUid !== m.p2)) return false;
+  const changes = [];
+  bracketAdvance(nb.rounds, roundIdx, idx, res.winnerUid, changes);
+  const upd = {};
+  changes.forEach(([r,i,k,v]) => { upd[`rounds/${r}/${i}/${k}`] = v; });
+  if(res.black !== undefined){ upd[`rounds/${roundIdx}/${idx}/black`] = res.black; upd[`rounds/${roundIdx}/${idx}/white`] = res.white; }
+  upd[`rounds/${roundIdx}/${idx}/playedAt`] = Date.now();
+  await ref.update(upd);
+  return finish(true);
+}
+// 部屋のデータから、対局の結果を求める（終わっていなければ null）。host が先手（黒）
+function tournamentResultFromRoom(room){
+  if(!room || room.status !== 'finished') return null;
+  const hostUid = room.host && room.host.uid, guestUid = room.guest && room.guest.uid;
+  if(!hostUid || !guestUid) return null;
+  let black, white;
+  if(room.matchBlack !== undefined && room.matchWhite !== undefined){ black = room.matchBlack; white = room.matchWhite; }
+  else { ({black, white} = countStonesMatch(strToBoard(room.board))); }
+  const loser = room.resignedBy || room.matchTimeUpBy || room.abandonedBy || null;
+  if(loser){ const sc = matchForcedScore(black, white, loser); black = sc.black; white = sc.white; }
+  if(black === white) return { winnerUid: null, draw: true, black, white };
+  return { winnerUid: black > white ? hostUid : guestUid, draw: false, black, white };
+}
+// 自分の対戦の部屋がすでに終わっているのに、表に反映されていなければ、いま反映する
+// （対局の直後にアプリを閉じた場合や、通信が切れて反映できなかった場合の取りこぼしを防ぐ）
+let tournamentReconcileAt = 0, tournamentReconcileBusy = false;
+async function tournamentReconcileMine(force){
+  const t = tournamentData;
+  if(!t || !t.bracket || !fbDb || !fbUid || tournamentReconcileBusy) return;
+  if(!force && Date.now() - tournamentReconcileAt < 30000) return;
+  const f = tournamentFindMyPendingMatch(t);
+  if(!f) return;
+  tournamentReconcileAt = Date.now(); tournamentReconcileBusy = true;
+  let changed = false;
   try{
-    // 最新の表を読み直し、勝者を書き込む（不戦勝の枠があれば続けて勝ち上がらせる）。まとめて1回で書くので、途中で止まらない
-    const bSnap = await fbDb.ref('tournaments/current/bracket').once('value');
-    const nb = normalizeBracket(bSnap.val());
-    if(nb && nb.rounds[roundIdx] && nb.rounds[roundIdx][idx] && !nb.rounds[roundIdx][idx].winner){
-      const changes = [];
-      bracketAdvance(nb.rounds, roundIdx, idx, winnerUid, changes);
-      const upd = {};
-      changes.forEach(([r,i,k,v]) => { upd[`rounds/${r}/${i}/${k}`] = v; });
-      upd[`rounds/${roundIdx}/${idx}/black`] = black;
-      upd[`rounds/${roundIdx}/${idx}/white`] = white;
-      upd[`rounds/${roundIdx}/${idx}/playedAt`] = Date.now();
-      await fbDb.ref('tournaments/current/bracket').update(upd);
-      t.bracket = nb;
-    } else if(nb){ t.bracket = nb; }
-    // 大会の対局は、モデレーターが管理者ページから見られるよう、棋譜まで含めて公開データとして残す。
-    // どちらのプレイヤーが書き込んでも同じ内容になるので、二重に書いても実害はない
-    await fbDb.ref(`tournaments/current/games/${roundIdx}_${idx}`).set({
-      blackUid: myColor === 1 ? fbUid : oppUid,
-      whiteUid: myColor === 1 ? oppUid : fbUid,
-      blackName: tournamentNameOf(t, myColor === 1 ? fbUid : oppUid, false),
-      whiteName: tournamentNameOf(t, myColor === 1 ? oppUid : fbUid, false),
-      black, white, winner: winnerUid,
-      endReason: game.matchEndReason || 'normal',
-      moves: game.moveCount || 0,
-      boardStates: Array.isArray(game.boardStates) ? game.boardStates.map(b => boardToStr(b)) : [],
-      playedAt: Date.now()
-    });
-  }catch(err){ console.warn('トーナメント結果の記録に失敗:', err); }
+    const gameNo = f.match.replay || 0;
+    const snap = await fbDb.ref('rooms/' + tournamentRoomId(t, f.round, f.idx, gameNo)).once('value');
+    const res = tournamentResultFromRoom(snap.val());
+    if(res){ changed = !!(await tournamentApplyResult(f.round, f.idx, gameNo, res)); }
+  }catch(err){ console.warn(err); }
+  tournamentReconcileBusy = false;
+  if(changed && activeTab === 'ranker' && currentRankerMode === 'match' && sub.match === 'tournament' && !game) render();
+}
+function tournamentRoomId(t, ri, idx, gameNo){
+  return 'tour_' + ((t.bracket && t.bracket.gen) || 'x') + '_' + ri + '_' + idx + (gameNo > 0 ? '_' + gameNo : '');
 }
 
 // ランダムマッチが成立したときの演出
@@ -7650,6 +7717,11 @@ function startMatchClock(){
         // 自分の手番が時間切れになったときだけ、自分からサーバーへ報告する。
         // 相手の手番が時間切れの場合は、相手からの報告を待つ
         if(g.current === onlineState.myColor) onlineMatchTimeUp();
+        else if(onlineState.isTournament){
+          // 大会では、相手が不在でも時間切れを確定できるよう、15秒の余裕を見て、こちらからも報告する
+          g._oppZeroTicks = (g._oppZeroTicks || 0) + 1;
+          if(g._oppZeroTicks >= 15) onlineMatchTimeUp(g.current);
+        }
       } else {
         matchTimeUp(g, g.current);
       }
@@ -7658,13 +7730,13 @@ function startMatchClock(){
   }, 1000);
 }
 // オンライン競技対局で、自分の持ち時間が切れたことをサーバーに報告する
-async function onlineMatchTimeUp(){
+async function onlineMatchTimeUp(loserColor){
   if(!onlineRoomRef || onlineState.timeUpReported) return;
   onlineState.timeUpReported = true;
   try{
     await onlineRoomRef.update({
       status: 'finished',
-      matchTimeUpBy: onlineState.myColor,
+      matchTimeUpBy: loserColor || onlineState.myColor,
       updatedAt: firebase.database.ServerValue.TIMESTAMP
     });
   }catch(err){ console.warn('時間切れの報告に失敗:', err); }
@@ -8876,7 +8948,7 @@ function renderMatchResultScreen(){
       </div>
       ${reasonText ? `<p style="font-size:12px; color:var(--ink-soft); margin:0 0 10px;">${reasonText}</p>` : ''}
       ${(g.opts && g.opts.isTournament)
-        ? `<p style="font-size:12px; color:var(--ink-soft); margin:0 0 10px;">結果は大会のトーナメント表に反映されます。</p>
+        ? `<p style="font-size:12px; color:var(--ink-soft); margin:0 0 10px;">${draw ? '大会では引き分けのままでは終われません。もう一度対局して、決着をつけてください。' : '結果は大会のトーナメント表に、自動で反映されます。'}</p>
            <div class="btn-row" style="margin-top:10px;"><button class="btn btn-accent" data-action="match-tournament-back">トーナメント表へ</button></div>`
         : `<div class="btn-row" style="margin-top:10px;">
         <button class="btn btn-accent" data-action="match-again">もう一度</button>
@@ -9016,7 +9088,7 @@ function generateBracket(uids, names){
   }
   // 1回戦の不戦勝を、あらかじめ勝ち上がらせておく
   r1.forEach((m, i) => { if(m.bye) bracketAdvance(rounds, 0, i, m.p1, []); });
-  return {rounds, total: shuffled.length, names: names||{}};
+  return {rounds, total: shuffled.length, gen: Date.now(), names: names||{}};
 }
 // データベースから読んだトーナメント表を、配列の形にそろえる
 function normalizeBracket(b){
@@ -9334,6 +9406,7 @@ function tournamentScheduleRefresh(){
         tournamentData.bracket = nb;
       }
     }catch(err){}
+    await tournamentReconcileMine(true);
     if(activeTab === 'ranker' && currentRankerMode === 'match' && sub.match === 'tournament' && !game) render();
   }, 20000);
 }
@@ -9563,6 +9636,7 @@ function viewTournament(){
   if(phase === 'day1' || phase === 'day2' || phase === 'day3'){
     const myMatch = myEntry ? tournamentFindMyMatch(t, tournamentRoundIdxsForPhase(t, phase)) : null;
     tournamentScheduleRefresh();
+    tournamentReconcileMine();
     return hero + `
       <div class="card">
         ${phase === 'day3' && t.liveUrl ? `<p style="font-size:12px; margin:0 0 8px;"><a href="${escapeHtml(t.liveUrl)}" target="_blank" style="color:var(--jade-deep);">▶ ライブ配信を見る</a></p>` : ''}
@@ -9571,6 +9645,7 @@ function viewTournament(){
           ? `<p style="font-size:13px; margin:0;">次の対戦相手：<b>${escapeHtml(tournamentNameOf(t, myMatch.match.p1===fbUid ? myMatch.match.p2 : myMatch.match.p1))}</b></p>`
         : myMatch
           ? `<p style="font-size:13px; margin:0 0 10px;">相手：<b>${escapeHtml(tournamentNameOf(t, myMatch.match.p1===fbUid ? myMatch.match.p2 : myMatch.match.p1))}</b></p>
+             ${myMatch.match.replay ? '<p style="font-size:12px; color:var(--ink-soft); margin:0 0 10px;">前の対局は引き分けでした。再試合で決着をつけます。</p>' : ''}
              <button class="btn btn-accent" data-action="tournament-play" style="width:100%;">対局する</button>`
           : (tournamentIsOffline(t) ? '' : `<p style="font-size:13px; color:var(--ink-soft); margin:0;">${myEntry ? '今日の対局はありません。結果をお待ちください。' : 'このラウンドの対局はありません。'}</p>`)}
       </div>
@@ -9622,7 +9697,8 @@ async function tournamentStartMatch(){
   const roundIdx = found.round;
   if(!(await ensureFirebase())){ toast(fbInitError); return; }
   const oppUid = found.match.p1 === fbUid ? found.match.p2 : found.match.p1;
-  const roomId = 'tour_' + (t.id || 'current') + '_' + roundIdx + '_' + found.idx;
+  const gameNo = found.match.replay || 0;   // 引き分けの再試合は、新しい部屋を使う
+  const roomId = tournamentRoomId(t, roundIdx, found.idx, gameNo);
   const myName = profileName() || 'プレイヤー';
   onlineState.myName = myName;
   onlineState.mode = 'code';
@@ -9631,6 +9707,7 @@ async function tournamentStartMatch(){
   onlineState.isTournament = true;
   onlineState.tournamentRound = roundIdx;
   onlineState.tournamentIdx = found.idx;
+  onlineState.tournamentGameNo = gameNo;
   onlineState.tournamentOppName = tournamentNameOf(t, oppUid, false);
   onlineState.tournamentRoundLabel = tournamentRoundLabel(t.bracket.rounds.length, roundIdx);
   // 相手が来るまで待つ画面を出す（'play' のままだと、対局がまだ無いので競技の設定画面に戻ってしまう）
@@ -10676,7 +10753,7 @@ document.addEventListener('click', (e)=>{
     case 'match-online-cancel': {
       const wasTour = !!onlineState.isTournament;
       onlineLeave();
-      onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined;
+      onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined; onlineState.tournamentGameNo = 0;
       navigate(()=>{ sub.match = wasTour ? 'tournament' : 'setup'; onlineState.isMatch = false; });
       break;
     }
