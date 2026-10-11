@@ -1425,6 +1425,39 @@ async function adminResolveMatch(ri, mi, slot, reason){
     bracketAdvance(rounds, ri, mi, m[winnerSlot], []);
   }, reason === 'result' ? '勝者を入力しました' : '次のラウンドへ進めました。続けて、次のラウンドの組み合わせを変えられます（「組み替え」）');
 }
+// 再対局：この対戦をやり直させる。決着していれば勝ち上がりも取り消す（次のラウンドの対局が済んでいると、できない）。
+// 部屋の番号（replay）を1つ進めるので、選手は新しい部屋で最初から対局し直す
+async function adminReplayMatch(ri, mi){
+  const br = currentTournament && currentTournament.bracket ? normalizeBracket(currentTournament.bracket) : null;
+  const m0 = br && br.rounds[ri] && br.rounds[ri][mi];
+  if(!m0 || m0.bye || !m0.p1 || !m0.p2){ toast('この対戦は再対局にできません'); return; }
+  const nm = u => tourNameOfUid(u, br, '');
+  const msg = `「${nm(m0.p1)}」と「${nm(m0.p2)}」の対局を、最初からやり直させます。\n` +
+    (m0.winner ? '今の結果と勝ち上がりは取り消されます。\n' : '') +
+    '対局中の場合、その対局は無効になります（選手には、いま対局していないときに知らせてください）。よろしいですか？';
+  if(!confirm(msg)) return;
+  const oldGameNo = m0.replay || 0;
+  const hadResult = !!m0.winner;
+  const ok = await adminBracketMutate(rounds => {
+    const m = rounds[ri][mi];
+    if(!m || m.bye || !m.p1 || !m.p2){ toast('この対戦は再対局にできません'); return false; }
+    if(m.winner && !bracketUnadvance(rounds, ri, mi)){ toast('次のラウンドの対局が済んでいるため、再対局にできません'); return false; }
+    m.winner = null; m.black = null; m.white = null; m.playedAt = null; m.manual = null; m.walkover = null;
+    m.replay = (m.replay || 0) + 1;
+  }, '再対局にしました。選手が「対局する」を押すと、新しい対局が始まります');
+  if(ok && hadResult){
+    // 前の結果の棋譜は、別の名前で残しておく
+    try{
+      const gref = db.ref('tournaments/current/games/' + ri + '_' + mi);
+      const old = (await gref.once('value')).val();
+      if(old){
+        await db.ref('tournaments/current/games/' + ri + '_' + mi + '_x' + oldGameNo).set(old);
+        await gref.remove();
+        if(typeof loadTournamentGames === 'function') loadTournamentGames();
+      }
+    }catch(err){ console.warn('棋譜の退避に失敗:', err); }
+  }
+}
 function tourSwapToggle(ri){ tourSwap = (tourSwap.ri === ri) ? { ri:null, sel:null } : { ri, sel:null }; render(); }
 async function tourSwapPick(ri, mi, slot){
   if(tourSwap.ri !== ri) return;
@@ -1465,10 +1498,13 @@ function tourBracketAdminMarkup(t){
           const st = `padding:4px 6px; ${extraStyle||''} ${win?'font-weight:800;background:var(--jade-mist);':''} ${clickable?'cursor:pointer; outline:1px dashed var(--ink-soft); outline-offset:-2px;':''} ${pend?'opacity:.45;':''} ${sel?'background:#ffe9a8; color:#222;':''}`;
           return `<div style="${st}" ${clickable?`onclick="tourSwapPick(${ri},${mi},'${slot}')"`:''}>${esc(tourNameOfUid(uid, br, emptyLabel))}</div>`;
         };
-        const ops = (!swapOn && !m.winner && !m.bye && m.p1 && m.p2) ? `
+        const replayBtn = `
+            <div style="font-size:10px; margin:6px 0 2px;">${m.winner ? '結果を取り消して、やり直す' : '最初からやり直す'}</div>
+            <button class="btn" style="padding:2px 4px; font-size:10px; width:100%;" onclick="adminReplayMatch(${ri},${mi})">再対局にする</button>`;
+        const ops = (!swapOn && !m.bye && m.p1 && m.p2) ? `
           <details style="padding:3px 6px; border-top:1px solid var(--line);">
             <summary style="cursor:pointer; font-size:10px; color:var(--ink-soft);">操作</summary>
-            <div style="font-size:10px; margin:4px 0 2px;">結果を入力</div>
+            ${m.winner ? '' : `<div style="font-size:10px; margin:4px 0 2px;">結果を入力</div>
             <div style="display:flex; gap:4px;">
               <button class="btn" style="padding:2px 4px; font-size:10px; flex:1;" onclick="adminResolveMatch(${ri},${mi},'p1','result')">上の勝ち</button>
               <button class="btn" style="padding:2px 4px; font-size:10px; flex:1;" onclick="adminResolveMatch(${ri},${mi},'p2','result')">下の勝ち</button></div>
@@ -1479,7 +1515,8 @@ function tourBracketAdminMarkup(t){
             <div style="font-size:10px; margin:6px 0 2px;">対局できなかった（片方を進める）</div>
             <div style="display:flex; gap:4px;">
               <button class="btn" style="padding:2px 4px; font-size:10px; flex:1;" onclick="adminResolveMatch(${ri},${mi},'p1','noshow')">上を進める</button>
-              <button class="btn" style="padding:2px 4px; font-size:10px; flex:1;" onclick="adminResolveMatch(${ri},${mi},'p2','noshow')">下を進める</button></div>
+              <button class="btn" style="padding:2px 4px; font-size:10px; flex:1;" onclick="adminResolveMatch(${ri},${mi},'p2','noshow')">下を進める</button></div>`}
+            ${replayBtn}
           </details>` : '';
         return `<div style="border:1px solid var(--line); border-radius:8px; margin-bottom:10px; font-size:11px; overflow:hidden;">
           ${cell('p1','勝者未定')}
