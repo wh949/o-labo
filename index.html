@@ -7035,6 +7035,7 @@ async function tournamentApplyResult(roundIdx, idx, gameNo, res){
   if(!m) return false;
   const finish = v => { if(tournamentData) tournamentData.bracket = nb; return v; };
   if(m.winner) return finish(true);          // すでに反映済み
+  if(!res.draw && (m.replay || 0) > gameNo) return finish(true);   // 管理者の再対局などで、その対局はもう無効になっている
   if(res.draw){
     if((m.replay || 0) <= gameNo){
       await ref.update({ [`rounds/${roundIdx}/${idx}/replay`]: gameNo + 1 });
@@ -7502,6 +7503,16 @@ function makeGameSession(mode, opts){
   
   return session;
 }
+// 競技形式（持ち時間つき）のオンライン対局か。大会もここに含まれる
+function isOnlineMatchGame(g){
+  return !!(g && g.mode==='match' && g.opts && g.opts.vsType==='online');
+}
+function onlineOppDisplayName(g){
+  return (onlineState.oppName) || (g && g.opts && g.opts.oppName) || '相手';
+}
+function onlineMyDisplayName(){
+  return onlineState.myName || (state && state.online && state.online.lastName) || (state && state.username) || 'あなた';
+}
 function turnColorMeta(g){
   if(g.mode==='battle'){
     return g.current===1
@@ -7512,6 +7523,14 @@ function turnColorMeta(g){
     const mine = g.current === onlineState.myColor;
     return {
       name: mine ? (onlineState.myName || 'あなた') : (onlineState.oppName || '相手'),
+      color: g.current===1 ? 'black' : 'white'
+    };
+  }
+  if(isOnlineMatchGame(g)){
+    const myC = g.opts.myColor || onlineState.myColor;
+    const mine = g.current === myC;
+    return {
+      name: mine ? onlineMyDisplayName() : onlineOppDisplayName(g),
       color: g.current===1 ? 'black' : 'white'
     };
   }
@@ -7550,6 +7569,14 @@ function renderBoardScreen(){
     // 自分が黒（先手）なら左が自分、白（後手）なら右が自分
     leftName  = onlineState.myColor === 1 ? meName : oppName;
     rightName = onlineState.myColor === 1 ? oppName : meName;
+  } else if(isOnlineMatchGame(g)){
+    const myC = g.opts.myColor || onlineState.myColor;
+    const meName = onlineMyDisplayName();
+    const oppName = onlineOppDisplayName(g);
+    leftName  = myC === 1 ? meName : oppName;
+    rightName = myC === 1 ? oppName : meName;
+  } else if(g.mode==='match' && g.opts.vsType==='offline'){
+    leftName = '黒番'; rightName = '白番';
   } else {
     leftName = 'あなた';
     rightName = (g.mode==='training' ? 'AI（特訓）' : 'AI');
@@ -7680,7 +7707,7 @@ function renderBoardScreen(){
       ${g.mode==='online'
         ? (g.over ? '' : `<button class="btn btn-ghost" data-action="online-resign">${ruby('投了','とうりょう',1)}する</button>`)
         : g.mode==='match'
-          ? (g.over ? '' : `<button class="btn btn-ghost" data-action="give-up">${ruby('投了','とうりょう',1)}する</button>`)
+          ? ((g.over || (g.opts && g.opts.isTournament)) ? '' : `<button class="btn btn-ghost" data-action="give-up">${ruby('投了','とうりょう',1)}する</button>`)
           : ((g.opts && (g.opts.isFlip || g.opts.isFlipGate)) ? '' : `<button class="btn btn-ghost" data-action="give-up">${ruby('投了','とうりょう',1)}してもどる</button>`)}
       ${g.over?'<button class="btn btn-primary" data-action="see-result">結果を見る</button>':''}
     </div>
@@ -9646,7 +9673,7 @@ function viewTournament(){
           ? `<p style="font-size:13px; margin:0;">次の対戦相手：<b>${escapeHtml(tournamentNameOf(t, myMatch.match.p1===fbUid ? myMatch.match.p2 : myMatch.match.p1))}</b></p>`
         : myMatch
           ? `<p style="font-size:13px; margin:0 0 10px;">相手：<b>${escapeHtml(tournamentNameOf(t, myMatch.match.p1===fbUid ? myMatch.match.p2 : myMatch.match.p1))}</b></p>
-             ${myMatch.match.replay ? '<p style="font-size:12px; color:var(--ink-soft); margin:0 0 10px;">前の対局は引き分けでした。再試合で決着をつけます。</p>' : ''}
+             ${myMatch.match.replay ? '<p style="font-size:12px; color:var(--ink-soft); margin:0 0 10px;">再対局です。もう一度、最初から対局してください。</p>' : ''}
              <button class="btn btn-accent" data-action="tournament-play" style="width:100%;">対局する</button>`
           : (tournamentIsOffline(t) ? '' : `<p style="font-size:13px; color:var(--ink-soft); margin:0;">${myEntry ? '今日の対局はありません。結果をお待ちください。' : 'このラウンドの対局はありません。'}</p>`)}
       </div>
@@ -10440,10 +10467,12 @@ document.addEventListener('click', (e)=>{
       }
       break;
     case 'online-resign':
-      if(game && game.mode==='online' && !game.over) showOnlineResignConfirm();
+      if(game && game.mode==='online' && !game.over && !onlineState.isTournament) showOnlineResignConfirm();
       break;
     case 'online-resign-confirm':
-      closeSheet(); onlineResign();
+      closeSheet();
+      if(onlineState.isTournament || (game && game.opts && game.opts.isTournament)) break;   // 大会では投了できない
+      onlineResign();
       break;
     case 'flip-enter-gate':
       navigate(()=>{ activeTab = 'flipside'; currentFlipMode = 'flip'; sub.flipside = 'home'; game = null; });
@@ -10461,6 +10490,7 @@ document.addEventListener('click', (e)=>{
     case 'give-up':
       // 競技モードの投了は、公式ルールに基づき「相手の2石差勝ち」として記録する
       if(game && game.mode==='match' && !game.over){
+        if(game.opts.isTournament) break;   // 大会では投了できない
         if(game.opts.vsType === 'online') onlineResign();
         else matchResign(game, game.current);
         break;
