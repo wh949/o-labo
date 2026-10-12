@@ -7086,8 +7086,11 @@ async function tournamentReconcileMine(force){
   tournamentReconcileBusy = false;
   if(changed && activeTab === 'ranker' && currentRankerMode === 'match' && sub.match === 'tournament' && !game) render();
 }
+// 部屋の名前には、対戦する2人も含める。組み替えや再対局のあとに、前の対戦の部屋へ入ってしまわないため
 function tournamentRoomId(t, ri, idx, gameNo){
-  return 'tour_' + ((t.bracket && t.bracket.gen) || 'x') + '_' + ri + '_' + idx + (gameNo > 0 ? '_' + gameNo : '');
+  const m = t.bracket && t.bracket.rounds && t.bracket.rounds[ri] && t.bracket.rounds[ri][idx];
+  const pair = m ? [m.p1, m.p2].filter(Boolean).map(u => String(u).replace(/[^A-Za-z0-9]/g,'').slice(0,10)).sort().join('') : '';
+  return 'tour_' + ((t.bracket && t.bracket.gen) || 'x') + '_' + ri + '_' + idx + (pair ? '_' + pair : '') + (gameNo > 0 ? '_' + gameNo : '');
 }
 
 // ランダムマッチが成立したときの演出
@@ -7507,6 +7510,10 @@ function makeGameSession(mode, opts){
 function isOnlineMatchGame(g){
   return !!(g && g.mode==='match' && g.opts && g.opts.vsType==='online');
 }
+// 通常のオンライン対局＋競技形式のオンライン対局（大会を含む）。どちらも手はサーバー経由で進む
+function isOnlineGame(g){
+  return !!(g && (g.mode==='online' || isOnlineMatchGame(g)));
+}
 function onlineOppDisplayName(g){
   return (onlineState.oppName) || (g && g.opts && g.opts.oppName) || '相手';
 }
@@ -7586,7 +7593,7 @@ function renderBoardScreen(){
   const placed = g.animPlaced;
   const flipsAnim = g.animFlips || [];
   const myTurnNow = g.mode==='battle' ? true
-                  : (g.mode==='online' ? g.current===onlineState.myColor : g.current===1);
+                  : (isOnlineGame(g) ? g.current===onlineState.myColor : g.current===1);
   const actualMoves = (!g.over && !g.pendingFlips && !g.thinking && myTurnNow) ? validMoves(g.board,g.current) : [];
   let showHints;
   if(g.mode==='battle') showHints = g.current===1 ? g.opts.p1ShowHints : g.opts.p2ShowHints;
@@ -7641,9 +7648,9 @@ function renderBoardScreen(){
     statusNote = `<div class="pass-note">AIが考えています…</div>`;
   } else if(g.pendingFlips){
     statusNote = `<div class="pass-note">ひっくり返す石をタップしてください（残り${g.pendingFlips.flips.length-g.pendingFlips.done.length}個）</div>`;
-  } else if(g.mode==='online' && g.current !== onlineState.myColor){
+  } else if(isOnlineGame(g) && g.current !== onlineState.myColor){
     const left = Math.ceil(onlineIdleRemaining()/1000);
-    const warn = (left <= 60) ? `<br><span style="font-size:11px;">あと${left}秒動きがないと、相手の放棄になります</span>` : '';
+    const warn = (g.mode==='online' && left <= 60) ? `<br><span style="font-size:11px;">あと${left}秒動きがないと、相手の放棄になります</span>` : '';
     const oppStuck = validMoves(g.board, g.current).length === 0;
     statusNote = oppStuck
       ? `<div class="pass-note">${escapeHtml(onlineState.oppName||'相手')}は置ける場所がないためパスします…</div>`
@@ -7654,7 +7661,7 @@ function renderBoardScreen(){
     // AI がパスしたときなど、直前の出来事を伝えるメッセージ（次の手が打たれると自動で消える）
     statusNote = g.statusNote;
   }
-  if(g.mode==='online' && !g.over && g.current === onlineState.myColor
+  if(isOnlineGame(g) && !g.over && g.current === onlineState.myColor
      && validMoves(g.board, g.current).length === 0){
     statusNote = `<div class="pass-note">置ける場所がないため、パスします…</div>`;
   }
@@ -7670,7 +7677,7 @@ function renderBoardScreen(){
   // パスボタンの表示判定
   const showPassBtn = state.settings.allowPass && !g.over && !g.thinking && !g.pendingFlips && 
                       (g.mode==='battle' || (g.mode==='match' && g.opts.vsType==='offline') || g.current===1)
-                      && !(g.opts && (g.opts.isFlip || g.opts.isFlipGate)) && g.mode!=='online';
+                      && !(g.opts && (g.opts.isFlip || g.opts.isFlipGate)) && !isOnlineGame(g);
   
   // 黒白どちらがどれだけ「押している」かを、一目でわかるバーで示す（現在置かれている石の比率）
   const totalStones = black + white;
@@ -7687,8 +7694,8 @@ function renderBoardScreen(){
         <div class="stone-bar-white" style="width:${100-blackPct}%"></div>
       </div>
       <div class="score-strip">
-        <div class="score-chip ${black>=white?'leading':''} ${!g.over&&turnIsBlack?'is-turn':''} ${g.mode==='online'&&onlineState.myColor===1?'is-me':''}"><span class="sc-stone" style="background:#111;"></span><span class="sc-name">${escapeHtml(leftName)}</span><span class="sc-num">${black}</span>${g.mode==='online'?reactionBubbleMarkup(1):''}</div>
-        <div class="score-chip ${white>black?'leading':''} ${!g.over&&!turnIsBlack?'is-turn':''} ${g.mode==='online'&&onlineState.myColor===2?'is-me':''}"><span class="sc-stone" style="background:#eee; box-shadow:inset 0 0 0 1px #ccc;"></span><span class="sc-name">${escapeHtml(rightName)}</span><span class="sc-num">${white}</span>${g.mode==='online'?reactionBubbleMarkup(2):''}</div>
+        <div class="score-chip ${black>=white?'leading':''} ${!g.over&&turnIsBlack?'is-turn':''} ${isOnlineGame(g)&&onlineState.myColor===1?'is-me':''}"><span class="sc-stone" style="background:#111;"></span><span class="sc-name">${escapeHtml(leftName)}</span><span class="sc-num">${black}</span>${g.mode==='online'?reactionBubbleMarkup(1):''}</div>
+        <div class="score-chip ${white>black?'leading':''} ${!g.over&&!turnIsBlack?'is-turn':''} ${isOnlineGame(g)&&onlineState.myColor===2?'is-me':''}"><span class="sc-stone" style="background:#eee; box-shadow:inset 0 0 0 1px #ccc;"></span><span class="sc-name">${escapeHtml(rightName)}</span><span class="sc-num">${white}</span>${g.mode==='online'?reactionBubbleMarkup(2):''}</div>
       </div>
       ${g.mode==='match' ? `
       <div class="match-clock-row">
@@ -7768,6 +7775,34 @@ async function onlineMatchTimeUp(loserColor){
     });
   }catch(err){ console.warn('時間切れの報告に失敗:', err); }
 }
+// 管理者が再対局にしたり組み合わせを変えたりしたとき、いま待っている・対局している部屋は無効になる。
+// 10秒おきに表を確認して、無効になっていたら大会の画面へ戻す
+let tournamentWatchBusy = false;
+setInterval(async () => {
+  if(tournamentWatchBusy || !onlineState.isTournament || !fbDb || !fbUid) return;
+  if(onlineState.phase !== 'waiting' && onlineState.phase !== 'playing') return;
+  if(game && game.over) return;
+  const ri = onlineState.tournamentRound, idx = onlineState.tournamentIdx, gn = onlineState.tournamentGameNo || 0;
+  if(ri === undefined || idx === undefined) return;
+  tournamentWatchBusy = true;
+  try{
+    const nb = normalizeBracket((await fbDb.ref('tournaments/current/bracket').once('value')).val());
+    const m = nb && nb.rounds[ri] && nb.rounds[ri][idx];
+    if(!m || !onlineState.isTournament || (game && game.over)) return;
+    const invalid = (m.replay || 0) > gn || !(m.p1 === fbUid || m.p2 === fbUid);
+    if(!invalid) return;
+    if(tournamentData) tournamentData.bracket = nb;
+    stopMatchClock();
+    try{ if(onlineRoomRef) onlineRoomRef.child('status').onDisconnect().cancel(); }catch(e){}
+    onlineDetach();
+    onlineState.isTournament = false; onlineState.tournamentRound = undefined; onlineState.tournamentIdx = undefined; onlineState.tournamentGameNo = 0;
+    onlineState.phase = 'lobby'; onlineState.roomId = null; onlineState.myColor = null; onlineState.isMatch = false;
+    game = null;
+    toast('管理者によって、この対局は再対局になりました。もう一度「対局する」を押してください');
+    navigate(()=>{ activeTab = 'ranker'; currentRankerMode = 'match'; sub.match = 'tournament'; });
+  }catch(err){ console.warn(err); }
+  finally{ tournamentWatchBusy = false; }
+}, 10000);
 function stopMatchClock(){ if(matchClockHandle){ clearInterval(matchClockHandle); matchClockHandle=null; } }
 function matchClockText(s){
   return String(Math.floor(Math.max(0,s||0)/60)).padStart(2,'0')+':'+String(Math.max(0,s||0)%60).padStart(2,'0');
@@ -7831,7 +7866,7 @@ function onCellClick(r,c){
   }
   if(g.mode==='battle'){
     tryHumanMove(g,r,c);
-  } else if(g.mode==='online'){
+  } else if(isOnlineGame(g)){
     // オンラインは自分の色の手番だけ操作できる
     if(g.current !== onlineState.myColor) return;
     tryHumanMove(g,r,c);
@@ -7842,7 +7877,7 @@ function onCellClick(r,c){
 }
 function tryHumanMove(g,r,c){
   // オンラインは自分の手番のときだけ、サーバーに送る
-  if(g.mode==='online'){
+  if(isOnlineGame(g)){
     if(g.over || g.current !== onlineState.myColor) return;
     if(!getFlips(g.board,r,c,g.current).length) return;
     onlineSendMove(r,c);
@@ -9436,7 +9471,7 @@ function tournamentScheduleRefresh(){
     }catch(err){}
     await tournamentReconcileMine(true);
     if(activeTab === 'ranker' && currentRankerMode === 'match' && sub.match === 'tournament' && !game) render();
-  }, 20000);
+  }, 10000);
 }
 // ---- 対戦相手との日程調整（時間と絵文字のリアクションだけをやり取りする）----
 // 保存先：tourSchedule/<2人のuidを並べた鍵>/messages/<id> と reactions/<id>/<uid>。大会が終わったら管理者側で消す
@@ -9719,11 +9754,17 @@ async function tournamentStartMatch(){
   const t = tournamentData;
   if(!t) return;
   if(tournamentIsOffline(t)){ toast('この大会はオフライン開催です。会場で対局してください'); return; }
+  if(!(await ensureFirebase())){ toast(fbInitError); return; }
+  // 管理者が組み合わせや再対局を変えていることがあるので、始める前に必ず最新の表を読み直す
+  try{
+    const bs = await fbDb.ref('tournaments/current/bracket').once('value');
+    const nbr = normalizeBracket(bs.val());
+    if(nbr) t.bracket = nbr;
+  }catch(err){ console.warn(err); }
   const phase = tournamentPhase(t);
   const found = tournamentFindMyMatch(t, tournamentRoundIdxsForPhase(t, phase));
-  if(!found) return;
+  if(!found){ toast('いま対局できる対戦がありません（表が更新されました）'); render(); return; }
   const roundIdx = found.round;
-  if(!(await ensureFirebase())){ toast(fbInitError); return; }
   const oppUid = found.match.p1 === fbUid ? found.match.p2 : found.match.p1;
   const gameNo = found.match.replay || 0;   // 引き分けの再試合は、新しい部屋を使う
   const roomId = tournamentRoomId(t, roundIdx, found.idx, gameNo);
@@ -9756,7 +9797,7 @@ async function tournamentStartMatch(){
       }
       if(room.host && room.host.uid === fbUid) return room;
       if(room.guest && room.guest.uid === fbUid) return room;
-      if(room.status === 'waiting' && !room.guest){
+      if(room.status === 'waiting' && !room.guest && room.host && room.host.uid === oppUid){
         room.guest = {uid:fbUid, name:myName};
         room.status = 'playing';
         room.startedAt = Date.now();
@@ -9765,7 +9806,25 @@ async function tournamentStartMatch(){
       return room;
     });
     const room = res.snapshot.val();
-    onlineState.myColor = (room.host && room.host.uid === fbUid) ? 1 : 2;
+    const iAmHost = !!(room && room.host && room.host.uid === fbUid), iAmGuest = !!(room && room.guest && room.guest.uid === fbUid);
+    const oppOk = room && ((iAmHost && (!room.guest || room.guest.uid === oppUid)) || (iAmGuest && room.host && room.host.uid === oppUid));
+    if(!room || !(iAmHost || iAmGuest) || !oppOk){
+      // 他の人が使っている部屋だった場合は、入らずに戻る
+      onlineState.isTournament = false; onlineState.phase = 'lobby'; onlineState.roomId = null; onlineState.myColor = null;
+      toast('部屋に入れませんでした。少し待って、もう一度お試しください');
+      navigate(()=>{ sub.match = 'tournament'; });
+      return;
+    }
+    if(room.status === 'finished'){
+      // 前の対局がすでに終わっている部屋。結果が表に載っていなければ、いま反映する
+      onlineState.isTournament = false; onlineState.phase = 'lobby'; onlineState.roomId = null; onlineState.myColor = null;
+      const rr = tournamentResultFromRoom(room);
+      if(rr){ try{ await tournamentApplyResult(roundIdx, found.idx, gameNo, rr); }catch(err){ console.warn(err); } }
+      toast('この対局はすでに終わっています');
+      navigate(()=>{ sub.match = 'tournament'; });
+      return;
+    }
+    onlineState.myColor = iAmHost ? 1 : 2;
     onlineState.roomId = roomId;
     onlineAttachRoom(roomId);
   }catch(err){
@@ -10435,7 +10494,7 @@ document.addEventListener('click', (e)=>{
     case 'variety-start-custom': startVarietyCustom(); break;
     case 'cell': onCellClick(parseInt(el.dataset.r), parseInt(el.dataset.c)); break;
     case 'player-pass':
-      if(game && !game.over && !game.thinking){
+      if(game && !game.over && !game.thinking && !isOnlineGame(game)){
         playSE('pass');
         game.passStreak++;
         game.animPlaced = null;
