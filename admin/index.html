@@ -1565,7 +1565,8 @@ async function reconcileTournamentFromRooms(manual){
           const m = nb.rounds[ri][mi];
           if(!m || m.winner || m.bye || !m.p1 || !m.p2) continue;
           const gameNo = m.replay || 0;
-          const roomId = 'tour_' + (nb.gen || 'x') + '_' + ri + '_' + mi + (gameNo > 0 ? '_' + gameNo : '');
+          const pairKey = [m.p1, m.p2].map(u => String(u).replace(/[^A-Za-z0-9]/g,'').slice(0,10)).sort().join('');
+          const roomId = 'tour_' + (nb.gen || 'x') + '_' + ri + '_' + mi + '_' + pairKey + (gameNo > 0 ? '_' + gameNo : '');
           const res = tourResultFromRoom((await db.ref('rooms/' + roomId).once('value')).val());
           if(!res) continue;
           if(res.draw){ await bref.update({ [`rounds/${ri}/${mi}/replay`]: gameNo + 1 }); fixed++; progressed = true; continue; }
